@@ -472,4 +472,56 @@ mod tests {
         assert_eq!(single_part("Diagnosis ... Plan"), None);
         assert_eq!(single_part("..."), None);
     }
+
+    #[test]
+    fn every_block_of_the_cjk_scripts_starts_and_ends_where_the_reader_says() {
+        // (first, last) of each block `is_cjk` names; a character one before the first and one
+        // after the last is outside it, unless the next block begins right there.
+        let blocks: [(u32, u32); 17] = [
+            (0x1100, 0x11FF),   // Hangul Jamo
+            (0x2E80, 0x2FDF),   // CJK radicals
+            (0x3021, 0x3029),   // Han marks (the run of eight and nine)
+            (0x3038, 0x303B),   // Han marks
+            (0x3041, 0x3096),   // Hiragana
+            (0x309D, 0x309F),   // Hiragana iteration marks
+            (0x30A1, 0x30FA),   // Katakana
+            (0x30FD, 0x30FF),   // Katakana iteration marks and koto
+            (0x31F0, 0x31FF),   // Katakana phonetic extensions
+            (0x3131, 0x318E),   // Hangul compatibility Jamo
+            (0x3400, 0x4DBF),   // Han extension A
+            (0x4E00, 0x9FFF),   // Han
+            (0xA960, 0xA97C),   // Hangul Jamo extension A
+            (0xD7B0, 0xD7FB),   // Hangul Jamo extension B
+            (0xF900, 0xFAFF),   // Han compatibility
+            (0x1B000, 0x1B16F), // Kana supplement and extended
+            (0x20000, 0x323AF), // Han extensions B to H
+        ];
+        let is = |code: u32| char::from_u32(code).is_some_and(is_cjk);
+        for (first, last) in blocks {
+            assert!(is(first), "{first:#x} starts a block");
+            assert!(is(last), "{last:#x} ends a block");
+            assert!(
+                is((first + last) / 2),
+                "the middle of {first:#x}..={last:#x}"
+            );
+            // Just outside: not CJK, unless another block starts or ends exactly there.
+            let touches = |code: u32| blocks.iter().any(|(a, b)| (*a..=*b).contains(&code));
+            assert_eq!(is(first - 1), touches(first - 1), "{:#x}", first - 1);
+            assert_eq!(is(last + 1), touches(last + 1), "{:#x}", last + 1);
+        }
+        // The single Han marks are letters of their own, and the neighbours of each are not.
+        for single in [0x3005_u32, 0x3007] {
+            assert!(is(single), "{single:#x}");
+        }
+        for outside in [0x3006_u32, 0x3008, 0x3004, 0x3000] {
+            assert!(!is(outside), "{outside:#x}");
+        }
+        // Ordinary letters, digits and punctuation never count, nor does a surrogate gap.
+        for plain in [
+            'a', 'Z', 'é', '7', ' ', '.', 'ß', '\u{0416}', '\u{05D0}', '\u{0627}',
+        ] {
+            assert!(!is_cjk(plain), "{plain:?}");
+        }
+        assert!(char::from_u32(0xD800).is_none());
+    }
 }

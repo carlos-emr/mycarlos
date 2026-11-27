@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke,
+  Channel: class {
+    onmessage: (value: unknown) => void = () => undefined;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 import { createVaultBridge } from "./vault";

@@ -1,5 +1,17 @@
+import {
+  AI_LABEL_STORAGE_KEY,
+  rememberShortAiLabel,
+  showFullAiLabelAgain,
+} from "../aiLabelPreference";
 import { humanText, visibleText } from "../test/humanText";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page as browser } from "vitest/browser";
@@ -239,6 +251,89 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("shortens the warning to an AI draft tag after Don't show this again, never removes the tag, and brings the sentence back from the info button", async () => {
+    window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    try {
+      const model = fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: your potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+      });
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const sentence =
+        "Written by AI and may be wrong. Check with your doctor.";
+      expect(await within(panel).findByText(sentence)).toBeVisible();
+      await user.click(
+        within(panel).getByRole("button", { name: "Don't show this again" }),
+      );
+      // The full sentence is hidden; the short tag stays, and says what it means on demand.
+      expect(within(panel).getByText("AI draft")).toBeVisible();
+      expect(within(panel).getByText(sentence)).not.toBeVisible();
+      const info = within(panel).getByRole("button", {
+        name: "What “AI draft” means",
+      });
+      expect(info).toHaveAttribute("aria-expanded", "false");
+      await user.click(info);
+      expect(info).toHaveAttribute("aria-expanded", "true");
+      expect(within(panel).getByText(sentence)).toBeVisible();
+      // The focus went to the button that took Hide's place, not to the page.
+      expect(info).toHaveFocus();
+      // The choice is kept: the same tool and model show the tag again, with no Hide button.
+      expect(window.localStorage.getItem(AI_LABEL_STORAGE_KEY)).toContain(
+        "summary:",
+      );
+      expect(
+        within(panel).queryByRole("button", { name: "Don't show this again" }),
+      ).toBeNull();
+    } finally {
+      window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    }
+  });
+
+  it("shows the full sentence again for a model the choice was not made for, and describes Hide by the warning", async () => {
+    window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    // A choice for some other model.
+    rememberShortAiLabel("summary", "f".repeat(64));
+    try {
+      const model = fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: your potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+      });
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const sentence =
+        "Written by AI and may be wrong. Check with your doctor.";
+      expect(await within(panel).findByText(sentence)).toBeVisible();
+      expect(within(panel).queryByText("AI draft")).toBeNull();
+      // Hide is described by the warning it hides.
+      const hide = within(panel).getByRole("button", {
+        name: "Don't show this again",
+      });
+      expect(hide).toHaveAccessibleDescription(sentence);
+    } finally {
+      showFullAiLabelAgain();
+      window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    }
   });
 
   it("labels every answer with the words of the AI helper notice, in all seven languages", () => {
@@ -1111,11 +1206,16 @@ describe("the reader's AI helper", () => {
 
   // Refused as the native side refuses (lib.rs ai_error): a code and the key
   // of its words, passed on by the real bridge.
-  const refusingModel = (code: string, messageKey?: string) => {
+  const refusingModel = (
+    code: string,
+    messageKey?: string,
+    extra: Record<string, unknown> = {},
+  ) => {
     const refusal = {
       code,
       message: "FAKE native words",
       ...(messageKey === undefined ? {} : { messageKey }),
+      ...extra,
     };
     return nativeLocalModel({
       aiModelStatus: async () => ({ state: "installed", model: FAKE_MODEL }),
@@ -1200,6 +1300,182 @@ describe("the reader's AI helper", () => {
       expect(alert.textContent).not.toContain("FAKE native words");
     },
   );
+
+  // After the patient has run the speed check (#305), a summary says how long it may take on this
+  // computer, when that is long enough to matter; before it, or with numbers that are not rates,
+  // it says nothing about time.
+  it.each([
+    [{ promptMilliTps: 10_000, answerMilliTps: 2_500 }, true],
+    [{ promptMilliTps: 5_000_000, answerMilliTps: 5_000_000 }, false],
+    [null, false],
+    [{ promptMilliTps: "fast", answerMilliTps: 1 }, false],
+  ])(
+    "says how long a summary may take only when it was measured and is long (%j)",
+    async (speed, shown) => {
+      renderReader(
+        nativeLocalModel({
+          aiModelStatus: async () => ({
+            state: "installed",
+            model: FAKE_MODEL,
+            capacity: { contextTokens: 8192, documentTokens: 6510 },
+          }),
+          aiSummarize: () => new Promise(() => undefined),
+          aiExplain: () => new Promise(() => undefined),
+          aiCancel: async () => undefined,
+          aiModelSpeed: async () => speed,
+        }),
+      );
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      // Fluent wraps a number in isolation marks (U+2068, U+2069).
+      const note =
+        /On this computer, this may take up to about \u2068?\d+\u2069? min\./;
+      if (shown) expect(await screen.findByText(note)).toBeVisible();
+      else {
+        await screen.findByRole("progressbar");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(screen.queryByText(note)).toBeNull();
+      }
+    },
+  );
+
+  // The speed is asked before the model is: a panel closed meanwhile starts nothing (#305).
+  it("starts no summary when the panel is closed while the speed is being asked", async () => {
+    let release: (value: unknown) => void = () => {};
+    const aiSummarize = vi.fn(() => new Promise<never>(() => undefined));
+    const { unmount } = renderReader(
+      nativeLocalModel({
+        aiModelStatus: async () => ({
+          state: "installed",
+          model: FAKE_MODEL,
+          capacity: { contextTokens: 8192, documentTokens: 6510 },
+        }),
+        aiSummarize,
+        aiExplain: () => new Promise(() => undefined),
+        aiCancel: async () => undefined,
+        aiModelSpeed: () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByRole("progressbar");
+    unmount();
+    release({ promptMilliTps: 10_000, answerMilliTps: 2_500 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(aiSummarize).not.toHaveBeenCalled();
+  });
+
+  it("says a document this long may not finish when the estimate is past the answer limit", async () => {
+    renderReader(
+      nativeLocalModel({
+        aiModelStatus: async () => ({
+          state: "installed",
+          model: FAKE_MODEL,
+          capacity: { contextTokens: 8192, documentTokens: 6510 },
+        }),
+        aiSummarize: () => new Promise(() => undefined),
+        aiExplain: () => new Promise(() => undefined),
+        aiCancel: async () => undefined,
+        aiModelSpeed: async () => ({
+          promptMilliTps: 500,
+          answerMilliTps: 200,
+        }),
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(/a document this long may not finish/),
+    ).toBeVisible();
+  });
+
+  // The refusal for memory says how much is needed and how much is free (#305): the need rounded
+  // up and the free amount rounded down, so it never claims to be closer to enough than it is.
+  it("says how much memory is needed and how much is free", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_641_000_000, availableBytes: 1_949_999_999 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "There isn't enough free memory for the AI helper right now. It needs about 3.7 GB free and 1.9 GB is free. Close some other programs, then try again.",
+    );
+  });
+
+  it("says so when this computer could not say how much is free", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_600_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "There isn't enough free memory for the AI helper right now. It needs about 3.6 GB free, and this computer could not say how much is free. Close some other programs, then try again.",
+    );
+  });
+
+  it("says the numbers in the language chosen after the refusal", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 2_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByRole("alert");
+    act(() => setLocaleOverride("fr"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+      "Il lui faut environ 3,6 Go de mémoire libre; il en reste 2,0 Go.",
+    );
+  });
+
+  it("keeps another refusal's own words even when it carries a stray memory field", async () => {
+    renderReader(
+      refusingModel("aiBusy", "ai.error.busy", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 1_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(OWN_WORDS[2][2]);
+    expect(alert.textContent).not.toContain("GB");
+  });
+
+  it("ignores numbers that are not numbers", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: "lots", availableBytes: -1 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      OWN_WORDS[1][2],
+    );
+  });
 
   it("says a refusal's own words in the language chosen after it", async () => {
     renderReader(refusingModel("aiMemory", "ai.error.memory"));
@@ -1634,6 +1910,20 @@ describe("sentenceAround", () => {
     expect(sentenceAround(text, "malignancy")).toBe("");
     expect(sentenceAround(text, "")).toBe("");
   });
+
+  it("keeps the term in a long sentence's first 400 characters, or the 400 that end it", () => {
+    const early = `Start ${"a".repeat(100)} mass ${"b ".repeat(400)}end.`;
+    const near = sentenceAround(early, "mass");
+    expect(near.length).toBeLessThanOrEqual(400);
+    expect(near.startsWith("Start ")).toBe(true);
+    expect(near).toContain("mass");
+    // A term past the cut is not lost: the sentence's 400 characters that reach it.
+    const late = `${"a ".repeat(300)}mass ${"b ".repeat(300)}end.`;
+    const far = sentenceAround(late, "mass");
+    expect(far.length).toBeLessThanOrEqual(400);
+    expect(far).toContain("mass");
+    expect(late).toContain(far);
+  });
 });
 
 describe("Settings > AI helper", () => {
@@ -1818,11 +2108,101 @@ describe("Show me in the document also marks the page picture (#292)", () => {
     expect(look.pointerEvents).toBe("none");
     const mark = document.querySelector(".native-reader-text mark");
     await waitFor(() => expect(mark).toHaveFocus());
-    expect(getComputedStyle(mark!).outlineStyle).toBe("solid");
+    // The picture shows the quote, so the text's mark is not drawn a second time (no fill, no
+    // outline) but stays in the reading order, focused and not hidden from assistive technology.
+    const quiet = getComputedStyle(mark!);
+    expect(quiet.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    // Only a keyboard user's focus ring may show (`:focus-visible`), never the highlight outline.
+    if (!mark!.matches(":focus-visible"))
+      expect(quiet.outlineStyle).toBe("none");
+    expect(quiet.visibility).toBe("visible");
+    expect(quiet.display).not.toBe("none");
+    expect(mark!.closest("[aria-hidden='true'], [hidden], [inert]")).toBeNull();
+    expect(document.querySelector(".native-reader-text")).toHaveClass(
+      "native-reader-text-mark-quiet",
+    );
     await waitFor(() =>
       expect(status()).toContain(
         "Page 2: the quoted words are marked on the page picture and in Text on this page.",
       ),
+    );
+  });
+
+  it("draws the text's mark again when the page picture fails to load, so the quote is never unmarked", async () => {
+    const pageBoxes = vi.fn(async () => ({
+      rects: [[0.1, 0.2, 0.5, 0.25]] as [number, number, number, number][],
+    }));
+    await show({ pageBoxes });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    const text = document.querySelector(".native-reader-text")!;
+    await waitFor(() =>
+      expect(text).toHaveClass("native-reader-text-mark-quiet"),
+    );
+    // The image breaks (a damaged data URL, or a webview that dropped it).
+    fireEvent.error(
+      screen.getByRole("img", { name: humanText(/^Page 2 of 2/) }),
+    );
+    await waitFor(() =>
+      expect(text).not.toHaveClass("native-reader-text-mark-quiet"),
+    );
+    const mark = document.querySelector(".native-reader-text mark")!;
+    expect(getComputedStyle(mark).outlineStyle).toBe("solid");
+  });
+
+  it("keeps the quiet state while another quote's boxes are on their way, and draws the mark when none can be placed", async () => {
+    type Answer = {
+      rects: [number, number, number, number][];
+      absent?: string;
+    };
+    let answer: (value: Answer) => void = () => undefined;
+    let call = 0;
+    const pageBoxes = vi.fn(
+      () =>
+        new Promise<Answer>((resolve) => {
+          call += 1;
+          if (call === 1) resolve({ rects: [[0.1, 0.2, 0.5, 0.25]] });
+          else answer = resolve;
+        }),
+    );
+    renderReader(
+      fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: repeat the test in two weeks.",
+            quote: "Repeat in 2 weeks.",
+          },
+          { text: "FAKE: this is page two.", quote: "FAKE text on page 2." },
+        ],
+      }),
+      { pageBoxes },
+    );
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const shows = await screen.findAllByRole("button", {
+      name: "Show me in the document",
+    });
+    await user.click(shows[0]);
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    const text = document.querySelector(".native-reader-text")!;
+    await waitFor(() =>
+      expect(text).toHaveClass("native-reader-text-mark-quiet"),
+    );
+    // Another quote: its boxes are still on their way, and the text mark does not flash.
+    await user.click(
+      (
+        await screen.findAllByRole("button", {
+          name: "Show me in the document",
+        })
+      )[1],
+    );
+    await waitFor(() => expect(pageBoxes).toHaveBeenCalledTimes(2));
+    expect(text).toHaveClass("native-reader-text-mark-quiet");
+    // Nothing could be placed: the text's mark is the highlight again.
+    answer({ rects: [], absent: "unaligned" });
+    await waitFor(() =>
+      expect(text).not.toHaveClass("native-reader-text-mark-quiet"),
     );
   });
 
@@ -1869,6 +2249,13 @@ describe("Show me in the document also marks the page picture (#292)", () => {
     const mark = document.querySelector(".native-reader-text mark");
     expect(mark).toHaveTextContent(/^Repeat in 2 weeks$/);
     await waitFor(() => expect(mark).toHaveFocus());
+    // Nothing is drawn on the picture, so the text's mark is the highlight and is drawn.
+    const drawn = getComputedStyle(mark!);
+    expect(drawn.outlineStyle).toBe("solid");
+    expect(drawn.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(document.querySelector(".native-reader-text")).not.toHaveClass(
+      "native-reader-text-mark-quiet",
+    );
   });
 
   it("draws nothing when an answer is not a box on the picture, or the request fails", async () => {

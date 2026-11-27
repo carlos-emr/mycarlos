@@ -3,13 +3,14 @@ import type { Page } from "@playwright/test";
 // The Windows document-arrival notices (Settings > Preferences > Notices
 // after document checks), faked over the vault fake (support/vaultFake.ts,
 // which says they are unsupported): what vault_notification_status says, and
-// what the two switches do. Native owns the consent and the OS permission;
+// what the two switches do (each independent of the other). Native owns the consent and the OS permission;
 // this fake only answers as the commands do. FAKE data only.
 
 export interface FakeNoticeStatus {
   supported: boolean;
   available: boolean;
   enabled: boolean;
+  noticesSupported: boolean;
   permission: "unavailable" | "unknown" | "allowed" | "blocked";
   automaticChecksSupported: boolean;
   automaticChecksEnabled: boolean;
@@ -20,6 +21,7 @@ export const NOTICE_COMMANDS = {
   status: "vault_notification_status",
   setNotices: "vault_set_notifications",
   setChecks: "vault_set_automatic_document_checks",
+  testNotice: "vault_send_test_notice",
 } as const;
 
 /** Installs the fake over the vault fake already on `page`. */
@@ -38,12 +40,15 @@ export async function fakeNoticesWith(
       let status = structuredClone(start);
       const calls: { command: string; args: unknown }[] = [];
       let failNext = false;
+      // What the next "Show a test notice" comes to (native `TestNotice`).
+      let testResult = "shown";
       internals.invoke = async (command: string, ...rest: unknown[]) => {
         const ours = Object.values(commands) as string[];
         if (!ours.includes(command)) return inner(command, ...rest);
         const args = (rest[0] ?? {}) as { enabled?: boolean; locale?: string };
         calls.push({ command, args: structuredClone(args) });
         if (command === commands.status) return structuredClone(status);
+        if (command === commands.testNotice) return testResult;
         if (failNext) {
           failNext = false;
           // As native does on a failed save: the switches are off.
@@ -59,13 +64,8 @@ export async function fakeNoticesWith(
           };
         }
         if (command === commands.setNotices) {
-          status = {
-            ...status,
-            enabled: args.enabled === true,
-            // Turning notices off turns the automatic checks off too.
-            automaticChecksEnabled:
-              args.enabled === true ? status.automaticChecksEnabled : false,
-          };
+          // The notices are an add-on: they leave the automatic checks as they were.
+          status = { ...status, enabled: args.enabled === true };
         } else {
           status = { ...status, automaticChecksEnabled: args.enabled === true };
         }
@@ -76,6 +76,9 @@ export async function fakeNoticesWith(
         failNext: () => {
           failNext = true;
         },
+        testResult: (value: string) => {
+          testResult = value;
+        },
       });
     },
     {
@@ -83,6 +86,7 @@ export async function fakeNoticesWith(
         supported: true,
         available: true,
         enabled: false,
+        noticesSupported: true,
         permission: "allowed",
         automaticChecksSupported: true,
         automaticChecksEnabled: false,
@@ -111,5 +115,18 @@ export async function failNextNoticeSave(page: Page) {
     (
       Reflect.get(window, "__fakeNotices") as { failNext: () => void }
     ).failNext(),
+  );
+}
+
+/** What the next "Show a test notice" comes to: shown, blocked, tooSoon, failed, notAllowed. */
+export async function setTestNoticeResult(page: Page, result: string) {
+  await page.evaluate(
+    (value) =>
+      (
+        Reflect.get(window, "__fakeNotices") as {
+          testResult: (value: string) => void;
+        }
+      ).testResult(value),
+    result,
   );
 }

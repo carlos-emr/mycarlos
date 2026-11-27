@@ -106,9 +106,10 @@ where
 
 #[tauri::command]
 pub(crate) async fn cloud_ai_enabled(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     Ok(store
         .answer_origin()
         .is_some_and(|origin| session.enabled(origin)))
@@ -118,10 +119,11 @@ pub(crate) async fn cloud_ai_enabled(
 /// understand": the page's step) or off.
 #[tauri::command]
 pub(crate) async fn cloud_ai_set_enabled(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
     on: bool,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The consent comes first and a key after it (the screen adds one only while it is on); a send
     // still needs a key, and removing the last key turns this off again.
     let origin = origin_of(&store)?;
@@ -131,9 +133,10 @@ pub(crate) async fn cloud_ai_set_enabled(
 
 #[tauri::command]
 pub(crate) async fn cloud_key_list(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
 ) -> CommandResult<Vec<CloudKeyInfo>> {
-    blocking(store.inner(), |store| {
+    let store = store.pin();
+    blocking(store.arc(), |store| {
         store.cloud_keys().map_err(PublicError::from)
     })
     .await
@@ -149,10 +152,11 @@ pub(crate) struct CloudKeyAddRequest {
 
 #[tauri::command]
 pub(crate) async fn cloud_key_add(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
     request: CloudKeyAddRequest,
 ) -> CommandResult<CloudKeyInfo> {
+    let store = store.pin();
     let CloudKeyAddRequest {
         provider,
         label,
@@ -169,7 +173,7 @@ pub(crate) async fn cloud_key_add(
         }
     };
     let _ = origin;
-    blocking(store.inner(), move |store| {
+    blocking(store.arc(), move |store| {
         let result = store.cloud_key_add(&provider, &label, &key, now_ms());
         key.zeroize();
         result.map_err(key_error)
@@ -179,12 +183,13 @@ pub(crate) async fn cloud_key_add(
 
 #[tauri::command]
 pub(crate) async fn cloud_key_remove(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
     id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let origin = origin_of(&store)?;
-    let left = blocking(store.inner(), move |store| {
+    let left = blocking(store.arc(), move |store| {
         store.cloud_key_remove(id, now_ms())?;
         Ok(store.cloud_keys()?.len())
     })
@@ -199,17 +204,18 @@ pub(crate) async fn cloud_key_remove(
 /// The key test: one `GET /v1/models` with this key, only when the patient asks. No document.
 #[tauri::command]
 pub(crate) async fn cloud_key_test(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
     id: Uuid,
     test_id: Option<Uuid>,
 ) -> CommandResult<KeyTest> {
+    let store = store.pin();
     let origin = origin_of(&store)?;
     if !session.enabled(origin) {
         return Err(refuse("off"));
     }
     let session = Arc::clone(session.inner());
-    blocking(store.inner(), move |store| {
+    blocking(store.arc(), move |store| {
         // Under the id the page chose (if any), so that `cloud_send_cancel` can stop this one.
         let running = test_id.unwrap_or_else(Uuid::new_v4);
         let cancel = session
@@ -269,16 +275,17 @@ pub(crate) struct PrepareOutcome {
 
 #[tauri::command]
 pub(crate) async fn cloud_send_prepare(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
     request: PrepareSendRequest,
 ) -> CommandResult<PrepareOutcome> {
+    let store = store.pin();
     let origin = origin_of(&store)?;
     if !session.enabled(origin) {
         return Err(refuse("off"));
     }
     let session = Arc::clone(session.inner());
-    blocking(store.inner(), move |store| {
+    blocking(store.arc(), move |store| {
         let removed = request
             .removed
             .iter()
@@ -428,18 +435,19 @@ fn send_error(error: SendError) -> PublicError {
 #[tauri::command]
 pub(crate) async fn cloud_send(
     app: AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     session: State<'_, Arc<CloudSession>>,
     exchange_id: Uuid,
     locale: Option<UiLocale>,
 ) -> CommandResult<CloudSendAnswer> {
+    let store = store.pin();
     let origin = origin_of(&store)?;
     if !session.enabled(origin) {
         return Err(refuse("off"));
     }
     let session = Arc::clone(session.inner());
     let locale = locale.unwrap_or_default();
-    blocking(store.inner(), move |store| {
+    blocking(store.arc(), move |store| {
         let (prepared, cancel) = session
             .exchanges
             .take(exchange_id, origin, Instant::now())

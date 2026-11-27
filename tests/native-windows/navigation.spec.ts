@@ -331,6 +331,19 @@ test("installed app keeps navigation and popups inside its native boundary", asy
                 () => true,
                 () => false,
               ),
+            {
+              rootGone: async () => {
+                try {
+                  process.kill(app!.pid!, 0);
+                  return false;
+                } catch (error) {
+                  // ESRCH: no such process. EPERM would mean it is still there.
+                  return (error as NodeJS.ErrnoException).code === "ESRCH";
+                }
+              },
+              describeApp: () =>
+                `exitCode=${app!.exitCode}, signalCode=${app!.signalCode}`,
+            },
           );
           await bounded(appExited!, "App shutdown");
         }

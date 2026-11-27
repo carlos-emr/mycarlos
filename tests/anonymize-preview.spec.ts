@@ -84,6 +84,11 @@ async function fakeVault(page: Page) {
             clinicNames: [],
           };
         if (command === "vault_export_text_pick") return "FAKE-pick";
+        if (command === "vault_export_text_copy")
+          return {
+            approved: `FAKE export header\n\n${String((args as { request: { text: string } }).request.text)}\n`,
+            hits: [],
+          };
         if (command === "vault_export_text_picked")
           return { saved: true, hits: [] };
         return undefined;

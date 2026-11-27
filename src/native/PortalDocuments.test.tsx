@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
-import { humanText, humanValue } from "../test/humanText";
+import { humanText, humanValue, visibleText } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
 import type {
@@ -68,6 +68,7 @@ function fixture(
     requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
     restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
     submitApprovalCode: vi.fn().mockResolvedValue(undefined),
+    removePortalLink: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   const refresh = vi.fn().mockResolvedValue(snapshot);
   const failures: unknown[] = [];
@@ -142,7 +143,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ]),
     );
     expect(bridge.connectPortal).toHaveBeenCalledOnce();
@@ -209,7 +210,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Clinic documents, says what to do next.",
+        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Connected clinics, says what to do next.",
       ]),
     );
     await userEvent
@@ -237,7 +238,7 @@ describe("native clinic document controls", () => {
     ],
     [
       "approval_expired",
-      "This approval request expired. To ask again for this device, go to Security, under Clinic documents.",
+      "This approval request expired. To ask again for this device, go to Security, under Connected clinics.",
       "portal.approvalExpired",
     ],
     [
@@ -280,7 +281,7 @@ describe("native clinic document controls", () => {
       const form = await fillConnectForm();
       await act(async () => fireEvent.submit(form));
       const guidance =
-        "Device linked. Its approval status in Security, under Clinic documents, says what to do next.";
+        "Device linked. Its approval status in Security, under Connected clinics, says what to do next.";
       await waitFor(() =>
         expect(noticeCalls(props.setNotice)).toContainEqual([
           `${reason} ${guidance}`,
@@ -392,6 +393,49 @@ describe("native clinic document controls", () => {
     expect(screen.queryByText(incomplete)).not.toBeInTheDocument();
   });
 
+  it("tells two cards for the same address apart by device name and the day linked (#160)", async () => {
+    const day = (iso: string) => new Date(iso).getTime();
+    const second: PortalLinkSummary = {
+      ...link,
+      id: "second-link",
+      deviceName: "FAKE reception desktop",
+      deviceKeyId: "FAKE_second",
+      linkedAtMs: day("2026-11-12T12:00:00Z"),
+    };
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [
+          { ...link, linkedAtMs: day("2026-10-03T12:00:00Z") },
+          second,
+        ],
+      },
+    });
+    const cards = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.closest(".portal-link") as HTMLElement);
+    expect(cards).toHaveLength(2);
+    const lines = cards.map(
+      (card) => card.querySelector(".portal-device-line")!.textContent,
+    );
+    // Same clinic, same address; the lines differ, and each names its device and day.
+    expect(lines[0]).not.toBe(lines[1]);
+    expect(lines[0]).toContain("myCarlos on Windows");
+    expect(lines[0]).toMatch(/Oct\w* 3, 2026/);
+    expect(lines[1]).toContain("FAKE reception desktop");
+    expect(lines[1]).toMatch(/Nov\w* 12, 2026/);
+  });
+
+  it("shows only the device name when the link's day is not known", () => {
+    fixture({ snapshot: { ...snapshot, portalLinks: [link] } });
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).toContain("myCarlos on Windows");
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).not.toMatch(/linked/);
+  });
+
   it("lists a device a check found removed with the earlier attempts, for the session", async () => {
     const approved: PortalLinkSummary = {
       ...link,
@@ -449,7 +493,7 @@ describe("native clinic document controls", () => {
     expect(props.setNotice).toHaveBeenCalledOnce();
     expect(noticeCalls(props.setNotice)).toEqual([
       [
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ],
     ]);
   });
@@ -584,10 +628,10 @@ describe("native clinic document controls", () => {
     const input = screen.getByLabelText("Device code") as HTMLInputElement;
     expect(input.selectionEnd! - input.selectionStart!).toBe(deviceCode.length);
     if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
-      const section = screen.getByRole("region", { name: "Clinic documents" });
+      const section = screen.getByRole("region", { name: "Connected clinics" });
       await page.viewport(1100, Math.ceil(section.scrollHeight) + 50);
       await page
-        .getByRole("region", { name: "Clinic documents" })
+        .getByRole("region", { name: "Connected clinics" })
         .screenshot({ path: "portal-pending-after.png" });
     }
     await page.viewport(360, 780);
@@ -601,11 +645,11 @@ describe("native clinic document controls", () => {
       expect(field.scrollHeight).toBeLessThanOrEqual(field.clientHeight + 2);
       if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
         const section = screen.getByRole("region", {
-          name: "Clinic documents",
+          name: "Connected clinics",
         });
         await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
         await page
-          .getByRole("region", { name: "Clinic documents" })
+          .getByRole("region", { name: "Connected clinics" })
           .screenshot({ path: "portal-pending-narrow-200.png" });
       }
     } finally {
@@ -1735,6 +1779,36 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledOnce();
   });
 
+  it("moves an open Link another clinic dialog to the panel when a check finds the last working device removed (#293)", async () => {
+    const offered: PortalLinkSummary = { ...pending, approvalCanRestart: true };
+    const gone = checked(
+      () =>
+        reply(offered, {
+          issue: { code: "portal_device_removed", message: "Native text." },
+        }),
+      offered,
+    );
+    const address = () => screen.queryByLabelText("Portal HTTPS address");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.change(address()!, {
+      target: { value: "https://portal.example.test/patient" },
+    });
+    // The poll's own answer (not the check button's) says the device was removed.
+    await pass(10_000);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Link another clinic" }),
+    ).toBeNull();
+    expect(address()).toBeVisible();
+    expect(address()).toHaveValue("https://portal.example.test/patient");
+    expect(address()).toHaveFocus();
+    gone.unmount();
+    vi.useRealTimers();
+  });
+
   it("says a removed device plainly and stops, and words other refusals neutrally", async () => {
     const removed =
       "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.";
@@ -2166,11 +2240,11 @@ describe("the code a clinic emails (#141)", () => {
       expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
       if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
         const section = screen.getByRole("region", {
-          name: "Clinic documents",
+          name: "Connected clinics",
         });
         await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
         await page
-          .getByRole("region", { name: "Clinic documents" })
+          .getByRole("region", { name: "Connected clinics" })
           .screenshot({ path: "portal-code-narrow-200.png" });
       }
     } finally {
@@ -2343,6 +2417,86 @@ describe("clinic documents that failed their checks (#143)", () => {
   });
 });
 
+// Gap tests (24 Nov), placed here, not at the end, so that the stacked #448 can add its own cases
+// below without a clash.
+describe("the identifiers and the emailed code, where they had no test", () => {
+  const asked: PortalLinkSummary = {
+    ...link,
+    approvalStatus: "challenge_ready",
+    approvalByCode: true,
+  };
+  const withCode = { ...snapshot, portalLinks: [asked] };
+  const codeBox = () =>
+    screen.getByRole("textbox", { name: "Code from your clinic's email" });
+
+  it("selects the whole device code and fingerprint when they are reached by keyboard or by a click", async () => {
+    fixture();
+    const user = userEvent.setup();
+    const code = screen.getByLabelText("Device code") as HTMLInputElement;
+    const print = screen.getByLabelText(
+      "Full device fingerprint",
+    ) as HTMLTextAreaElement;
+    // By keyboard: Tab onto the fields selects everything, to copy it whole.
+    fireEvent.focus(code);
+    expect(code.selectionEnd! - code.selectionStart!).toBe(code.value.length);
+    fireEvent.focus(print);
+    expect(print.selectionEnd! - print.selectionStart!).toBe(
+      print.value.length,
+    );
+    // By a click that lands inside the text: still the whole of it.
+    code.setSelectionRange(2, 2);
+    await user.click(code);
+    expect(code.selectionEnd! - code.selectionStart!).toBe(code.value.length);
+    print.setSelectionRange(3, 3);
+    await user.click(print);
+    expect(print.selectionEnd! - print.selectionStart!).toBe(
+      print.value.length,
+    );
+  });
+
+  it("keeps the portal's wait when a code is refused as sent too often", async () => {
+    const waits = new PortalWaits();
+    const { bridge, failures } = fixture({ snapshot: withCode, waits });
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValue({
+      code: "portal_rate_limited",
+      retryAfterMs: 120_000,
+    });
+    const user = userEvent.setup();
+    await user.type(codeBox(), "482193644");
+    const before = performance.now();
+    await user.click(screen.getByRole("button", { name: "Confirm code" }));
+    await waitFor(() =>
+      expect(bridge.submitApprovalCode).toHaveBeenCalledOnce(),
+    );
+    await waitFor(() =>
+      expect(waits.notBefore(asked.portalBase)).toBeGreaterThanOrEqual(
+        before + 120_000,
+      ),
+    );
+    // The code stays to be sent again once the wait is over.
+    expect(codeBox()).toHaveValue("482193644");
+    // The refusal also goes on to the app's own handling of a clinic failure.
+    expect(failures).toEqual([
+      { code: "portal_rate_limited", retryAfterMs: 120_000 },
+    ]);
+  });
+
+  it("shows the compact check as working, and off, while clinic work runs, and as ready again after", () => {
+    const { props, rerender } = fixture({ compact: true, working: true });
+    const button = screen.getByRole("button", {
+      name: "Clinic operation in progress…",
+    });
+    expect(button).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Check for new documents" }),
+    ).toBeNull();
+    rerender(<PortalDocuments {...props} working={false} />);
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+  });
+});
+
 describe("Link another clinic (#145)", () => {
   const unlinked = unlinkedSnapshot;
   const addressBox = () => screen.queryByLabelText("Portal HTTPS address");
@@ -2365,6 +2519,72 @@ describe("Link another clinic (#145)", () => {
     );
     expect(addressBox()).toBeVisible();
     expect(linkAnother()).toBeNull();
+  });
+
+  it("shows the form directly when the only clinic's device was removed from its portal (#293)", () => {
+    const waits = new PortalWaits();
+    const { props, rerender } = fixture({ waits });
+    // A working link: the form waits behind the button.
+    expect(addressBox()).toBeNull();
+    expect(linkAnother()).not.toBeNull();
+    // The portal says this device was removed: that link no longer counts as linked.
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    expect(addressBox()).toBeVisible();
+    expect(linkAnother()).toBeNull();
+    // A second, working clinic brings the button back, and the removed one stays an earlier attempt.
+    rerender(
+      <PortalDocuments
+        {...props}
+        waits={waits}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [
+            link,
+            { ...link, id: "link-2", clinicName: "FAKE Second Clinic" },
+          ],
+        }}
+      />,
+    );
+    expect(addressBox()).toBeNull();
+    expect(linkAnother()).not.toBeNull();
+  });
+
+  it("keeps what was typed and puts the focus on the panel's form when the last working link is removed under an open dialog (#293)", async () => {
+    const waits = new PortalWaits();
+    const { props, rerender } = fixture({ waits });
+    const user = userEvent.setup();
+    await user.click(linkAnother()!);
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    // The portal says the only working device was removed, while the dialog is open.
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    // Not left in a dialog with no button to return to: the dialog is gone, the same form stands
+    // on the panel with what was typed, and the focus is on its first field (not on the page).
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(linkAnother()).toBeNull();
+    expect(addressBox()).toBeVisible();
+    expect(addressBox()).toHaveValue("https://portal.example.test/patient");
+    expect(addressBox()).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("keeps a dialog that is still behind a working link when another clinic's device is removed", async () => {
+    const waits = new PortalWaits();
+    const second = { ...link, id: "link-2", clinicName: "FAKE Second Clinic" };
+    const { props, rerender } = fixture({
+      waits,
+      snapshot: { ...snapshot, portalLinks: [link, second] },
+    });
+    await userEvent.setup().click(linkAnother()!);
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    // One working clinic is left: the dialog stays open and the form stays behind the button.
+    expect(screen.getByRole("dialog")).toBeVisible();
   });
 
   it("puts the linked clinics first, and the form behind Link another clinic", () => {
@@ -2493,7 +2713,7 @@ describe("what a screen reader is told in the clinic panel (clinic audit)", () =
   const mismatch =
     "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.";
   const panelHeading = () =>
-    screen.getByRole("heading", { name: "Clinic documents" });
+    screen.getByRole("heading", { name: "Connected clinics" });
 
   it("takes focus to a code's field when it needs correcting, so the reason is heard (S1)", async () => {
     const { bridge, props, rerender } = fixture({
@@ -2765,4 +2985,128 @@ it("keeps manual check available for an explicit retry after bounded preemption 
   } finally {
     setLocaleOverride(null);
   }
+});
+
+describe("Remove this link (#160)", () => {
+  it("asks first, names the clinic and the device, removes only on confirm and says so", async () => {
+    const user = userEvent.setup();
+    const { bridge, props } = fixture();
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    const dialog = screen.getByRole("alertdialog");
+    const text = visibleText(dialog.textContent ?? "");
+    expect(text).toContain("FAKE Clinic");
+    expect(text).toContain("myCarlos on Windows");
+    expect(text).toContain("may still list this device");
+    expect(bridge.removePortalLink).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove link" }),
+    );
+    await waitFor(() =>
+      expect(bridge.removePortalLink).toHaveBeenCalledWith("fake-link"),
+    );
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Link removed."),
+    );
+  });
+
+  it("Cancel removes nothing and returns focus to the Remove button", async () => {
+    const user = userEvent.setup();
+    const { bridge } = fixture();
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(bridge.removePortalLink).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(document.activeElement?.id).toBe("portal-remove-fake-link"),
+    );
+  });
+
+  it("reads the card again when the vault refuses, and does not move focus", async () => {
+    const user = userEvent.setup();
+    const { bridge, props } = fixture();
+    (bridge.removePortalLink as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: "invalid",
+    });
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    await user.click(screen.getByRole("button", { name: "Remove link" }));
+    // The card is read again to say why; nothing else moves.
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    expect(document.activeElement?.id).not.toBe("portal-link-title-fake-link");
+  });
+
+  it("offers no removal while notices are on for the clinic, and says so", () => {
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [{ ...link, noticesEnrolled: true }],
+      },
+    });
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+    expect(screen.getByText(/Document notices are on/)).toBeVisible();
+  });
+
+  it("offers no removal for a clinic whose documents are saved, and says why", () => {
+    const { bridge } = fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [{ ...link, hasDocuments: true }],
+      },
+    });
+    bridge.removePortalLink = vi.fn();
+    // The bridge was read at render; render again with the method present.
+    const { unmount } = render(
+      <PortalDocuments
+        bridge={bridge}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [{ ...link, hasDocuments: true }],
+        }}
+        busy={false}
+        readOnly={false}
+        refresh={vi.fn()}
+        run={async (operation) => operation()}
+        setNotice={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+    expect(
+      screen.getAllByText(/saved in your vault, so this link stays/).length,
+    ).toBeGreaterThan(0);
+    unmount();
+  });
+
+  it("offers nothing in a read-only vault", () => {
+    const { bridge } = fixture({ readOnly: true });
+    expect(bridge.removePortalLink).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+  });
+
+  it("puts focus on the next card's heading, else the previous one's", async () => {
+    const user = userEvent.setup();
+    const second = {
+      ...link,
+      id: "second-link",
+      clinicName: "FAKE Second Clinic",
+    };
+    const both: VaultSnapshot = { ...snapshot, portalLinks: [link, second] };
+    const { bridge } = fixture({ snapshot: both });
+    await user.click(
+      screen.getAllByRole("button", { name: "Remove this link" })[0],
+    );
+    await user.click(screen.getByRole("button", { name: "Remove link" }));
+    await waitFor(() =>
+      expect(bridge.removePortalLink).toHaveBeenCalledWith("fake-link"),
+    );
+    // The heading that follows the removed card is the one the focus rule names.
+    await waitFor(() =>
+      expect(document.activeElement?.id).toBe("portal-link-title-second-link"),
+    );
+  });
 });

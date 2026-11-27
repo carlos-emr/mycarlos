@@ -1,6 +1,6 @@
 import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
@@ -15,6 +15,101 @@ import type {
 } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
+
+/** What the vault reports after a piece of a recording (#359). */
+export interface RecordingProgress {
+  storedBytes: number;
+  fragments: number;
+  hasVideo: boolean | null;
+  hasAudio: boolean | null;
+  /** The sequence number the next piece must carry. */
+  nextSequence: number;
+  /** How much room there was when last looked at (about every 8 MiB). */
+  space: SpaceLevel;
+  freeBytes: number | null;
+}
+
+/** Plenty, low (under 512 MiB: warn), stop (under 256 MiB: end and save), or
+ * unknown (the volume could not be asked: nothing is refused on a guess). */
+export type SpaceLevel = "ok" | "low" | "stop" | "unknown";
+
+export interface RecordingSpace {
+  freeBytes: number | null;
+  level: SpaceLevel;
+  /** At least 1 GiB, or not known. */
+  canRecord: boolean;
+}
+
+/** One recording a crash or a lock left unfinished. */
+export interface PendingRecording {
+  id: string;
+  displayName: string;
+  startedAtMs: number;
+  /** It was paused when it ended. */
+  paused: boolean;
+  /** A lock parked it (not a crash). */
+  parked: boolean;
+  /** The patient ended it and it could not be finished for want of room: it is
+   * finished when there is room again. */
+  stopped: boolean;
+}
+
+export interface PendingRecordings {
+  recordings: PendingRecording[];
+  unreadable: number;
+}
+
+/** How a recording ended: the new record, or null when nothing complete had
+ * been recorded. */
+export interface VideoSaved {
+  recordId: string | null;
+}
+
+/** Why a picked video was not added (named for the page to put words to). */
+export type VideoRefusal =
+  | "notVideo"
+  | "hevc"
+  | "videoCodec"
+  | "audioCodec"
+  | "noVideo"
+  | "tooManyTracks"
+  | "external"
+  | "fragmented"
+  | "tooBig"
+  | "tooLarge"
+  | "damaged";
+
+/**
+ * What "+ New" picked: documents and pictures, one video (each kept natively under its `pickId`), or
+ * a choice no import takes (a video chosen with other files). A refusal is an answer, not an error.
+ */
+export type ImportPick =
+  | { kind: "documents" | "video"; pickId: string }
+  | { kind: "videoAlone" };
+
+/** How adding a picked video ended: a refusal is an answer, not an error. */
+export type VideoImportResult =
+  | { result: "imported"; recordId: string }
+  | { result: "duplicate" }
+  | { result: "refused"; reason: VideoRefusal }
+  | { result: "cancelled" };
+
+/** Where the import of a picked video is. `totalBytes` is known from the
+ * `storing` stage on (0 before). */
+export interface VideoImportProgress {
+  stage: "idle" | "checking" | "storing";
+  doneBytes: number;
+  totalBytes: number;
+}
+
+/** A video open for playback. */
+export interface VideoPlayback {
+  /** Ends this playback. */
+  token: string;
+  /** The address for a `<video>`. */
+  url: string;
+  totalBytes: number;
+}
 
 export interface PatientProfile {
   id: string;
@@ -43,6 +138,19 @@ export interface VaultFolder {
   createdAtMs: number;
 }
 
+/** The patient name and birth date a clinic wrote on a document (#340), as its signed delivery
+ * says them. */
+export interface ClinicPatient {
+  name: string;
+  birthDate: string;
+  /** The visible person the clinic link is tied to, if any (it files only under them). */
+  linkPerson?: string;
+  /** The link is tied to a hidden person: it files only under them, so under no one listed. */
+  linkedToHidden?: boolean;
+  /** Everyone (by opaque id) who matches these words today; never a hidden person. */
+  matchingPeople?: string[];
+}
+
 export interface VaultRecord {
   id: string;
   profileId: string;
@@ -60,6 +168,13 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** What the clinic wrote as the patient, on a clinic document waiting in Shared with me, so
+   * that the patient sees why it did not file itself (#340). Never a hidden person's. */
+  clinicPatient?: ClinicPatient;
+  /** When a handover file SAYS this document's delivery was checked, on the device it came
+   * from (#360). The file's claim, never fact: this vault has not checked it. Present only
+   * while no link of this vault to the same clinic holds the clinic's signing key. */
+  fileSaysCheckedAtMs?: number;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
   /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from
@@ -96,9 +211,33 @@ export interface SnapshotCapture {
   sequence: number;
 }
 
+/** A person who is hidden (#360): Security's Hidden people list shows them and nothing
+ * else does. */
+export interface HiddenProfile {
+  id: string;
+  displayName: string;
+  hiddenAtMs: number;
+  /** All the person's documents, those hidden one by one included. */
+  documents: number;
+}
+
+/** A document that arrived for a person while they were hidden and waits in Shared with
+ * me (#360). */
+export interface ArrivedWhileHidden {
+  recordId: string;
+  displayName: string;
+}
+
 export interface VaultSnapshot {
   capture: SnapshotCapture;
+  /** The people the library shows: a hidden person is not among them. */
   profiles: PatientProfile[];
+  /** The people who are hidden (#360); absent in a fake that has none. */
+  hiddenProfiles?: HiddenProfile[];
+  /** Documents of hidden people whose file is missing (#360): counted, never named. The vault
+   * is read-only until they are dealt with, so the confirmation to hide the damaged
+   * documents says so. */
+  hiddenPeopleDamaged?: number;
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
@@ -120,6 +259,9 @@ export interface PortalLinkSummary {
   id: string;
   portalBase: string;
   deviceName: string;
+  /** When the link was started, in milliseconds: the card shows the day, so that two cards for
+   * the same address differ (#160). Always sent by the app; optional only for older fixtures. */
+  linkedAtMs?: number;
   profileId: string | null;
   clinicName: string | null;
   fingerprints: string[];
@@ -150,6 +292,11 @@ export interface PortalLinkSummary {
     | "code_attempts"
     | null;
   approvalCanRestart?: boolean;
+  /** A document or reading aid from this clinic is saved in the vault: its custody
+   * proof needs this link's keys, so the link cannot be removed (#160). */
+  hasDocuments?: boolean;
+  /** Document notices are on for this clinic: the link cannot be removed until they are off (#160). */
+  noticesEnrolled?: boolean;
   approvalRequestLimitReached?: boolean;
   /** The clinic asked for the code it emailed (#141): the request that
    * approved this device, when one did, else the current one. */
@@ -209,6 +356,81 @@ export interface SavedBackup {
   bytes: number | null;
 }
 
+/** What a person's export holds, in counts; it names no document (#360). */
+export interface ProfileExportSummary {
+  documents: number;
+  /** Of the documents, hidden by the patient: they arrive hidden. */
+  hidden: number;
+  folders: number;
+  aiAnswers: number;
+  withClinicEvidence: number;
+  /** Hidden as damaged: their file cannot be read, so they are not in it. */
+  leftOutDamaged: number;
+  /** Clinic evidence that would not stand up alone: the document goes without it. */
+  evidenceLeftOut: number;
+  historyEntries: number;
+  plaintextBytes: number;
+}
+
+/** A prepared export: the key it will be made under is shown once. */
+export interface ProfileExportPrepared {
+  exportId: string;
+  /** The generated key, 7 groups of 4; null when the patient typed a passphrase. */
+  generatedKey: string | null;
+  summary: ProfileExportSummary;
+}
+
+/** A saved handover file: its name where the platform says it, its size, and what it holds. */
+export interface SavedProfileExport {
+  name: string | null;
+  bytes: number | null;
+  summary: ProfileExportSummary;
+}
+
+/** A person this vault already holds, from the same handover file or the same documents. */
+export interface ProfileAlreadyHere {
+  profileId: string;
+  /** "package": the same file. "content": the same original PDFs, whatever the file. */
+  by: "package" | "content";
+  matchingDocuments: number;
+}
+
+/** What a handover file holds, from its header, manifest and end: no document is read. */
+export interface ProfileImportPreview {
+  exportedAtMs: number;
+  displayName: string;
+  fullName: string | null;
+  birthDate: string | null;
+  /** The names the person had before: once imported they count when a clinic document is
+   * filed (#340). */
+  previousFullNames?: string[];
+  documents: number;
+  hidden: number;
+  folders: number;
+  aiAnswers: number;
+  withClinicEvidence: number;
+  historyEntries: number;
+  plaintextBytes: number;
+  alreadyHere: ProfileAlreadyHere | null;
+}
+
+/** What an import did, in counts; "alreadyHere" means nothing was written. */
+export interface ProfileImportOutcome {
+  status: "imported" | "alreadyHere";
+  profileId: string | null;
+  documents: number;
+  folders: number;
+  hidden: number;
+  aiAnswers: number;
+  aiAnswersDropped: number;
+  evidenceKept: number;
+  evidenceDropped: number;
+  historyEntries: number;
+  /** The short code the source can recompute from the file and its key. */
+  receiptCode: string | null;
+  alreadyHere: ProfileAlreadyHere | null;
+}
+
 /** Today on the patient's own calendar, as `YYYY-MM-DD`. */
 export function localDateText(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -231,6 +453,22 @@ export interface RestorePreview {
   differsFromThisDevice: boolean;
   /** How many documents the backup holds. */
   documentCount: number;
+  /** How many records the backup leaves out: it was made without videos
+   * (#359), and restoring it brings back everything else but not those. Zero
+   * for an ordinary backup. */
+  leftOut: number;
+}
+
+/** How big a backup would be, before it is saved. */
+export interface BackupSize {
+  /** The file, about, with its videos. */
+  totalBytes: number;
+  /** The file, about, with the videos left out: both are given at once, so
+   * ticking the box needs no second question. */
+  withoutVideosBytes: number;
+  /** How much of what the vault holds is video that can be left out. */
+  videoBytes: number;
+  videoCount: number;
 }
 
 /** What opens a backup: the passphrase it was made with, or its recovery key. */
@@ -264,6 +502,11 @@ export interface ImportOutcome {
 export interface ReceivedAcceptOutcome extends ImportOutcome {
   /** Names of files that are not PDF documents: not added, and forgotten. */
   notPdf: string[];
+  /** Names of files that could not be opened or read (moved or deleted while
+   * the vault was locked, a permission or connection that ended, a read that
+   * failed part-way): not added, and forgotten, so the person shares them
+   * again. One such file never holds back the others. */
+  unreadable: string[];
 }
 
 /** What a move out of Shared with me did (#61). */
@@ -280,6 +523,9 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
+  /** Named by a program started with its path (Open with, a second launch): the patient is asked
+   * before it is added. A file shared from another app is added as it arrives. */
+  needsConfirm?: boolean;
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -330,6 +576,9 @@ export interface AuditHistoryView {
    * Native code always sends it; it is optional so that a view without it is
    * read the safe way, with the damage notice and the gap. */
   everyEventShown?: boolean;
+  /** Entries left out for being about a hidden person (#360): counted, never named, and
+   * shown again once the person is restored. */
+  aboutHiddenPeople?: number;
 }
 
 /** An audit event that native code authenticated from the start of the history chain. */
@@ -361,6 +610,7 @@ export interface AuditHistoryEntry {
     | "profileDetailsChanged"
     | "portalLinkStarted"
     | "portalLinked"
+    | "portalLinkRemoved"
     | "deviceApprovalRequested"
     | "deviceApprovalVerified"
     | "deviceApprovalStatusChanged"
@@ -369,6 +619,10 @@ export interface AuditHistoryEntry {
     | "deliveryReceiptSettled"
     | "readingAidFiled"
     | "aiResultSaved"
+    | "profileExported"
+    | "profileHidden"
+    | "profileRestored"
+    | "profileImported"
     | "cloudKeyAdded"
     | "cloudKeyRemoved"
     | "aiCloudSent"
@@ -394,6 +648,8 @@ export interface AiResultInfo {
   modelSha256: string;
   createdAtMs: number;
   size: number;
+  /** From a handover file, not this computer's model (#360): the screens say so. */
+  imported?: boolean;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
@@ -401,6 +657,21 @@ export interface PassphraseRules {
   longEnough: boolean;
   notAName: boolean;
   hardToGuess: boolean;
+}
+
+/** Genuine input in the separate native reader; no document data is carried. */
+export const NATIVE_READER_ACTIVITY_EVENT = "mycarlos-native-reader-activity";
+
+/** The words the Android native reader shows and speaks (#358). */
+export interface AndroidReaderLabels {
+  close: string;
+  previous: string;
+  next: string;
+  zoomIn: string;
+  zoomOut: string;
+  page: string;
+  pageStatus: string;
+  pageFailed: string;
 }
 
 export interface VaultBridge {
@@ -435,6 +706,9 @@ export interface VaultBridge {
   }>;
   checkDocuments?(): Promise<{
     added: number;
+    /** The clinic of each new document that was for a person who is hidden and waits in
+     * Shared with me (#360); names no person. */
+    forHidden?: string[];
     refused: number;
     receiptsPending: number;
     issues?: { linkId: string; clinicName: string; code: string }[];
@@ -447,6 +721,8 @@ export interface VaultBridge {
   /** Try again (#143): forgets a clinic's documents that failed their
    * checks, so the next check downloads and checks them again. */
   forgetRefusedDeliveries?(linkId: string): Promise<void>;
+  /** Removes a link that has delivered nothing (#160); refused when documents are saved. */
+  removePortalLink?(linkId: string): Promise<void>;
   /** Reads one linked device's approval status from its portal and saves the
    * clinic's answer (#131). It only reads: no request is sent or started. */
   refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
@@ -479,7 +755,46 @@ export interface VaultBridge {
    * name suggested. */
   pickBackupDestination(localDate?: string): Promise<string | null>;
   /** Saves the backup, and says what was written. */
-  saveBackupToPicked(pickId: string): Promise<SavedBackup>;
+  saveBackupToPicked(
+    pickId: string,
+    leaveVideosOut?: boolean,
+  ): Promise<SavedBackup>;
+  /** How big a backup would be, with or without the videos (#359). */
+  backupSize(): Promise<BackupSize>;
+  /** The records a backup was made without the file of (ids). */
+  leftOutRecords(): Promise<string[]>;
+  /** Prepares one person's export (#360): says what it holds and makes the key. Nothing is
+   * written. A typed passphrase is checked at once. */
+  prepareProfileExport(request: {
+    profileId: string;
+    includeHistory: boolean;
+    passphrase?: string;
+  }): Promise<ProfileExportPrepared>;
+  /** Asks where to save a prepared export; null if the picker was cancelled. */
+  pickProfileExportDestination(
+    exportId: string,
+    localDate?: string,
+  ): Promise<string | null>;
+  /** Writes the export to the chosen place, read back and checked before it replaces anything. */
+  saveProfileExportToPicked(pickId: string): Promise<SavedProfileExport>;
+  /** Asks which handover file to read (#360); null if the picker was cancelled. */
+  pickProfileImportSource(): Promise<string | null>;
+  /** Whether the file opens with a generated key or a typed passphrase, from its header. */
+  profileImportKeyKind(pickId: string): Promise<"key" | "passphrase">;
+  /** Opens the file with its key (or passphrase) and says what it holds. Nothing is written. */
+  inspectProfileImport(request: {
+    pickId: string;
+    key?: string;
+    passphrase?: string;
+  }): Promise<ProfileImportPreview>;
+  /** Makes a person from the file, or says nothing was written (already here). */
+  importProfile(request: {
+    pickId: string;
+    key?: string;
+    passphrase?: string;
+    displayName?: string;
+    allowDuplicate?: boolean;
+  }): Promise<ProfileImportOutcome>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -526,6 +841,29 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<ImportOutcome>;
+  /** Opens the one picker "+ New" uses (PDF documents, pictures and videos). Resolves to what was
+   * picked, or null when it was cancelled. A "documents" pick is added with `importPickedFiles`, a
+   * "video" pick with `importPickedVideo`. */
+  pickImportAny?(
+    profileId: string,
+    folderIds: string[],
+  ): Promise<ImportPick | null>;
+  /** Opens the picker for one video. Resolves to the id of the chosen file,
+   * kept natively, or null when the picker was cancelled. */
+  pickImportVideo?(
+    profileId: string,
+    folderIds: string[],
+  ): Promise<string | null>;
+  /** Checks, cleans and adds the picked video. Resolves when it is done, refused
+   * or cancelled; watch it with `videoImportProgress`, stop it with
+   * `videoImportCancel`. */
+  importPickedVideo?(
+    pickId: string,
+    profileId: string,
+    folderIds: string[],
+  ): Promise<VideoImportResult>;
+  videoImportProgress?(): Promise<VideoImportProgress>;
+  videoImportCancel?(): Promise<void>;
   /** Opens the save picker. Resolves to the id of the chosen destination,
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
@@ -538,13 +876,51 @@ export interface VaultBridge {
     name: string,
     jpeg: Uint8Array,
   ): Promise<ImportOutcome>;
+  /** Starts a video recording for a person (#359). Nothing is added to the
+   * library until `videoStop`. */
+  videoStart(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+  ): Promise<{ recordingId: string }>;
+  /** Adds one piece of the recording (about a second of video). Each carries
+   * the sequence number the last answer asked for: a repeat of the last piece
+   * is answered, not added twice; any other number is refused. */
+  videoAppend(
+    recordingId: string,
+    sequence: number,
+    piece: Uint8Array,
+  ): Promise<RecordingProgress>;
+  videoPause(recordingId: string): Promise<void>;
+  videoResume(recordingId: string): Promise<void>;
+  /** Ends the recording: the video is added to the library, or nothing is when
+   * nothing complete was recorded (`recordId` is null). */
+  videoStop(recordingId: string): Promise<VideoSaved>;
+  /** How much room there is to record. Asked before the camera and microphone
+   * are turned on, and again on every resume. */
+  videoSpace(): Promise<RecordingSpace>;
+  /** The recordings a crash or a lock left unfinished. */
+  videoPending(): Promise<PendingRecordings>;
+  /** Keeps (`true`) or deletes (`false`) one of them. */
+  videoRecover(recordingId: string, keep: boolean): Promise<VideoSaved>;
+  /** Whether a document's file starts as an MP4 does. */
+  isVideo(recordId: string): Promise<boolean>;
+  /** Opens a video for playback: the address for a `<video>`, good until it is
+   * closed or the vault locks. */
+  videoOpen(recordId: string): Promise<VideoPlayback>;
+  videoClose(token: string): Promise<void>;
   /** Whether a document's file starts as a JPEG does. Only its first bytes
    * are read; the photo itself stays native. */
   isPhoto(recordId: string): Promise<boolean>;
-  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
-   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  /** A document's photo, as a `data:image/jpeg` or `data:image/png` URL, if its file is a whole
+   * JPEG or PNG the vault can show; rejected with the code "not_a_photo" otherwise. */
   viewPhoto(recordId: string): Promise<string>;
   /** Hides a document (#71). There is no way to delete one. */
+  /** Hides a whole person (#360): one step, nothing deleted. */
+  hideProfile?(profileId: string): Promise<void>;
+  /** Brings a hidden person back; says which documents arrived for them while they were
+   * hidden and wait in Shared with me. */
+  restoreProfile?(profileId: string): Promise<ArrivedWhileHidden[]>;
   hideRecord(recordId: string): Promise<void>;
   /** Puts a hidden document back. One hidden as damaged only once its file
    * is back. */
@@ -553,7 +929,10 @@ export interface VaultBridge {
    * whose encrypted file is still missing, so the vault leaves recovery
    * mode. Refused when the vault's own list differs. Resolves to the ids
    * hidden. */
-  hideUnavailableRecords(confirmed: string[]): Promise<string[]>;
+  hideUnavailableRecords(
+    confirmed: string[],
+    hiddenPeopleDocuments?: number,
+  ): Promise<string[]>;
   /** Whether a stored PDF may be locked with a password (#54): a scan of its
    * names only, so the details can offer Unlock. */
   isLockedPdf(recordId: string): Promise<boolean>;
@@ -566,7 +945,11 @@ export interface VaultBridge {
   listReceived(): Promise<ReceivedState>;
   /** Adds every waiting file to Shared with me; a file that is not a PDF is
    * forgotten and named. If anything else fails, they all keep waiting. */
-  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Adds the waiting files to Shared with me: exactly `ids` (the files the patient confirmed)
+   * when given, otherwise every waiting file. */
+  acceptReceived(ids?: string[]): Promise<ReceivedAcceptOutcome>;
+  /** Forgets the waiting files the patient cancelled; nothing was stored. */
+  discardReceived(ids: string[]): Promise<number>;
   /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
@@ -584,6 +967,11 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Android only (#358): the document is shown by the native PdfRenderer reader, from a sealed
+   * in-memory file, with no document bytes in this bridge. `labels` are the words it shows and
+   * speaks; "{page}" and "{total}" in `page` and `pageStatus` are filled in natively. Resolves
+   * when the native reader is dismissed; cancelView also stops it. */
+  readAndroidPdf?(recordId: string, labels: AndroidReaderLabels): Promise<void>;
   /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
    * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
    * nothing: `rects` is empty, with the reason, when the helper cannot tie
@@ -621,12 +1009,28 @@ export interface VaultBridge {
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** What the speed check measured for the model in use on this computer (#305), or null. */
+  aiModelSpeed?(): Promise<unknown>;
   /** Calls `handler` with an answer's own time limit, in milliseconds, as
    * the model is asked it: the automatic lock waits that long at most for
    * it (D19). Returns the way to stop listening. */
   onAiAnswerStarted?(
     handler: (answer: { answerId: string; limitMs: number }) => void,
   ): () => void;
+  /** Calls `handler` when the vault locked natively without the screen
+   * asking: the window was closed to the tray or Quit was chosen
+   * (`"closed"`), or the native idle lock fell due (`"idle"`). The vault is
+   * already locked; the screen lets go of everything it shows at once, as
+   * its own lock does (#206). Computers only. Returns the way to stop
+   * listening. */
+  onVaultLocked?(
+    handler: (locked: { by: "closed" | "idle" }) => void,
+  ): () => void;
+  /** Whether the tray check found a document waiting while the vault was locked (#230): the
+   * unlock screen shows one fixed sentence when it did. Computers only. */
+  trayWaiting?(): Promise<boolean>;
+  /** The same, as it changes. Returns the way to stop listening. */
+  onTrayWaiting?(handler: (waiting: boolean) => void): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -659,7 +1063,17 @@ export interface VaultBridge {
     recordId: string,
     ticket: string,
     text: string,
+    kept?: TextRange[],
   ): Promise<TextSaveOutcome>;
+  /** The text a copy may put on the clipboard: the same native re-check as
+   * a save, on the same text, and the file a save would write. Refused with
+   * the same ranges a save gives; a copy never uses up the ticket. */
+  copyTextExport(
+    recordId: string,
+    ticket: string,
+    text: string,
+    kept?: TextRange[],
+  ): Promise<TextCopyOutcome>;
   /** Keeps an AI answer with its document, encrypted. A new answer to the
    * same question (tool, language, term) is the one shown; the old one stays
    * in the vault, hidden, never deleted (D3). */
@@ -695,6 +1109,20 @@ export interface TextSaveOutcome {
   hits: { start: number; end: number }[];
 }
 
+/** A range of the text, in UTF-16 units: a medical term the patient kept (#366). A claim the
+ * native re-check checks against its own list, never a fact. */
+export interface TextRange {
+  start: number;
+  end: number;
+}
+
+/** How a copy ended: the approved file text, to put on the clipboard as it
+ * is, or a refusal with a save's ranges. */
+export interface TextCopyOutcome {
+  approved: string | null;
+  hits: { start: number; end: number }[];
+}
+
 export interface PublicError {
   code?: string;
   message?: string;
@@ -708,6 +1136,9 @@ export interface PublicError {
   /** How long to wait before the next try: after several wrong ones, or
    * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
+  /** For an AI refusal for lack of memory (`aiMemory`, #305): what a start needs and what is
+   * free now, in bytes (no `availableBytes` when this computer could not say). */
+  memory?: { neededBytes: number; availableBytes?: number };
 }
 
 /** A box the patient typed in, named in the language in use ("the folder
@@ -983,6 +1414,8 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_restart_device_approval", { linkId }),
     forgetRefusedDeliveries: (linkId) =>
       invoke("vault_forget_refused_deliveries", { linkId }),
+    removePortalLink: (linkId) =>
+      invoke("vault_portal_remove_link", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
     submitApprovalCode: (linkId, code) =>
@@ -1014,8 +1447,34 @@ export function createVaultBridge(): VaultBridge {
       }),
     pickBackupDestination: (localDate) =>
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
-    saveBackupToPicked: (pickId) =>
-      invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
+    saveBackupToPicked: (pickId, leaveVideosOut = false) =>
+      invoke<SavedBackup>("vault_backup_picked", {
+        request: { pickId, leaveVideosOut },
+      }),
+    backupSize: () => invoke<BackupSize>("vault_backup_size"),
+    leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
+    prepareProfileExport: (request) =>
+      invoke<ProfileExportPrepared>("vault_profile_export_prepare", {
+        request,
+      }),
+    pickProfileExportDestination: (exportId, localDate) =>
+      invoke<string | null>("vault_profile_export_pick", {
+        request: { exportId, localDate },
+      }),
+    saveProfileExportToPicked: (pickId) =>
+      invoke<SavedProfileExport>("vault_profile_export_picked", {
+        request: { pickId },
+      }),
+    pickProfileImportSource: () =>
+      invoke<string | null>("vault_profile_import_pick"),
+    profileImportKeyKind: (pickId) =>
+      invoke<"key" | "passphrase">("vault_profile_import_key_kind", {
+        request: { pickId },
+      }),
+    inspectProfileImport: (request) =>
+      invoke<ProfileImportPreview>("vault_profile_import_inspect", { request }),
+    importProfile: (request) =>
+      invoke<ProfileImportOutcome>("vault_profile_import", { request }),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>
@@ -1068,8 +1527,28 @@ export function createVaultBridge(): VaultBridge {
       invoke<ImportOutcome>("vault_import_picked", {
         request: { pickId, profileId, folderIds },
       }),
+    pickImportAny: (profileId, folderIds) =>
+      invoke<ImportPick | null>("vault_import_any_pick", {
+        locale: getLocale(),
+        request: { profileId, folderIds },
+      }),
+    pickImportVideo: (profileId, folderIds) =>
+      invoke<string | null>("vault_import_video_pick", {
+        locale: getLocale(),
+        request: { profileId, folderIds },
+      }),
+    importPickedVideo: (pickId, profileId, folderIds) =>
+      invoke<VideoImportResult>("vault_import_video_picked", {
+        request: { pickId, profileId, folderIds },
+      }),
+    videoImportProgress: () =>
+      invoke<VideoImportProgress>("vault_video_import_progress"),
+    videoImportCancel: () => invoke<void>("vault_video_import_cancel"),
     pickExportDestination: (recordId) =>
-      invoke<string | null>("vault_export_pick", { request: { recordId } }),
+      // The patient's own date, for the neutral name the save dialog suggests.
+      invoke<string | null>("vault_export_pick", {
+        request: { recordId, localDate: localDateText(new Date()) },
+      }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     savePhoto: (profileId, folderIds, name, jpeg) => {
@@ -1087,6 +1566,47 @@ export function createVaultBridge(): VaultBridge {
         request.fill(0),
       );
     },
+    videoStart: (profileId, folderIds, name) =>
+      invoke<{ recordingId: string }>("vault_video_start", {
+        request: { profileId, folderIds, name },
+      }),
+    videoAppend: (recordingId, sequence, piece) =>
+      // As base64 text in the ordinary arguments: a byte body arrives on
+      // Android as a JSON array of numbers several times its size.
+      invoke<RecordingProgress>("vault_video_append", {
+        request: { recordingId, sequence, data: bytesToBase64(piece) },
+      }),
+    videoPause: (recordingId) =>
+      invoke<void>("vault_video_pause", { request: { recordingId } }),
+    videoResume: (recordingId) =>
+      invoke<void>("vault_video_resume", { request: { recordingId } }),
+    videoStop: (recordingId) =>
+      invoke<VideoSaved>("vault_video_stop", { request: { recordingId } }),
+    videoSpace: () => invoke<RecordingSpace>("vault_video_space"),
+    videoPending: () => invoke<PendingRecordings>("vault_video_pending"),
+    videoRecover: (recordingId, keep) =>
+      invoke<VideoSaved>("vault_video_recover", {
+        request: { recordingId, keep },
+      }),
+    isVideo: (recordId) =>
+      invoke<boolean>("vault_is_video", { request: { recordId } }),
+    videoOpen: async (recordId) => {
+      const opened = await invoke<{ token: string; totalBytes: number }>(
+        "vault_video_open",
+        { request: { recordId } },
+      );
+      // The address the webview shows for the scheme on this platform. Loaded
+      // here, when a video is opened, so that nothing else needs it: tests that
+      // stand in for the core module with `invoke` alone still load this file.
+      const { convertFileSrc } = await import("@tauri-apps/api/core");
+      return {
+        token: opened.token,
+        totalBytes: opened.totalBytes,
+        url: convertFileSrc(opened.token, "mycarlos-video"),
+      };
+    },
+    videoClose: (token) =>
+      invoke<void>("vault_video_close", { request: { token } }),
     isPhoto: (recordId) =>
       invoke<boolean>("vault_is_photo", { request: { recordId } }),
     viewPhoto: (recordId) =>
@@ -1098,7 +1618,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, password },
       }),
     listReceived: () => invoke<ReceivedState>("received_list"),
-    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    acceptReceived: (ids) =>
+      ids
+        ? invoke<ReceivedAcceptOutcome>("received_accept", {
+            request: { ids },
+          })
+        : invoke<ReceivedAcceptOutcome>("received_accept"),
+    discardReceived: (ids) =>
+      invoke<number>("received_discard", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
@@ -1119,6 +1646,22 @@ export function createVaultBridge(): VaultBridge {
       invoke<PageBoxes>("vault_page_boxes", {
         request: { recordId, page, ...span, password: password ?? null },
       }),
+    readAndroidPdf: async (recordId, labels) => {
+      const generation = viewGeneration;
+      if (pendingViewCancellation) {
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_android_pdf", {
+        request: { recordId, labels },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation
@@ -1186,10 +1729,24 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    aiModelSpeed: () => invoke<unknown>("ai_model_speed"),
     onAiAnswerStarted: (handler) => {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",
         (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    onVaultLocked: (handler) => {
+      const stop = listen<{ by: "closed" | "idle" }>("vault-locked", (event) =>
+        handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    trayWaiting: () => invoke<boolean>("tray_waiting_status"),
+    onTrayWaiting: (handler) => {
+      const stop = listen<boolean>("tray-waiting", (event) =>
+        handler(event.payload === true),
       );
       return () => void stop.then((unlisten) => unlisten());
     },
@@ -1208,9 +1765,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, ticket },
         locale: getLocale(),
       }),
-    exportTextToPicked: (pickId, recordId, ticket, text) =>
+    exportTextToPicked: (pickId, recordId, ticket, text, kept) =>
       invoke<TextSaveOutcome>("vault_export_text_picked", {
-        request: { pickId, recordId, ticket, text },
+        request: { pickId, recordId, ticket, text, kept: kept ?? [] },
+        locale: getLocale(),
+      }),
+    copyTextExport: (recordId, ticket, text, kept) =>
+      invoke<TextCopyOutcome>("vault_export_text_copy", {
+        request: { recordId, ticket, text, kept: kept ?? [] },
         locale: getLocale(),
       }),
     saveAiResult: (recordId, keptId, sources) =>
@@ -1223,13 +1785,19 @@ export function createVaultBridge(): VaultBridge {
       invoke<string>("vault_ai_result_read", {
         request: { recordId, resultId },
       }),
+    hideProfile: (profileId) =>
+      invoke<void>("vault_hide_profile", { request: { profileId } }),
+    restoreProfile: (profileId) =>
+      invoke<ArrivedWhileHidden[]>("vault_restore_profile", {
+        request: { profileId },
+      }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>
       invoke<void>("vault_unhide_record", { request: { recordId } }),
-    hideUnavailableRecords: (confirmed) =>
+    hideUnavailableRecords: (confirmed, hiddenPeopleDocuments = 0) =>
       invoke<string[]>("vault_hide_unavailable_records", {
-        request: { confirmed },
+        request: { confirmed, hiddenPeopleDocuments },
       }),
     reset: (confirmation) =>
       invoke<boolean>("vault_reset", {
@@ -1245,3 +1813,13 @@ export function createVaultBridge(): VaultBridge {
 export const MAX_PASSPHRASE_BYTES = 1024;
 const encoder = new TextEncoder();
 export const utf8Length = (value: string) => encoder.encode(value).length;
+
+/** Base64 of a piece of video, built in slices so that no spread of a large
+ * array is needed. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let text = "";
+  const slice = 0x8000;
+  for (let at = 0; at < bytes.length; at += slice)
+    text += String.fromCharCode(...bytes.subarray(at, at + slice));
+  return btoa(text);
+}

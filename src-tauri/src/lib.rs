@@ -10,17 +10,28 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection_pickup;
 mod document_identity;
+#[cfg(target_os = "macos")]
+mod document_notification_macos;
 pub mod document_notification_runtime;
+// Compiled on Linux, and in tests on every platform (its bus is a trait, tested with a fake).
+#[cfg(any(test, target_os = "linux"))]
+mod document_notification_linux;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
 // The platform push hooks (one per platform, each with its own device test) and the Preferences
 // choice will call this; until then only the reconcile after opening the vault uses it.
+// Its tests need the Linux memfd and /proc, so they run on the Linux host only.
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
+mod android_pdf;
+#[cfg(target_os = "android")]
+mod android_trust;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -41,6 +52,7 @@ mod model_acl;
 mod quote_locate;
 mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod disk_space;
 mod safety;
 mod summary_contract;
 mod summary_progress;
@@ -50,6 +62,10 @@ mod model_download;
 mod model_helper;
 mod model_limits;
 mod model_runtime;
+mod video_scheme;
+// The recording core (#359) and, in the next step, the playback address use it.
+#[allow(dead_code)]
+mod mp4_stream;
 mod notice_key;
 #[cfg(windows)]
 mod notice_store_windows;
@@ -57,20 +73,30 @@ mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod photo_png;
 mod portal_approval;
 mod portal_client;
 mod portal_delivery;
 mod portal_link;
 mod portal_pickup;
+mod process_flags;
 mod reading_aid;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;
+mod speed_check;
 mod text_recheck;
 mod throttle;
+mod tray_notices;
+mod tray_poller;
 mod unicode_cleaning_table;
+mod unlock_plan;
 mod vault;
+mod vault_registry;
+mod vault_slots;
+mod vault_source;
+mod video_import;
 #[cfg(windows)]
 mod windows_navigation;
 
@@ -125,6 +151,7 @@ use std::{
 };
 use tauri::{Manager, State, Url};
 use tauri_plugin_dialog::DialogExt;
+use vault_source::StoreHandle;
 // The plugin's message dialog is the confirmation off macOS (macOS has its own AppKit sheet).
 #[cfg(any(test, not(target_os = "macos")))]
 use tauri_plugin_dialog::MessageDialogResult;
@@ -159,6 +186,8 @@ struct PublicError {
     note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
     retry_after_ms: Option<u64>,
+    /// For an AI refusal for lack of memory: what the start needs and what is free (#305).
+    memory: Option<model_runtime::MemoryShortfall>,
 }
 
 // Keep the established IPC fields and omission rules; only user-facing text is formatted.
@@ -178,6 +207,8 @@ impl Serialize for PublicError {
             note_key: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             retry_after_ms: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            memory: Option<model_runtime::MemoryShortfall>,
         }
         let text = |key| {
             UiLocale::En
@@ -192,6 +223,7 @@ impl Serialize for PublicError {
             note: self.note_key.map(text),
             note_key: self.note_key,
             retry_after_ms: self.retry_after_ms,
+            memory: self.memory,
         }
         .serialize(serializer)
     }
@@ -205,6 +237,7 @@ impl From<ui_text::UiTextError> for PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -266,6 +299,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: Some(left_ms),
+            memory: None,
         }
     }
 
@@ -276,6 +310,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -305,6 +340,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -315,6 +351,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -483,6 +520,17 @@ impl From<VaultError> for PublicText {
                 code: "weak_passphrase",
                 message_key: "native.error.20",
             },
+            // The handover dialog says it on this code: lock and unlock to keep trying, or use
+            // the generated key (#360).
+            VaultError::PackagePassphraseTriesUsed => Self {
+                code: "package_passphrase_tries_used",
+                message_key: "native.error.49",
+            },
+            // Security says it beside the person's Hide: someone has to stay in the library.
+            VaultError::LastVisibleProfile => Self {
+                code: "last_visible_profile",
+                message_key: "native.error.50",
+            },
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
                 message_key: "native.error.21",
@@ -523,6 +571,10 @@ impl From<VaultError> for PublicText {
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message_key: "native.error.30",
+            },
+            VaultError::PdfMobileTooLarge => Self {
+                code: "pdf_mobile_too_large",
+                message_key: "reader.android.tooLarge",
             },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
@@ -628,12 +680,13 @@ impl From<VaultError> for PublicError {
             record_id,
             note_key: None,
             retry_after_ms,
+            memory: None,
         }
     }
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PassphraseRulesRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -647,7 +700,7 @@ impl Drop for PassphraseRulesRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -660,14 +713,100 @@ impl Drop for CreateVaultRequest {
     }
 }
 
+// camelCase on the wire, as every other request the renderer sends: without it the renderer's
+// `hiddenPeopleDocuments` was an unknown key, silently ignored, and the count was always 0, so the
+// removal was refused whenever a hidden person had a lost document.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
+    /// How many damaged documents of hidden people the patient was told of (#360).
+    #[serde(default)]
+    hidden_people_documents: usize,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PassphraseRequest {
     passphrase: String,
+}
+
+/// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AddVaultRequest {
+    name: String,
+    passphrase: String,
+    initial_profile_name: String,
+}
+
+// Wiped however the command ends, including a request refused before it runs.
+impl Drop for AddVaultRequest {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.passphrase.zeroize();
+    }
+}
+
+/// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FindVaultsRequest {
+    passphrase: String,
+}
+
+impl Drop for FindVaultsRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
+}
+
+/// What the search found: opaque folder ids of the vaults the passphrase opened, and how many
+/// folders it did not open or found empty. Nothing about names or contents.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FoundVaultsReply {
+    found: Vec<String>,
+    not_opened: usize,
+    empty: usize,
+}
+
+/// One found vault and the name its owner now gives it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NamedFoundVault {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NameFoundRequest {
+    vaults: Vec<NamedFoundVault>,
+}
+
+impl Drop for NameFoundRequest {
+    fn drop(&mut self) {
+        for vault in &mut self.vaults {
+            vault.name.zeroize();
+        }
+    }
+}
+
+/// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NamedPassphraseRequest {
+    name: String,
+    passphrase: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for NamedPassphraseRequest {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.passphrase.zeroize();
+    }
 }
 
 // Wiped however the command ends, including a try refused before it runs.
@@ -677,15 +816,19 @@ impl Drop for PassphraseRequest {
     }
 }
 
+/// Writes the backup to a place the patient chose, optionally leaving the videos
+/// out (#359).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickRequest {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupWriteRequest {
     pick_id: Uuid,
+    #[serde(default)]
+    leave_videos_out: bool,
 }
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoreRequest {
     pick_id: Uuid,
     passphrase: Option<String>,
@@ -722,7 +865,7 @@ impl Drop for RestoreRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoverRequest {
     recovery_key: String,
     new_passphrase: String,
@@ -746,20 +889,20 @@ struct RecoverResponse {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoveryKeyGroup {
     index: usize,
     value: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConfirmRecoveryKeyRequest {
     groups: Vec<RecoveryKeyGroup>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
@@ -774,7 +917,7 @@ impl Drop for ChangePassphraseRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NameRequest {
     display_name: String,
     #[serde(default)]
@@ -798,7 +941,7 @@ struct RenameProfileRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FolderRequest {
     profile_id: Uuid,
     parent_id: Option<Uuid>,
@@ -806,7 +949,7 @@ struct FolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateFolderRequest {
     folder_id: Uuid,
     parent_id: Option<Uuid>,
@@ -814,41 +957,45 @@ struct UpdateFolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersRequest {
     record_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameRecordRequest {
     record_id: Uuid,
     name: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersBatchRequest {
     record_ids: Vec<Uuid>,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImportRequest {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`, for the name the save dialog
+    /// suggests. Optional: an older caller that sends none gets the UTC date.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoRequest {
     record_id: Uuid,
 }
@@ -1004,11 +1151,11 @@ impl std::io::Write for PhotoBuffer {
             self.bytes = larger;
         }
         self.bytes.extend_from_slice(data);
-        // FF D8 FF, as far as the bytes so far go.
-        let seen = self.bytes.len().min(photo::JPEG_START.len());
-        if self.bytes[..seen] != photo::JPEG_START[..seen] {
+        // FF D8 FF (a JPEG) or the PNG signature, as far as the bytes so far go.
+        let seen = self.bytes.len().min(photo::SNIFF_BYTES);
+        if !photo::could_start_a_picture(&self.bytes[..seen]) {
             self.refused = true;
-            return Err(std::io::Error::other("not a JPEG"));
+            return Err(std::io::Error::other("not a JPEG or a PNG"));
         }
         Ok(data.len())
     }
@@ -1018,23 +1165,31 @@ impl std::io::Write for PhotoBuffer {
     }
 }
 
-/// The first bytes of a record's file, and no more: once it has them, it stops
-/// the export, so only the first chunk is decrypted.
-#[derive(Default)]
-struct FileStart {
-    bytes: [u8; photo::JPEG_START.len()],
+/// The first `N` bytes of a record's file, and no more: once it has them, it stops the export, so
+/// only the first chunk is decrypted.
+struct FileStartN<const N: usize> {
+    bytes: [u8; N],
     seen: usize,
 }
 
-impl FileStart {
-    fn complete(&self) -> bool {
-        self.seen == self.bytes.len()
+impl<const N: usize> Default for FileStartN<N> {
+    fn default() -> Self {
+        Self {
+            bytes: [0; N],
+            seen: 0,
+        }
     }
 }
 
-impl std::io::Write for FileStart {
+impl<const N: usize> FileStartN<N> {
+    fn complete(&self) -> bool {
+        self.seen == N
+    }
+}
+
+impl<const N: usize> std::io::Write for FileStartN<N> {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        let take = data.len().min(self.bytes.len() - self.seen);
+        let take = data.len().min(N - self.seen);
         self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
         self.seen += take;
         if self.complete() {
@@ -1049,22 +1204,30 @@ impl std::io::Write for FileStart {
     }
 }
 
-/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
-/// called. A document's details ask this before offering View photo, so the
-/// photo itself stays here until the patient asks to see it; `view_photo` then
-/// checks the whole file.
-fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
-    let mut start = FileStart::default();
+/// Which picture a record's file starts as (a JPEG: FF D8 FF; a PNG: its 8-byte signature),
+/// whatever it is called. A document's details ask this before offering View photo, so the photo
+/// itself stays here until the patient asks to see it; `view_photo` then checks the whole file.
+fn photo_kind(
+    store: &VaultStore,
+    record_id: Uuid,
+) -> Result<Option<photo::PictureKind>, VaultError> {
+    let mut start = FileStartN::<{ photo::SNIFF_BYTES }>::default();
     let exported = store.read_for_view(record_id, &mut start);
-    if start.complete() {
-        return Ok(start.bytes == photo::JPEG_START);
+    // A file shorter than eight bytes can still be a (too short) JPEG start; `picture_kind` looks
+    // only at what was read.
+    if start.complete() || exported.is_ok() {
+        return Ok(photo::picture_kind(&start.bytes[..start.seen]));
     }
-    // Shorter than three bytes, or not read at all.
-    exported.map(|()| false)
+    exported.map(|()| None)
 }
 
-/// A photo's name must still describe its JPEG bytes. Ordinary PDF renames
-/// retain the vault's existing metadata-only checks.
+/// Whether a record's file starts as a picture does (see `photo_kind`).
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    photo_kind(store, record_id).map(|kind| kind.is_some())
+}
+
+/// A photo's name must still describe its bytes: `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG.
+/// Ordinary PDF renames retain the vault's existing metadata-only checks.
 fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<(), VaultError> {
     let old_name = store
         .snapshot()?
@@ -1076,29 +1239,24 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
     // A failed probe establishes no format. Keep the existing metadata-only
     // rename policy for an unreadable/unknown file, rather than requiring a
     // readable object just to edit its name.
-    if !old_name.trim().to_ascii_lowercase().ends_with(".pdf")
-        && is_photo(store, record_id).unwrap_or(false)
-    {
-        let valid_jpeg_name = name
-            .trim()
-            .rsplit_once('.')
-            .is_some_and(|(stem, extension)| {
-                !stem.trim().is_empty()
-                    && (extension.eq_ignore_ascii_case("jpg")
-                        || extension.eq_ignore_ascii_case("jpeg"))
-            });
-        if !valid_jpeg_name {
+    let kind = if old_name.trim().to_ascii_lowercase().ends_with(".pdf") {
+        None
+    } else {
+        photo_kind(store, record_id).unwrap_or(None)
+    };
+    if let Some(kind) = kind {
+        if !kind.names(name) {
             return Err(VaultError::Invalid);
         }
     }
     store.rename_record(record_id, name)
 }
 
-/// The photo a record holds, as a `data:image/jpeg` URL for the photo view
-/// (the CSP allows `data:` images). The file's own bytes decide: it must start
-/// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
-/// checks as a photo being saved, which also drop any metadata from what is
-/// shown. The record is unchanged.
+/// The picture a record holds, as a `data:image/jpeg` or `data:image/png` URL for the photo view
+/// (the CSP allows `data:` images). The file's own bytes decide: it must start with the JPEG
+/// marker FF D8 FF or the PNG signature, whatever it is called, and pass the same checks as a
+/// picture being imported, which also drop any metadata from what is shown. The record is
+/// unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
     let exported = store.read_for_view(record_id, &mut buffer);
@@ -1106,9 +1264,13 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
         return Err(VaultError::NotPhoto);
     }
     exported?;
-    let cleaned = photo::clean_jpeg(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    // `clean_any`: a picture the patient brought keeps what draws it (a JPEG also its orientation
+    // and a plain colour profile; the camera's own photos have neither, so they are shown as
+    // stored).
+    let (kind, cleaned) = photo::clean_any(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
     Ok(format!(
-        "data:image/jpeg;base64,{}",
+        "data:{};base64,{}",
+        kind.media_type(),
         BASE64.encode(&*cleaned)
     ))
 }
@@ -1245,7 +1407,7 @@ impl std::io::Write for LimitedBuffer {
 /// Finishes an import or export whose picker already closed. The paths the
 /// picker returned stay native, under `pick_id`; the renderer never sees them.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedImportRequest {
     pick_id: Uuid,
     profile_id: Uuid,
@@ -1253,7 +1415,7 @@ struct PickedImportRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedExportRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -1282,6 +1444,13 @@ struct PendingPicks {
     imports: PickTable<(ImportRequest, Vec<tauri_plugin_fs::FilePath>)>,
     exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
     backups: PickTable<tauri_plugin_fs::FilePath>,
+    /// A person's export that has been prepared (#360): the person, the choices and the key,
+    /// held here so that the key never has to come back from the renderer. Ends at lock.
+    profile_exports: PickTable<PendingProfileExport>,
+    /// A handover file the patient chose to read (#360), kept for its inspect and its import.
+    profile_imports: PickTable<tauri_plugin_fs::FilePath>,
+    /// A prepared export with the place the patient chose for it.
+    profile_export_picks: PickTable<(PendingProfileExport, tauri_plugin_fs::FilePath)>,
     restores: PickTable<tauri_plugin_fs::FilePath>,
     /// The AI helper's preview tickets (#72, AI-02): one per text read, bound
     /// to the record and the session; gone at lock, when the document is
@@ -1294,6 +1463,13 @@ struct PendingPicks {
     /// document's save to take: gone once saved, at lock, and when the
     /// document is hidden.
     ai_answers: KeptAnswers,
+    /// The picked video being added, if one is: its progress and the patient's Cancel. At most
+    /// one at a time (a copy of up to 2 GiB is not run twice at once).
+    video_import: Mutex<Option<Arc<vault::VideoImportJob>>>,
+    /// The text of pages the reader was shown (#240), so an explanation kept for a document can
+    /// only be of a sentence that document's pages gave: gone at lock and when the document is
+    /// hidden.
+    shown_pages: ShownPages,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1333,6 +1509,128 @@ impl TextTicket {
     /// not), covers only part of the document.
     fn partial(&self, last_page: u32, last_page_cut: bool) -> bool {
         self.truncated || last_page_cut || self.last_index.is_some_and(|last| last_page < last)
+    }
+}
+
+/// The text of the pages `vault_view_page` showed, as native read it from the document (#240):
+/// what a sentence given to `ai_explain` for a document is checked against. Whitespace is
+/// collapsed on both sides, since the page's line breaks and spacing are not the reader's.
+/// A page shown again replaces its earlier entry; the oldest go past the caps below, and every
+/// entry is bound to the session it was shown in. The texts are the document's (PHI): held
+/// zeroizing, so they are overwritten when an entry goes.
+#[derive(Default)]
+struct ShownPages(Mutex<Vec<ShownPage>>);
+
+struct ShownPage {
+    session: u64,
+    record_id: Uuid,
+    page: u32,
+    /// The page's text and its readable text, each with whitespace collapsed.
+    texts: [zeroize::Zeroizing<String>; 2],
+}
+
+/// Pages kept at most, and bytes of text across them: well above the six pages the reader itself
+/// keeps drawn, so a page it shows again from its own cache is still known here.
+const MAX_SHOWN_PAGES: usize = 32;
+const MAX_SHOWN_BYTES: usize = 8 * 1024 * 1024;
+
+/// `text` with every run of whitespace as one space and none at either end.
+fn collapse_whitespace(text: &str) -> zeroize::Zeroizing<String> {
+    zeroize::Zeroizing::new(text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// `text` in lower case, character by character, into a buffer that is overwritten when it goes.
+/// Per character, as the reader folds: `str::to_lowercase` reads a Greek capital sigma at the end
+/// of a word as a final sigma, which would refuse a term the reader found. The buffer is sized
+/// for the longest expansion (one character to three bytes from two), so it never moves.
+fn fold_case(text: &str) -> zeroize::Zeroizing<String> {
+    let mut folded = zeroize::Zeroizing::new(String::with_capacity(text.len() * 2));
+    for char in text.chars() {
+        folded.extend(char.to_lowercase());
+    }
+    folded
+}
+
+impl ShownPages {
+    fn list(&self) -> std::sync::MutexGuard<'_, Vec<ShownPage>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Notes a page shown in `session`, unless `current()` says that session is over: the check
+    /// is made under the same lock as the insert, and a lock's `clear` takes that lock after it
+    /// has ended the session, so a page shown during a lock is never remembered after it.
+    fn note(
+        &self,
+        current: &dyn Fn() -> u64,
+        session: u64,
+        record_id: Uuid,
+        page: u32,
+        text: &str,
+        readable_text: &str,
+    ) {
+        let texts = [
+            collapse_whitespace(text),
+            collapse_whitespace(readable_text),
+        ];
+        let mut list = self.list();
+        if current() != session {
+            return;
+        }
+        // Nothing from an earlier session stays, and a page shown again replaces itself.
+        list.retain(|held| {
+            held.session == session && !(held.record_id == record_id && held.page == page)
+        });
+        list.push(ShownPage {
+            session,
+            record_id,
+            page,
+            texts,
+        });
+        let size = |held: &ShownPage| held.texts[0].len() + held.texts[1].len();
+        while list.len() > MAX_SHOWN_PAGES
+            || (list.len() > 1 && list.iter().map(size).sum::<usize>() > MAX_SHOWN_BYTES)
+        {
+            list.remove(0);
+        }
+    }
+
+    /// The sentence to keep an explanation of `term` with, or `None` when it must be refused:
+    /// `context` with whitespace collapsed (so what is filed is exactly the document's own text),
+    /// if it is inside a page shown for `record_id` in `session` and, not being empty, holds the
+    /// term (case aside). An empty context says nothing about the document, so it passes.
+    fn accept(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        let wanted = collapse_whitespace(context);
+        if wanted.is_empty() {
+            return Some(wanted);
+        }
+        let term = collapse_whitespace(term);
+        if !term.is_empty() && !fold_case(&wanted).contains(fold_case(&term).as_str()) {
+            return None;
+        }
+        self.list()
+            .iter()
+            .any(|held| {
+                held.session == session
+                    && held.record_id == record_id
+                    && held.texts.iter().any(|text| text.contains(wanted.as_str()))
+            })
+            .then_some(wanted)
+    }
+
+    fn forget_record(&self, record_id: Uuid) {
+        self.list().retain(|held| held.record_id != record_id);
+    }
+
+    fn clear(&self) {
+        self.list().clear();
     }
 }
 
@@ -1495,6 +1793,39 @@ impl<T> PickTable<T> {
 }
 
 impl PendingPicks {
+    /// Starts the one picked-video import, or refuses (`Invalid`) while another is running.
+    fn start_video_import(&self) -> Result<Arc<vault::VideoImportJob>, VaultError> {
+        let mut slot = self
+            .video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_some() {
+            return Err(VaultError::Invalid);
+        }
+        let job = vault::VideoImportJob::new();
+        *slot = Some(Arc::clone(&job));
+        Ok(job)
+    }
+
+    /// Ends the import that `job` was, on every path.
+    fn end_video_import(&self, job: &Arc<vault::VideoImportJob>) {
+        let mut slot = self
+            .video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.as_ref().is_some_and(|held| Arc::ptr_eq(held, job)) {
+            *slot = None;
+        }
+    }
+
+    /// The running import's job, for its progress and its Cancel.
+    fn video_import_job(&self) -> Option<Arc<vault::VideoImportJob>> {
+        self.video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// Issues a preview ticket for a text read; any earlier ticket for the
     /// same record ends.
     fn store_text(&self, session: u64, ticket: TextTicket) -> Uuid {
@@ -1549,8 +1880,34 @@ impl PendingPicks {
         self.ai_answers.forget(kept_id);
     }
 
+    /// The reader was shown this page of `record_id` in `session` (#240): not remembered if the
+    /// vault has locked since.
+    fn note_shown_page(&self, session: u64, record_id: Uuid, page: u32, shown: &ViewedPage) {
+        self.shown_pages.note(
+            &|| self.session(),
+            session,
+            record_id,
+            page,
+            &shown.text,
+            &shown.readable_text,
+        );
+    }
+
+    /// The sentence an explanation of `term` for `record_id` is kept with (collapsed), if it is
+    /// from pages shown for that document in `session` (#240).
+    fn explain_context(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        self.shown_pages.accept(session, record_id, term, context)
+    }
+
     /// The document was hidden: its tickets end, and its kept answers.
     fn forget_texts_for(&self, record_id: Uuid) {
+        self.shown_pages.forget_record(record_id);
         self.ai_answers.forget_record(record_id);
         self.texts.retain(|held| held.record_id != record_id);
     }
@@ -1647,17 +2004,27 @@ impl PendingPicks {
         self.imports.clear();
         self.exports.clear();
         self.backups.clear();
+        self.profile_exports.clear();
+        self.profile_imports.clear();
+        self.profile_export_picks.clear();
         self.restores.clear();
         self.texts.clear();
         self.text_exports.clear();
         self.ai_answers.clear();
+        self.shown_pages.clear();
     }
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordIdRequest {
     record_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileIdRequest {
+    profile_id: Uuid,
 }
 
 /// An AI answer to keep with a document (#72): its document and the id `ai_summarize` /
@@ -1684,13 +2051,14 @@ struct AiAnswer<T> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AiResultRequest {
     record_id: Uuid,
     result_id: Uuid,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ResetRequest {
     confirmation: String,
 }
@@ -1718,7 +2086,15 @@ fn now_ms() -> u64 {
 /// segment is percent-encoded, and for Android document providers it is a
 /// document id that either embeds the storage path ("primary:Documents/labs.pdf")
 /// or is opaque ("msf:31").
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+/// The name given to a picked document whose Android id holds no file name.
+const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
+
+/// What a picked file is called before any stand-in is chosen: a desktop path as it is, a file
+/// URL's decoded final segment, and for an Android document the tail of its id
+/// ("primary:Movies/clip.mp4" gives "clip.mp4"; an opaque id such as "msf:31" gives "31").
+/// Only the first colon of a document id separates the root from the path; a later one belongs
+/// to the file name ("primary:Documents/Scan 10:30.pdf").
+fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
     };
@@ -1732,21 +2108,64 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
-    // The picker offers only PDFs, so a tail that does not end in ".pdf" is
-    // part of an opaque id rather than a name. The fallback keeps the extension
-    // so that an export still suggests a file the platform can open.
-    // A document id is "<root>:<path>". Only the first colon separates them; a
-    // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
     let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
-    let name = path.rsplit('/').next().unwrap_or_default();
-    let is_pdf_name = name
-        .rsplit_once('.')
-        .is_some_and(|(stem, extension)| !stem.is_empty() && extension.eq_ignore_ascii_case("pdf"));
-    if is_pdf_name {
+    path.rsplit('/').next().unwrap_or_default().to_owned()
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let name = picked_name_tail(path);
+    if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
+        return name;
+    }
+    // The picker offers only PDFs and pictures, so a tail that does not end in
+    // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
+    // so that an export still suggests a file the platform can open.
+    let name = name.as_str();
+    let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && ["pdf", "jpg", "jpeg", "png"]
+                .iter()
+                .any(|accepted| extension.eq_ignore_ascii_case(accepted))
+    });
+    if is_file_name {
         name.to_owned()
     } else {
-        "Imported document.pdf".to_owned()
+        IMPORTED_DOCUMENT_NAME.to_owned()
     }
+}
+
+/// The name given to a picked video whose Android id holds no file name.
+const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
+
+/// Name recorded for an imported video: the name it came with, or for an Android document id that
+/// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
+/// "Imported document.pdf", which a video must never be named.
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let name = picked_name_tail(path);
+    let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
+    if content && !is_video_name(&name) {
+        IMPORTED_VIDEO_NAME.to_owned()
+    } else {
+        name
+    }
+}
+
+/// The name an imported picture is stored under: the name it came with when that already ends
+/// the way its kind does (`.jpg` or `.jpeg` for a JPEG, `.png` for a PNG), otherwise with the
+/// suffix of what it is added, so the stored name always describes the stored bytes (a rename
+/// keeps it that way, `rename_document`). The stand-in name an opaque Android document id gets
+/// (`Imported document.pdf`) is replaced, so that a picture is never named as a PDF.
+fn picture_import_name(name: String, kind: Option<photo::PictureKind>) -> String {
+    let Some(kind) = kind else {
+        return name;
+    };
+    if kind.names(&name) {
+        return name;
+    }
+    if name == IMPORTED_DOCUMENT_NAME {
+        return format!("Imported picture{}", kind.extension());
+    }
+    format!("{name}{}", kind.extension())
 }
 
 #[tauri::command]
@@ -1773,7 +2192,9 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
             model,
             capacity: Some(capacity),
         } => {
-            let card = model_runtime::app().runner().card_for(&model.sha256);
+            // The one place cards are read from (this run's, else the saved one), as the start
+            // and the settings read them.
+            let card = models.stored_card(&model.sha256);
             local_model::ModelStatus::Installed {
                 capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
                 model,
@@ -1791,18 +2212,18 @@ fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::Mod
 }
 
 /// Each model's limits, for the AI helper settings (model limits): how much of a document it
-/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
-/// helper has run a model in this session, its room follows the context the helper made, and
-/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// reads at a time, the file's size, and the free memory a start needs (today's rule, or the card's
+/// formula when that is more). Once the helper has run a model (in this run of the app or an
+/// earlier one of this build, whose card is saved), its room follows the context the helper made,
+/// and the file's own claims (trained context, parameters) are given as such. Nothing here reads
 /// the model file: the helper's checked card does (`model_limits`).
 #[tauri::command]
 fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
-    let runner = model_runtime::app().runner();
     models
         .models()
         .into_iter()
         .map(|row| {
-            let card = runner.card_for(row.model.sha256);
+            let card = models.stored_card(row.model.sha256);
             model_limits::limits(
                 row.index,
                 &row.model,
@@ -1843,10 +2264,11 @@ async fn ai_model_use(
 /// is asked or written, nothing is loaded (`skipped`).
 #[tauri::command]
 async fn ai_model_check(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     request: ModelIndexRequest,
 ) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    let store = store.pin();
     use model_runtime::LoadCheck;
     if !cfg!(desktop) {
         return Ok(LoadCheck::Skipped);
@@ -2035,11 +2457,12 @@ impl ModelAddOutcome {
 #[tauri::command]
 async fn ai_model_add_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     active: State<'_, Arc<ModelAddActive>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
+    let store = store.pin();
     use tauri::Emitter;
     let filter = locale
         .unwrap_or_default()
@@ -2047,7 +2470,7 @@ async fn ai_model_add_picked(
     let _open = ActivityHold::new(store.idle());
     let picker = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        let dialog = picker.dialog().file();
+        let dialog = file_dialog(&picker);
         #[cfg(desktop)]
         let dialog = dialog.add_filter(&filter, &["gguf"]);
         #[cfg(not(desktop))]
@@ -2117,11 +2540,12 @@ async fn ai_model_add_picked(
 #[tauri::command]
 async fn ai_model_download(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     active: State<'_, Arc<ModelAddActive>>,
     request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let store = store.pin();
     let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
@@ -2206,11 +2630,12 @@ async fn ai_model_remove(
 #[tauri::command]
 async fn ai_summarize(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     mut request: model_runtime::SummarizeRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    let store = store.pin();
     // Capture the actual unlocked session before validation can yield.
     let origin = store
         .answer_origin()
@@ -2240,7 +2665,7 @@ async fn ai_summarize(
     let lang = request.lang.clone();
     let mut report = report_progress(app.clone(), answer_id);
     let result = run_ai(
-        store.inner(),
+        store.arc(),
         origin,
         announce_answer(app, answer_id),
         move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch, &mut report),
@@ -2286,16 +2711,104 @@ async fn ai_summarize(
     })
 }
 
+/// The speed check (#305 PR 4): how fast the AI helper reads and writes on this computer, from one
+/// short fixed FAKE request, started only by the patient. It takes the same single answer slot and
+/// the unlocked session's hold as any answer (so it cannot run while locked or beside another
+/// answer), a lock or `ai_cancel` stops it, and its threads are the app's own (never more than the
+/// computer's CPUs). The result is kept per model, build and thread count.
+#[tauri::command]
+async fn ai_speed_check(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    models: State<'_, Arc<local_model::Store>>,
+    answer_id: Uuid,
+) -> CommandResult<speed_check::Speed> {
+    let store = store.pin();
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let sha256 = models
+        .in_use_sha256()
+        .ok_or_else(|| ai_error(model_runtime::AiError::NotInstalled))?;
+    let stats = run_ai(
+        store.arc(),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.speed_check_for(ticket, watch),
+    )
+    .await?;
+    let Some(speed) = speed_check::measure(&stats) else {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    };
+    // Kept only under the thread count it was read on: a check whose helper ran on another count
+    // than the app's own now (it changed since the helper started) is no measurement for this key.
+    if !speed_check::read_on(&stats, speed_threads()) {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    }
+    if !keep_speed(&models, sha256, speed, now_ms()) {
+        return Err(ai_error(model_runtime::AiError::Storage));
+    }
+    Ok(speed)
+}
+
+/// The thread count a speed is kept and found under: the app's own (`model_runtime::threads`),
+/// which is the count the helper reads a prompt on (`Stats::batch_threads`), never the answer's
+/// own count (a fixed few, at most 3). One key for the check that saves it and the question that
+/// reads it.
+fn speed_threads() -> u32 {
+    model_runtime::threads()
+}
+
+fn keep_speed(
+    models: &local_model::Store,
+    sha256: &str,
+    speed: speed_check::Speed,
+    at_ms: u64,
+) -> bool {
+    models.save_speed(sha256, speed_threads(), speed, at_ms)
+}
+
+fn recorded_speed(models: &local_model::Store) -> Option<speed_check::Speed> {
+    recorded_speed_for(models, models.in_use_sha256()?)
+}
+
+fn recorded_speed_for(models: &local_model::Store, sha256: &str) -> Option<speed_check::Speed> {
+    models.speed_for(sha256, speed_threads())
+}
+
+/// What was measured for the model in use on this computer, for the reader's "about N minutes"
+/// and the settings: nothing until the patient has run the check.
+#[tauri::command]
+fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_check::Speed> {
+    recorded_speed(&models)
+}
+
 /// What a term means in its sentence, from the model on this computer (#72). With the
-/// document, which must be a readable PDF, the answer is also kept for that document's save.
+/// document, which must be a readable PDF, the answer is also kept for that document's save,
+/// and its sentence must then be from the pages the reader was shown for that document (#240).
 #[tauri::command]
 async fn ai_explain(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::ExplainRequest,
+    mut request: model_runtime::ExplainRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    let store = store.pin();
     // Capture the actual unlocked session before validation can yield.
     let origin = store
         .answer_origin()
@@ -2303,9 +2816,18 @@ async fn ai_explain(
     let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
+        // The sentence an explanation is kept with must be from this document's own pages, as
+        // native showed them to the reader (#240): the model's words are never filed on a
+        // document under a sentence it does not contain. What is asked and filed is that
+        // sentence with its whitespace collapsed, exactly the document's own words; a sentence
+        // that has anything must hold the term.
+        let mut sentence = picks
+            .explain_context(session, record_id, request.term.trim(), &request.context)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        request.context = std::mem::take(&mut *sentence);
         // Validation may outlive its originating session. It must not count
         // as unowned activity in whichever session is open when it returns.
-        let store = Arc::clone(store.inner());
+        let store = Arc::clone(store.arc());
         tauri::async_runtime::spawn_blocking(move || readable_pdf(&store, record_id))
             .await
             .map_err(|_| PublicError::from(VaultError::Storage))??;
@@ -2316,7 +2838,7 @@ async fn ai_explain(
         request.lang.clone(),
     );
     let result = run_ai(
-        store.inner(),
+        store.arc(),
         origin,
         announce_answer(app, answer_id),
         move |runtime, ticket, watch| runtime.explain_for(ticket, request, watch),
@@ -2578,7 +3100,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
     let message_key = match error {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
-        AiError::Memory => "ai.error.memory",
+        AiError::Memory(_) => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
         AiError::SummaryTooLarge => "ai.summaryTooLarge",
@@ -2590,6 +3112,11 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        // How much a refusal for memory needed and how much was free (#305).
+        memory: match error {
+            AiError::Memory(shortfall) => shortfall,
+            _ => None,
+        },
     }
 }
 
@@ -2617,6 +3144,9 @@ struct AuditHistory {
     checked_from_ms: Option<u64>,
     /// Every event the manifest pins is shown, even when part of the storage is damaged.
     every_event_shown: bool,
+    /// How many entries were left out for being about a hidden person (#360): counted, never
+    /// named, and shown again once the person is restored.
+    about_hidden_people: usize,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2635,6 +3165,7 @@ impl From<vault::HistoryView> for AuditHistory {
             checked_until_ms,
             checked_from_ms,
             every_event_shown: view.every_event_shown,
+            about_hidden_people: view.about_hidden_people,
         }
     }
 }
@@ -2693,8 +3224,9 @@ impl From<history::HistoryEntry> for AuditHistoryEntry {
 /// Admission shares the vault's KDF guard, so a speed test cannot overlap
 /// another passphrase operation. Locking remains available throughout.
 #[tauri::command]
-async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<SpeedTestReport> {
-    let store = Arc::clone(store.inner());
+async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTestReport> {
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     let measured = tauri::async_runtime::spawn_blocking(move || store.benchmark_kdf())
         .await
         .map_err(|_| PublicError {
@@ -2703,6 +3235,7 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
             note_key: None,
             record_id: None,
             retry_after_ms: None,
+            memory: None,
         })??;
     let RuntimeInfo {
         platform,
@@ -2719,8 +3252,9 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
 }
 
 #[tauri::command]
-async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultStatus> {
-    run_blocking(store.inner(), VaultStore::status).await
+async fn vault_status(store: State<'_, StoreHandle>) -> CommandResult<VaultStatus> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::status).await
 }
 
 /// First setup's passphrase checklist (#69): three answers, only while no
@@ -2728,10 +3262,11 @@ async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultS
 /// returns; nothing is kept, logged, or echoed in an error.
 #[tauri::command]
 async fn vault_passphrase_rules(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PassphraseRulesRequest,
 ) -> CommandResult<PassphraseRules> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.new_passphrase_rules(&request.passphrase, &request.initial_profile_name)
     })
     .await
@@ -2739,13 +3274,16 @@ async fn vault_passphrase_rules(
 
 #[tauri::command]
 async fn vault_create(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
-    let created = run_blocking(store.inner(), move |store| {
+    let created = run_blocking(store.arc(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
             .inspect(|_| {
@@ -2759,23 +3297,27 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
-        forget_vault(throttle.inner()).await;
+        forget_vault(throttle.inner(), store.arc(), store.all()).await;
+        refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     }
     created
 }
 
 #[tauri::command]
 async fn vault_unlock(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     tried(
         throttle.inner(),
         Attempt::Unlock,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = store
                 .unlock(&request.passphrase)
                 // A pick can read the session after a lock clears it but pass its
@@ -2790,8 +3332,223 @@ async fn vault_unlock(
         }),
     )
     .await?;
-    after_open(store.inner());
-    run_blocking(store.inner(), VaultStore::snapshot).await
+    refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
+    after_open(store.arc());
+    run_blocking(store.arc(), VaultStore::snapshot).await
+}
+
+/// The screen's word that the vault locked natively, without the screen asking: the window was
+/// closed to the tray, Quit was chosen in the tray, or the native idle lock fell due. The vault is
+/// already locked when it is sent; the screen then lets go of everything it shows (the library,
+/// an open letter, any summary or text read from it) exactly as its own lock does, and does not
+/// wait for a `visibilitychange` that a hidden window may never get (#206).
+const VAULT_LOCKED: &str = "vault-locked";
+
+/// What locked the vault, as the screen is told it: it says why on the unlock screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum LockedBy {
+    /// Closing the window to the tray, or Quit from the tray.
+    Closed,
+    /// The native idle lock.
+    Idle,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultLocked {
+    by: LockedBy,
+}
+
+/// Tells the screen that the vault locked natively. Sent after the lock, never instead of it:
+/// the native lock never waits for the screen.
+fn tell_screen_vault_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>, by: LockedBy) {
+    use tauri::Emitter;
+    let _ = app.emit(VAULT_LOCKED, VaultLocked { by });
+}
+
+/// Before a hidden window is shown again (from the tray, or by a second launch): if the vault is
+/// locked, the screen is told once more, so a page that did not run while hidden lets go before it
+/// is drawn. Never waits for the vault: while an unlock holds it, nothing is said (#206).
+pub(crate) fn tell_screen_if_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(store) = app.try_state::<StoreHandle>() {
+        if store.arc().is_unlocked_now() == Some(false) {
+            tell_screen_vault_locked(app, LockedBy::Closed);
+        }
+    }
+}
+
+/// Whether a second launch brings the running window forward: always, except a start from the
+/// login entry (`--background`), which finds myCarlos already running and changes nothing.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn second_launch_shows_window<S: AsRef<str>>(args: &[S]) -> bool {
+    !args
+        .iter()
+        .any(|arg| arg.as_ref() == desktop_background::BACKGROUND_ARG)
+}
+
+/// The lock the background mode runs on close-to-tray and on Quit, as `run` gives it: from the
+/// app's own vault and picks. Tests take it from here too, so they test `run`'s wiring.
+#[cfg_attr(not(desktop), allow(dead_code))]
+fn close_lock<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Arc<dyn Fn() + Send + Sync> {
+    let vaults = app.state::<StoreHandle>().inner().clone();
+    let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+    let app = app.clone();
+    // The vault the screen is on when the window closes, not the one at start-up (#357).
+    Arc::new(move || lock_vault_for_close(&app, vaults.arc(), &picks))
+}
+
+/// One turn of the idle-lock thread, as `run` spawns it: lock every vault that is due (each has its
+/// own deadline), and if any locked, tell the screen (a hidden window's own idle timer may not run).
+/// Returns whether any locked.
+fn idle_step<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    stores: &[Arc<VaultStore>],
+    picks: &PendingPicks,
+    now: Instant,
+) -> bool {
+    let locked = lock_all_if_idle(stores, picks, now);
+    if locked {
+        tell_screen_vault_locked(app, LockedBy::Idle);
+    }
+    locked
+}
+
+/// Closing the window to the tray, and Quit: everything lets go natively, then the screen is told.
+fn lock_vault_for_close<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &VaultStore,
+    picks: &PendingPicks,
+) {
+    lock_vault_now(store, picks);
+    tell_screen_vault_locked(app, LockedBy::Closed);
+}
+
+/// Everything that holds the vault's contents lets go: what `vault_lock` does, for the places that
+/// lock without a command (closing the window to the tray, Quit from the tray).
+fn lock_vault_now(store: &VaultStore, picks: &PendingPicks) {
+    stop_work_for_lock(picks);
+    store.lock();
+    // Again once locked: a request that came in meanwhile stops too.
+    stop_work_for_lock(picks);
+}
+
+/// An unlock, recovery or creation that completes after the window was closed to the tray (or
+/// while it is still hidden there) is closed again and refused (#206 review): the close found
+/// nothing to lock while the unlock was in flight, and the screen ignores a lock it is not yet
+/// ready for, so the vault would otherwise open in a window nobody can see.
+async fn refuse_unlock_closed_meanwhile(
+    store: &Arc<VaultStore>,
+    picks: &Arc<PendingPicks>,
+    started: u64,
+) -> CommandResult<()> {
+    if desktop_background::unlock_refused(started) {
+        // On the blocking pool: the lock waits for the vault's mutex.
+        let picks = Arc::clone(picks);
+        run_blocking(store, move |store| {
+            lock_vault_now(store, &picks);
+            Ok(())
+        })
+        .await?;
+        return Err(VaultError::Cancelled.into());
+    }
+    Ok(())
+}
+
+/// The Preferences "Running in the background" choices. On a phone there is no such mode.
+#[cfg(desktop)]
+fn background_state(
+    app: &tauri::AppHandle,
+) -> CommandResult<Arc<desktop_background::desktop::Background>> {
+    app.try_state::<Arc<desktop_background::desktop::Background>>()
+        .map(|state| Arc::clone(state.inner()))
+        .ok_or_else(|| PublicError::from(VaultError::Storage))
+}
+
+#[tauri::command]
+async fn background_status(
+    app: tauri::AppHandle,
+    locale: Option<UiLocale>,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        if let Some(locale) = locale {
+            background.report_locale(locale);
+        }
+        Ok(background.status())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, locale);
+        Ok(desktop_background::Status::unsupported())
+    }
+}
+
+#[tauri::command]
+async fn background_set_keep_running(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    enabled: bool,
+) -> CommandResult<desktop_background::Status> {
+    let store = store.pin();
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        let status =
+            tauri::async_runtime::spawn_blocking(move || background.set_keep_running(enabled))
+                .await
+                .map_err(|_| PublicError::from(VaultError::Storage))?
+                .map_err(|_| PublicError::from(VaultError::Storage))?;
+        // Tray notices need this switch (#230): the notice keys follow it.
+        tray_notices::set_keep_running(status.keep_running);
+        sync_notice_keys_soon(store.pin().arc());
+        Ok(status)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, store, enabled);
+        Err(PublicError::from(VaultError::Storage))
+    }
+}
+
+#[tauri::command]
+async fn background_set_start_at_login(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        tauri::async_runtime::spawn_blocking(move || background.set_start_at_login(enabled))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(|_| PublicError::from(VaultError::Storage))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, enabled);
+        Err(PublicError::from(VaultError::Storage))
+    }
+}
+
+/// Whether a document is waiting, as the tray check last found it (#230): the unlock screen shows
+/// the one fixed sentence when it is. No document, clinic or person is part of the answer.
+#[tauri::command]
+async fn tray_waiting_status() -> CommandResult<bool> {
+    Ok(tray_poller::waiting_now())
+}
+
+/// The interface's language, so the tray icon's menu and tooltip are worded in it.
+#[tauri::command]
+async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> CommandResult<()> {
+    #[cfg(desktop)]
+    {
+        background_state(&app)?.report_locale(locale);
+    }
+    #[cfg(not(desktop))]
+    let _ = (app, locale);
+    Ok(())
 }
 
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
@@ -2803,32 +3560,63 @@ fn after_open(store: &Arc<VaultStore>) {
         if let Some(vault_id) = store.open_vault_id() {
             notice_key::after_open(vault_id);
         }
+        // Keys whose link was removed before their wipe finished (#160). One read of the vault id
+        // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
+        // an empty link set.
+        store.sweep_notice_keys();
         store.after_open();
+        // The notices switch is kept in the vault: read it now it is open, then bring the notice
+        // keys in line with the two switches (#230).
+        tray_notices::set_notices(store.notification_status(None).enabled);
+        let _ = store.sync_notice_keys();
+    });
+}
+
+/// After a switch changes, or a link is made, while the vault is open (#230): the keys follow.
+fn sync_notice_keys_soon(store: &Arc<VaultStore>) {
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = store.sync_notice_keys();
     });
 }
 
 #[tauri::command]
 async fn vault_lock(
-    store: State<'_, Arc<VaultStore>>,
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
 ) -> CommandResult<()> {
+    let store = store.pin();
+    stop_work_for_lock(&picks);
+    let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let vaults = store.clone();
+    let result = run_blocking(store.arc(), move |store| {
+        store.lock();
+        // Again once locked: a request that came in meanwhile stops too.
+        stop_work_for_lock(&picks);
+        // A locked screen starts on the default vault (#357); with one vault there is nowhere to go.
+        vaults.return_to_default(|| stop_work_for_switch(&picks, &received));
+        Ok(())
+    })
+    .await;
+    // Again once locked: a reader still being opened stops too.
+    cancel_native_pdf(&app);
+    result
+}
+
+/// What stops with a lock, whichever way the vault locks (the command, the idle deadline, and a
+/// switch to another vault): the picks a native dialog was about to hand over, a page still being
+/// drawn, a text being read, and the AI model with its answer. One list, so a lock path cannot
+/// forget one of them (#357).
+fn stop_work_for_lock(picks: &PendingPicks) {
     picks.clear();
-    // A page still being drawn, a text being read, and the AI model with
-    // its answer, stop with the lock.
     pdf_view::cancel_views();
     pdf_view::cancel_text_reads();
     local_runner::on_lock();
+    // The cloud AI session (#72): what was prepared is dropped, a send is stopped, consent goes off.
     cloud_ai_on_lock();
-    run_blocking(store.inner(), |store| {
-        store.lock();
-        // Again once locked: a request that came in meanwhile stops too.
-        pdf_view::cancel_views();
-        pdf_view::cancel_text_reads();
-        local_runner::on_lock();
-        cloud_ai_on_lock();
-        Ok(())
-    })
-    .await
 }
 
 /// How often the native timer checks the idle deadline.
@@ -2844,14 +3632,30 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 /// once it has been idle past its deadline. Returns whether it locked. This is
 /// the backstop for a renderer that hung, crashed or was suspended before its
 /// own timer could lock.
+/// What the app stops when the screen moves from one vault to another (#357): everything a lock
+/// stops, and the files the operating system offered the app, which belong to the session they came
+/// in, not to whichever vault the owner opens next.
+fn stop_work_for_switch(picks: &PendingPicks, received: &ReceivedFiles) {
+    stop_work_for_lock(picks);
+    received.clear();
+}
+
+/// The idle check over EVERY store the device has, not only the current one: a vault left open by
+/// any path still locks at its own deadline. Whether any locked (the caller then returns the screen
+/// to the default vault).
+fn lock_all_if_idle(stores: &[Arc<VaultStore>], picks: &PendingPicks, now: Instant) -> bool {
+    // Every store is checked: no short-circuit, each has its own deadline.
+    let mut any = false;
+    for store in stores {
+        any |= lock_if_idle(store, picks, now);
+    }
+    any
+}
+
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
-        pdf_view::cancel_views();
-        pdf_view::cancel_text_reads();
-        local_runner::on_lock();
-        cloud_ai_on_lock();
-        picks.clear();
+        stop_work_for_lock(picks);
     }
     locked
 }
@@ -2891,11 +3695,13 @@ impl Drop for ActivityHold<'_> {
 /// The renderer reports user input, which the native idle deadline cannot see,
 /// at most every 10 seconds.
 #[tauri::command]
-fn vault_touch(store: State<'_, Arc<VaultStore>>) {
+fn vault_touch(store: State<'_, StoreHandle>) {
+    let store = store.pin();
     store.idle().touch(Instant::now());
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AutoLockRequest {
     minutes: u64,
 }
@@ -2905,7 +3711,8 @@ struct AutoLockRequest {
 /// native deadline uses the same delay (clamped to 1-15 minutes). The renderer
 /// restarts its own deadline then, so this counts as activity too.
 #[tauri::command]
-fn vault_set_auto_lock(store: State<'_, Arc<VaultStore>>, request: AutoLockRequest) {
+fn vault_set_auto_lock(store: State<'_, StoreHandle>, request: AutoLockRequest) {
+    let store = store.pin();
     store
         .idle()
         .set_delay_minutes(request.minutes, Instant::now());
@@ -2941,8 +3748,9 @@ where
 }
 
 #[tauri::command]
-async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
-    run_blocking(store.inner(), VaultStore::snapshot).await
+async fn vault_snapshot(store: State<'_, StoreHandle>) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
 /// The audit history for Security, as far as it checks out (Ben's D129 and D146, mycarlos#120).
@@ -2954,8 +3762,9 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// `everyEventShown` says the shown entries are still every event the manifest pins (only
 /// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
-async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
-    audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
+async fn vault_history(store: State<'_, StoreHandle>) -> CommandResult<AuditHistory> {
+    let store = store.pin();
+    audit_history_result(run_blocking(store.arc(), VaultStore::history_view_for_display).await)
 }
 
 /// What Security receives for a history read: the view, or `history_unverified` when the read
@@ -2970,6 +3779,7 @@ fn audit_history_result(result: CommandResult<vault::HistoryView>) -> CommandRes
                 record_id: None,
                 note_key: None,
                 retry_after_ms: None,
+                memory: None,
             })
         }
         Err(error) => Err(error),
@@ -2993,27 +3803,33 @@ impl Drop for PortalLinkRequest {
 
 #[tauri::command]
 async fn vault_portal_link(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PortalLinkRequest,
 ) -> CommandResult<portal_link::LinkSummary> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
     // Capture before queuing work: an old IPC request must not begin linking
     // in a session opened while it waited for a blocking worker.
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     // User input already touches the native deadline. HTTP completion is not
     // new activity and must not keep an unattended or newly unlocked vault open.
     tauri::async_runtime::spawn_blocking(move || {
-        store.link_portal(
+        let linked = store.link_portal(
             &request.portal_base,
             &request.code,
             &request.device_name,
             request.profile_id,
             now_ms(),
             session,
-        )
+        );
+        // A new link gets its notice key when tray notices are wanted (#230).
+        if linked.is_ok() {
+            let _ = store.sync_notice_keys();
+        }
+        linked
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3022,23 +3838,29 @@ async fn vault_portal_link(
 
 #[tauri::command]
 async fn vault_portal_connect(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PortalLinkRequest,
 ) -> CommandResult<PortalConnectResult> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
-        store.connect_portal(
+        let connected = store.connect_portal(
             &request.portal_base,
             &request.code,
             &request.device_name,
             request.profile_id,
             now_ms(),
             session,
-        )
+        );
+        // A new link gets its notice key when tray notices are wanted (#230).
+        if connected.is_ok() {
+            let _ = store.sync_notice_keys();
+        }
+        connected
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3101,6 +3923,7 @@ fn approval_check_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms,
+        memory: None,
     }
 }
 
@@ -3110,16 +3933,17 @@ fn approval_check_issue(error: VaultError) -> PublicError {
 /// runs, never keeps an unattended vault open.
 #[tauri::command]
 async fn vault_refresh_device_approval(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<DeviceApprovalCheck> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
     // Captured before queuing: a check queued in an older session must not
     // read or save anything in a newer one.
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.refresh_device_approval(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3151,6 +3975,7 @@ fn approval_code_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        memory: None,
     }
 }
 
@@ -3160,12 +3985,13 @@ fn approval_code_issue(error: VaultError) -> PublicError {
 /// wiped here once used.
 #[tauri::command]
 async fn vault_submit_approval_code(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
     mut code: String,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
         let result = store.submit_approval_code(link_id, &code, session);
         code.zeroize();
@@ -3178,11 +4004,12 @@ async fn vault_submit_approval_code(
 
 #[tauri::command]
 async fn vault_request_device_approval(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3191,11 +4018,12 @@ async fn vault_request_device_approval(
 
 #[tauri::command]
 async fn vault_restart_device_approval(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3206,10 +4034,11 @@ async fn vault_restart_device_approval(
 /// check downloads and checks its documents again.
 #[tauri::command]
 async fn vault_forget_refused_deliveries(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3217,11 +4046,26 @@ async fn vault_forget_refused_deliveries(
 }
 
 #[tauri::command]
-async fn vault_check_documents(
-    store: State<'_, Arc<VaultStore>>,
-) -> CommandResult<portal_pickup::CheckResult> {
+async fn vault_portal_remove_link(
+    store: State<'_, StoreHandle>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.remove_portal_link(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_check_documents(
+    store: State<'_, StoreHandle>,
+) -> CommandResult<portal_pickup::CheckResult> {
+    let store = store.pin();
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3230,33 +4074,56 @@ async fn vault_check_documents(
 
 #[tauri::command]
 async fn vault_notification_status(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     locale: Option<UiLocale>,
 ) -> CommandResult<document_notification_runtime::Status> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
+/// "Show a test notice": the same generic notice an arrival shows, with a fixed sentence, so a
+/// person can confirm Windows lets myCarlos notify. No vault data is read, nothing is recorded,
+/// and a second press within a few seconds is refused.
+#[tauri::command]
+async fn vault_send_test_notice(
+    store: State<'_, StoreHandle>,
+) -> CommandResult<document_notification_runtime::TestNotice> {
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.send_test_notice())
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 #[tauri::command]
 async fn vault_set_notifications(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<document_notification_runtime::Status> {
-    let store = Arc::clone(store.inner());
-    tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
+    let status = tauri::async_runtime::spawn_blocking({
+        let store = Arc::clone(&store);
+        move || store.set_notifications(enabled)
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))??;
+    // Tray notices need this switch (#230): the notice keys follow it.
+    tray_notices::set_notices(status.enabled);
+    sync_notice_keys_soon(&store);
+    Ok(status)
 }
 
 #[tauri::command]
 async fn vault_set_automatic_document_checks(
     enabled: bool,
-    store: tauri::State<'_, Arc<VaultStore>>,
+    store: tauri::State<'_, StoreHandle>,
 ) -> CommandResult<document_notification_runtime::Status> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.set_automatic_checks(enabled))
         .await
         .map_err(|_| VaultError::Storage)?
@@ -3265,16 +4132,17 @@ async fn vault_set_automatic_document_checks(
 
 #[tauri::command]
 async fn vault_change_passphrase(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: ChangePassphraseRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The current passphrase is checked as at unlock, and counted with it:
     // a vault left open must not let the passphrase be guessed without end.
     tried(
         throttle.inner(),
         Attempt::Unlock,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result =
                 store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
             request.current_passphrase.zeroize();
@@ -3300,15 +4168,16 @@ impl Serialize for ShownRecoveryKey {
 /// authorizes it, as it does a passphrase change.
 #[tauri::command]
 async fn vault_recovery_key_begin(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<ShownRecoveryKey> {
+    let store = store.pin();
     // As for a passphrase change: the passphrase is counted with unlock's.
     tried(
         throttle.inner(),
         Attempt::Unlock,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = store
                 .begin_recovery_key(&request.passphrase)
                 .map(ShownRecoveryKey);
@@ -3386,6 +4255,22 @@ fn confirmed_natively<R: tauri::Runtime>(
 #[cfg(desktop)]
 const MAIN_WINDOW: &str = "main";
 
+/// A native file dialog owned by the app's window. Every file picker and save dialog of the app
+/// is opened through this and never through `app.dialog().file()`: with no owner, Windows shows
+/// the picker as a separate top-level window that is not modal to the app, so the patient can
+/// carry on in the app behind it, lose it behind the window or in the taskbar, and leave the
+/// operation waiting on a dialog that looks closed. Owned, it stays above the window and
+/// blocks it. No timeout is added: a patient may leave a dialog open as long as they like.
+fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().file();
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    };
+    dialog
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -3422,17 +4307,18 @@ impl Drop for ConfirmRecoveryKeyRequest {
 #[tauri::command]
 async fn vault_recovery_key_confirm(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: ConfirmRecoveryKeyRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<VaultSnapshot>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     let title = locale.text(MessageId::NativeRecoveryTitle)?;
     let warning = locale.text(MessageId::NativeRecoveryWarning)?;
     let keep = locale.text(MessageId::NativeRecoveryKeep)?;
     let replace = locale.text(MessageId::NativeRecoveryReplace)?;
     let cancel = locale.text(MessageId::NativeCancel)?;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
             confirmed_natively(&app, &title, warning, &keep, &replace, &cancel)
         })
@@ -3480,8 +4366,9 @@ fn confirm_recovery_key_asking(
 /// The short label of the recovery key being set up, for the kit the page
 /// prints. Not secret.
 #[tauri::command]
-async fn vault_recovery_key_label(store: State<'_, Arc<VaultStore>>) -> CommandResult<String> {
-    run_blocking(store.inner(), VaultStore::pending_recovery_key_label).await
+async fn vault_recovery_key_label(store: State<'_, StoreHandle>) -> CommandResult<String> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::pending_recovery_key_label).await
 }
 
 /// Saves the kit for the recovery key being set up to a file the patient
@@ -3489,20 +4376,19 @@ async fn vault_recovery_key_label(store: State<'_, Arc<VaultStore>>) -> CommandR
 #[tauri::command]
 async fn vault_recovery_kit_save(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Nothing is asked for unless a key is waiting to be confirmed.
-    let name = run_blocking(store.inner(), |store| store.recovery_kit_name(now_ms())).await?;
+    let name = run_blocking(store.arc(), |store| store.recovery_kit_name(now_ms())).await?;
     // Held until the kit is written, so that the automatic lock cannot fall
     // between the picker closing and the write.
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        dialog
-            .dialog()
-            .file()
+        file_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -3512,7 +4398,7 @@ async fn vault_recovery_kit_save(
         return Ok(false);
     };
     if let Ok(path) = destination.clone().into_path() {
-        return run_blocking(store.inner(), move |store| {
+        return run_blocking(store.arc(), move |store| {
             store
                 .save_recovery_kit_in(&path, now_ms(), locale)
                 .map(|()| true)
@@ -3520,7 +4406,7 @@ async fn vault_recovery_kit_save(
         .await;
     }
     // Android content providers return a URI rather than a path.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         use std::io::Write as _;
         let kit = store.recovery_kit_in(now_ms(), locale)?;
         let mut options = OpenOptions::new();
@@ -3536,8 +4422,9 @@ async fn vault_recovery_kit_save(
 }
 
 #[tauri::command]
-async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
-    run_blocking(store.inner(), |store| {
+async fn vault_recovery_key_cancel(store: State<'_, StoreHandle>) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| {
         store.cancel_recovery_key();
         Ok(())
     })
@@ -3546,16 +4433,19 @@ async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> Command
 
 #[tauri::command]
 async fn vault_recover(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
+    let store = store.pin();
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     let passphrase_replaced = tried(
         throttle.inner(),
         Attempt::RecoveryKey,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = store
                 .recover(&request.recovery_key, &request.new_passphrase)
                 // As for unlock: a pick from the session that ended stays there.
@@ -3569,15 +4459,16 @@ async fn vault_recover(
         }),
     )
     .await?;
-    after_open(store.inner());
+    refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
+    after_open(store.arc());
     Ok(RecoverResponse {
         passphrase_replaced,
-        snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
+        snapshot: run_blocking(store.arc(), VaultStore::snapshot).await?,
     })
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BackupPickRequest {
     /// Today's date on the patient's own calendar, `YYYY-MM-DD`.
     #[serde(default)]
@@ -3593,6 +4484,32 @@ fn is_plain_date(text: &str) -> bool {
             4 | 7 => *byte == b'-',
             _ => byte.is_ascii_digit(),
         })
+}
+
+/// The name a single-document export suggests in the save dialog: "Document <date>" plus the
+/// document's own extension, never the document's name, which can be a person's, a clinic's or a
+/// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
+/// so a patient who wants the original name can type it. The date is the patient's own day where
+/// the renderer gives one that reads as a date, else the UTC date. The suffix is kept, with its
+/// own case, only when it is a kind the vault stores (`EXPORT_NAME_KINDS`): any other dotted end
+/// of a name is part of the name ("Dr.Smith", "J.Lopez", "Lab results 14.30"), not a kind, and
+/// would put it back in the file name.
+fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    /// The kinds of document the vault stores, as file name suffixes (case does not matter).
+    const EXPORT_NAME_KINDS: [&str; 5] = ["pdf", "jpg", "jpeg", "png", "mp4"];
+    let date = local_date
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
+    match display_name.rsplit_once('.') {
+        Some((_, extension))
+            if EXPORT_NAME_KINDS
+                .iter()
+                .any(|kind| extension.eq_ignore_ascii_case(kind)) =>
+        {
+            format!("Document {date}.{extension}")
+        }
+        _ => format!("Document {date}"),
+    }
 }
 
 /// What a saved backup was: the name of the file written, where the
@@ -3660,11 +4577,33 @@ async fn tried<T>(
     result
 }
 
-/// The vault the counts were about is gone or replaced: its counts go too.
-async fn forget_vault(throttle: &Arc<AttemptThrottle>) {
+/// The vault the counts were about is gone or replaced: its counts go too, **but only when it was
+/// the only vault on the device** (#357 4c). With several vaults the counts are about the device,
+/// not about one vault: a vault made, set aside or restored while another exists must not be a way
+/// to start the counter again. A vault that cannot be read is taken to exist, so a doubt leaves the
+/// counts as they were.
+async fn forget_vault(
+    throttle: &Arc<AttemptThrottle>,
+    this: &Arc<VaultStore>,
+    all: Vec<Arc<VaultStore>>,
+) {
+    let this = Arc::clone(this);
+    let alone = tauri::async_runtime::spawn_blocking(move || !other_vault_exists(&this, &all))
+        .await
+        .unwrap_or(false);
+    if !alone {
+        return;
+    }
     let now = now_ms();
     // A clear lost to a failed thread leaves the counts as they were.
     let _ = on_throttle(throttle, move |throttle| throttle.forget_vault(now)).await;
+}
+
+/// Whether any vault of the device other than `this` exists (or cannot be told not to).
+fn other_vault_exists(this: &Arc<VaultStore>, all: &[Arc<VaultStore>]) -> bool {
+    all.iter()
+        .filter(|other| !Arc::ptr_eq(other, this))
+        .any(|other| !matches!(other.status(), Ok(VaultStatus::Absent)))
 }
 
 /// Runs `work` on the throttle away from the async runtime, as it reads and
@@ -3685,10 +4624,11 @@ where
 #[tauri::command]
 async fn vault_backup_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: BackupPickRequest,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let session = picks.session();
     // Named by the patient's own date where the renderer gives one that
     // reads as a date, else by the UTC date.
@@ -3698,28 +4638,48 @@ async fn vault_backup_pick(
         .filter(|date| is_plain_date(date))
         .map_or_else(|| vault::utc_date_text(now_ms()), str::to_owned);
     // Nothing is asked for unless there is a writable vault to back up.
-    run_blocking(store.inner(), |store| match store.snapshot()?.recovery {
+    run_blocking(store.arc(), |store| match store.snapshot()?.recovery {
         None => Ok(()),
         Some(_) => Err(VaultError::RecoveryMode),
     })
     .await?;
-    let name = run_blocking(store.inner(), move |store| store.backup_file_name(&date)).await?;
+    let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
     Ok(destination.map(|destination| picks.backups.store(session, destination)))
 }
 
+/// How big a backup would be, and how much of it is video, asked before the
+/// patient chooses where to save it.
+#[tauri::command]
+async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.backup_size()).await
+}
+
+/// The records a backup was made without the file of, for the Hidden list to say
+/// why a video's file is missing: those whose latest history event is "hidden,
+/// left out of the backup".
+#[tauri::command]
+async fn vault_left_out_records(store: State<'_, StoreHandle>) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.left_out_records()).await
+}
+
 #[tauri::command]
 async fn vault_backup_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: PickRequest,
+    request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let store = store.pin();
+    let leave_videos_out = request.leave_videos_out;
+    let store = store.pin();
     let destination = picks
         .backups
         .take(request.pick_id, picks.session())
@@ -3732,8 +4692,8 @@ async fn vault_backup_picked(
             .map(|name| name.to_string_lossy().into_owned());
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
-        return run_blocking(store.inner(), move |store| {
-            store.backup_atomic(&path, now_ms())?;
+        return run_blocking(store.arc(), move |store| {
+            store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
             Ok(SavedBackup {
                 name,
                 bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
@@ -3751,10 +4711,11 @@ async fn vault_backup_picked(
     let opened = Arc::clone(&emptied);
     let bytes = Arc::new(AtomicU64::new(0));
     let counted = Arc::clone(&bytes);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
-        store.verify_for_backup()?;
+        let plan = store.plan_backup(leave_videos_out)?;
+        store.verify_for_backup_planned(&plan)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -3765,12 +4726,13 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup(
+        store.backup_planned(
             std::io::BufWriter::new(Counted {
                 inner: output,
                 bytes: counted,
             }),
             now_ms(),
+            &plan,
         )?;
         store.record_backup_saved(&place);
         Ok(())
@@ -3789,24 +4751,611 @@ async fn vault_backup_picked(
     })
 }
 
+/// What a person's export needs once it has been prepared: who, whether the history excerpt
+/// goes, and the key the package is made under. The key is held only here, and zeroed when
+/// the last copy goes.
+#[derive(Clone)]
+struct PendingProfileExport {
+    profile_id: Uuid,
+    include_history: bool,
+    secret: ProfileExportSecret,
+}
+
+#[derive(Clone)]
+enum ProfileExportSecret {
+    Key(Zeroizing<[u8; 16]>),
+    Passphrase(Zeroizing<String>),
+}
+
+impl ProfileExportSecret {
+    fn as_secret(&self) -> vault::PackageSecret<'_> {
+        match self {
+            Self::Key(key) => vault::PackageSecret::Key(key),
+            Self::Passphrase(passphrase) => vault::PackageSecret::Passphrase(passphrase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileExportPrepareRequest {
+    profile_id: Uuid,
+    include_history: bool,
+    /// A passphrase the patient typed for the package. None: a key is generated.
+    #[serde(default)]
+    passphrase: Option<String>,
+}
+
+/// What a person's export holds, in counts. Names no document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileExportSummary {
+    documents: usize,
+    hidden: usize,
+    folders: usize,
+    ai_answers: usize,
+    with_clinic_evidence: usize,
+    left_out_damaged: usize,
+    evidence_left_out: usize,
+    history_entries: usize,
+    plaintext_bytes: u64,
+}
+
+impl From<&vault::ExportReport> for ProfileExportSummary {
+    fn from(report: &vault::ExportReport) -> Self {
+        Self {
+            documents: report.documents,
+            hidden: report.hidden,
+            folders: report.folders,
+            ai_answers: report.ai_answers,
+            with_clinic_evidence: report.with_clinic_evidence,
+            left_out_damaged: report.left_out_damaged,
+            evidence_left_out: report.evidence_left_out,
+            history_entries: report.history_entries,
+            plaintext_bytes: report.plaintext_bytes,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileExportPrepared {
+    export_id: Uuid,
+    /// The generated key as it is shown (7 groups of 4), once; none when the patient typed a
+    /// passphrase of their own. It is not stored in the vault: lost, the person exports again.
+    generated_key: Option<String>,
+    summary: ProfileExportSummary,
+}
+
+/// A pick made earlier, asked for by its id (the handover export's save step).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfilePickRequest {
+    pick_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileExportPickRequest {
+    export_id: Uuid,
+    #[serde(default)]
+    local_date: Option<String>,
+}
+
+/// What a saved handover file was: its name where the platform says it, its size, and what it holds.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedProfileExport {
+    name: Option<String>,
+    bytes: Option<u64>,
+    summary: ProfileExportSummary,
+}
+
+/// Prepares one person's export (#360): says what it would hold and makes the key. Nothing is
+/// written. A typed passphrase is checked here, so a weak one, or the vault's own, is refused
+/// before anything is asked.
+#[tauri::command]
+async fn vault_profile_export_prepare(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileExportPrepareRequest,
+) -> CommandResult<ProfileExportPrepared> {
+    let store = store.pin();
+    let session = picks.session();
+    let options = vault::ExportOptions {
+        include_history: request.include_history,
+    };
+    let profile_id = request.profile_id;
+    let (secret, generated_key) = match request.passphrase {
+        Some(passphrase) => {
+            let passphrase = Zeroizing::new(passphrase);
+            let typed = passphrase.clone();
+            run_blocking(store.arc(), move |store| {
+                store.check_package_passphrase(profile_id, &typed)
+            })
+            .await?;
+            (ProfileExportSecret::Passphrase(passphrase), None)
+        }
+        None => {
+            let (key, text) = vault::generate_package_key();
+            (ProfileExportSecret::Key(key), Some((*text).clone()))
+        }
+    };
+    let report = run_blocking(store.arc(), move |store| {
+        store.profile_export_preview(profile_id, options)
+    })
+    .await?;
+    let pending = PendingProfileExport {
+        profile_id,
+        include_history: request.include_history,
+        secret,
+    };
+    // A lock during the checks (a passphrase derivation takes seconds) ended the session: the
+    // key is not kept for one that is gone.
+    if picks.session() != session {
+        return Err(VaultError::Locked.into());
+    }
+    Ok(ProfileExportPrepared {
+        export_id: picks.profile_exports.store(session, pending),
+        generated_key,
+        summary: ProfileExportSummary::from(&report),
+    })
+}
+
+/// Asks where to save a prepared export. The file name is generic: it names no person.
+#[tauri::command]
+async fn vault_profile_export_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileExportPickRequest,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let session = picks.session();
+    // The patient reads the key off the screen and may take a while; the preparation keeps
+    // as long as a text preview does.
+    let pending = picks
+        .profile_exports
+        .peek_within(request.export_id, session, TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let date = request
+        .local_date
+        .as_deref()
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms()), str::to_owned);
+    // Nothing is asked for unless there is a writable vault.
+    run_blocking(store.arc(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let name = format!("mycarlos-handover-{date}.mycarlosprofile");
+    let _open = ActivityHold::new(store.idle());
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        file_dialog(&app).set_file_name(name).blocking_save_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(destination) = destination else {
+        return Ok(None);
+    };
+    // The preparation is spent by the pick that takes it: two picks of one preparation do not
+    // make two destinations under one key. And a lock while the dialog was open ended the
+    // session: nothing is stored for one that is gone.
+    if picks.session() != session
+        || picks
+            .profile_exports
+            .take_within(request.export_id, session, TEXT_TICKET_TTL)
+            .is_none()
+    {
+        return Err(VaultError::NotFound.into());
+    }
+    Ok(Some(
+        picks
+            .profile_export_picks
+            .store(session, (pending, destination)),
+    ))
+}
+
+/// Writes the prepared export to the place chosen: read back with its key and checked before
+/// it replaces anything.
+#[tauri::command]
+async fn vault_profile_export_picked(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfilePickRequest,
+) -> CommandResult<SavedProfileExport> {
+    let store = store.pin();
+    let (pending, destination) = picks
+        .profile_export_picks
+        .take(request.pick_id, picks.session())
+        .ok_or(VaultError::NotFound)?;
+    let options = vault::ExportOptions {
+        include_history: pending.include_history,
+    };
+    if let Ok(path) = destination.clone().into_path() {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        return run_blocking(store.arc(), move |store| {
+            let report = store.export_profile_atomic(
+                pending.profile_id,
+                options,
+                pending.secret.as_secret(),
+                &path,
+                now_ms(),
+            )?;
+            Ok(SavedProfileExport {
+                name,
+                bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
+                summary: ProfileExportSummary::from(&report),
+            })
+        })
+        .await;
+    }
+    // Android content providers give a document, not a path: it is opened for reading and
+    // writing, written, and read back in place. (A failure may leave the document empty:
+    // nothing is renamed over it, so nothing earlier survives there.)
+    let place = destination.to_string();
+    run_blocking(store.arc(), move |store| {
+        // Every refusal first: opening the document empties it.
+        store.check_export(pending.profile_id, pending.secret.as_secret())?;
+        let mut options_open = OpenOptions::new();
+        options_open
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true);
+        let opening = Opening::new(store.idle());
+        let mut file = app
+            .fs()
+            .open(destination, options_open)
+            .map_err(|_| VaultError::Storage)?;
+        drop(opening);
+        let report = store.export_profile_to_open_file(
+            pending.profile_id,
+            options,
+            pending.secret.as_secret(),
+            &mut file,
+            &place,
+            now_ms(),
+        )?;
+        let bytes = file.metadata().ok().map(|metadata| metadata.len());
+        Ok(SavedProfileExport {
+            name: None,
+            bytes,
+            summary: ProfileExportSummary::from(&report),
+        })
+    })
+    .await
+}
+
+/// Asks which handover file to read (#360). Nothing is read until the patient gives its key.
+#[tauri::command]
+async fn vault_profile_import_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let session = picks.session();
+    // Only into a vault that can take it.
+    run_blocking(store.arc(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    // No filter: a phone's picker filters by file type, and a handover file has none it knows.
+    let source =
+        tauri::async_runtime::spawn_blocking(move || file_dialog(&app).blocking_pick_file())
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    if picks.session() != session {
+        return Err(VaultError::Locked.into());
+    }
+    Ok(Some(picks.profile_imports.store(session, source)))
+}
+
+/// A handover file opened for reading and seeking: a regular file, opened without following a
+/// link or waiting on a pipe or a device, or the document an Android provider gives.
+fn open_profile_import_source(
+    app: &tauri::AppHandle,
+    source: tauri_plugin_fs::FilePath,
+) -> Result<std::io::BufReader<std::fs::File>, VaultError> {
+    if let Ok(path) = source.clone().into_path() {
+        return vault::open_regular_read(&path)
+            .map(std::io::BufReader::new)
+            .map_err(|_| VaultError::Invalid);
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    app.fs()
+        .open(source, options)
+        .map(std::io::BufReader::new)
+        .map_err(|_| VaultError::Invalid)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportKeyRequest {
+    pick_id: Uuid,
+}
+
+/// Whether the chosen file opens with a generated key or a typed passphrase, from its header
+/// alone: so that the screen asks for the right one. Says "newer" for a file from a newer
+/// myCarlos, and `invalid` for anything that is not a handover file.
+#[tauri::command]
+async fn vault_profile_import_key_kind(
+    app: tauri::AppHandle,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportKeyRequest,
+) -> CommandResult<&'static str> {
+    let source = picks
+        .profile_imports
+        .peek_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = open_profile_import_source(&app, source)?;
+        match vault::package_key_kind(file)? {
+            vault::PackageKeyKind::Key => Ok("key"),
+            vault::PackageKeyKind::Passphrase => Ok("passphrase"),
+        }
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(|error: VaultError| error.into())
+}
+
+/// What opens a file, as typed: a key is read (case, spaces and dashes do not matter) and its
+/// check characters catch a typo before anything is tried; a recovery key typed here is said
+/// to be one. The distinct codes are for the screen to word; their message is the generic one
+/// until it does.
+enum ProfileImportSecretValue {
+    Key(Zeroizing<[u8; 16]>),
+    Passphrase(Zeroizing<String>),
+}
+
+impl ProfileImportSecretValue {
+    /// The key or the passphrase a patient typed for a handover file: exactly one.
+    fn parse(key: Option<String>, passphrase: Option<String>) -> Result<Self, PublicError> {
+        match (key, passphrase) {
+            (Some(text), None) => {
+                let text = Zeroizing::new(text);
+                vault::parse_package_key(&text)
+                    .map(Self::Key)
+                    .map_err(|error| {
+                        let mut public = PublicError::from(VaultError::Invalid);
+                        public.code = match error {
+                            vault::PackageError::RecoveryKeyEntered => {
+                                "package_key_is_recovery_key"
+                            }
+                            _ => "package_key_typo",
+                        };
+                        public
+                    })
+            }
+            (None, Some(passphrase)) => Ok(Self::Passphrase(Zeroizing::new(passphrase))),
+            _ => Err(VaultError::Invalid.into()),
+        }
+    }
+
+    fn as_secret(&self) -> vault::PackageSecret<'_> {
+        match self {
+            Self::Key(key) => vault::PackageSecret::Key(key),
+            Self::Passphrase(passphrase) => vault::PackageSecret::Passphrase(passphrase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportInspectRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    passphrase: Option<String>,
+}
+
+/// A person this vault already holds, from the same file or the same documents.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileAlreadyHere {
+    profile_id: Uuid,
+    /// "package" (the same file) or "content" (the same original PDFs).
+    by: &'static str,
+    matching_documents: usize,
+}
+
+impl From<vault::AlreadyHere> for ProfileAlreadyHere {
+    fn from(found: vault::AlreadyHere) -> Self {
+        Self {
+            profile_id: found.profile_id,
+            by: match found.by {
+                vault::DuplicateBy::Package => "package",
+                vault::DuplicateBy::Content => "content",
+            },
+            matching_documents: found.matching_documents,
+        }
+    }
+}
+
+/// What a handover file holds, as its person's label and counts. Names no document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileImportPreview {
+    exported_at_ms: u64,
+    display_name: String,
+    full_name: Option<String>,
+    birth_date: Option<String>,
+    previous_full_names: Vec<String>,
+    documents: usize,
+    hidden: usize,
+    folders: usize,
+    ai_answers: usize,
+    with_clinic_evidence: usize,
+    history_entries: usize,
+    plaintext_bytes: u64,
+    already_here: Option<ProfileAlreadyHere>,
+}
+
+/// Opens the chosen file with its key and says what it holds and whether this vault has it.
+/// Refuses a file that is cut short, altered or extended, or from a newer myCarlos. Nothing is
+/// written. The pick stays for `vault_profile_import`.
+#[tauri::command]
+async fn vault_profile_import_inspect(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportInspectRequest,
+) -> CommandResult<ProfileImportPreview> {
+    let store = store.pin();
+    let source = picks
+        .profile_imports
+        .peek_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
+    run_blocking(store.arc(), move |store| {
+        let file = open_profile_import_source(&app, source)?;
+        let preview = store.inspect_profile_package(file, secret.as_secret())?;
+        Ok(ProfileImportPreview {
+            exported_at_ms: preview.exported_at_ms,
+            display_name: preview.display_name,
+            full_name: preview.full_name,
+            birth_date: preview.birth_date,
+            previous_full_names: preview.previous_full_names,
+            documents: preview.documents,
+            hidden: preview.hidden,
+            folders: preview.folders,
+            ai_answers: preview.ai_answers,
+            with_clinic_evidence: preview.with_clinic_evidence,
+            history_entries: preview.history_entries,
+            plaintext_bytes: preview.plaintext_bytes,
+            already_here: preview.already_here.map(ProfileAlreadyHere::from),
+        })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    passphrase: Option<String>,
+    /// What to call the person here; the file's label when none.
+    #[serde(default)]
+    display_name: Option<String>,
+    /// Make the person although this vault already has them.
+    #[serde(default)]
+    allow_duplicate: bool,
+}
+
+/// What an import did, in counts that name no document, and the receipt code the source can
+/// recompute from the file and its key.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileImportOutcome {
+    /// "imported", or "alreadyHere" (nothing was written).
+    status: &'static str,
+    profile_id: Option<Uuid>,
+    documents: usize,
+    folders: usize,
+    hidden: usize,
+    ai_answers: usize,
+    ai_answers_dropped: usize,
+    evidence_kept: usize,
+    evidence_dropped: usize,
+    history_entries: usize,
+    receipt_code: Option<String>,
+    already_here: Option<ProfileAlreadyHere>,
+}
+
+/// Makes a person from the chosen file: staged, re-encrypted under this vault's keys, verified,
+/// published and committed together, or not at all.
+#[tauri::command]
+async fn vault_profile_import(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportRequest,
+) -> CommandResult<ProfileImportOutcome> {
+    let store = store.pin();
+    // The secret is read first: a key that is mistyped is told so with the pick still there to
+    // try again, and the pick is spent only by a try that goes ahead. The patient may have been
+    // a while at the preview, so it keeps as long as the preparation of an export does.
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
+    let source = picks
+        .profile_imports
+        .take_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let options = vault::ImportOptions {
+        display_name: request.display_name,
+        allow_duplicate: request.allow_duplicate,
+    };
+    run_blocking(store.arc(), move |store| {
+        let file = open_profile_import_source(&app, source)?;
+        let result = store.import_profile_package(file, secret.as_secret(), &options, now_ms())?;
+        Ok(match result {
+            vault::ImportResult::Imported(done) => ProfileImportOutcome {
+                status: "imported",
+                profile_id: Some(done.profile_id),
+                documents: done.documents,
+                folders: done.folders,
+                hidden: done.hidden,
+                ai_answers: done.ai_answers,
+                ai_answers_dropped: done.ai_answers_dropped,
+                evidence_kept: done.evidence_kept,
+                evidence_dropped: done.evidence_dropped,
+                history_entries: done.history_entries,
+                receipt_code: Some(done.receipt_code),
+                already_here: None,
+            },
+            vault::ImportResult::AlreadyHere(found) => ProfileImportOutcome {
+                status: "alreadyHere",
+                profile_id: None,
+                documents: 0,
+                folders: 0,
+                hidden: 0,
+                ai_answers: 0,
+                ai_answers_dropped: 0,
+                evidence_kept: 0,
+                evidence_dropped: 0,
+                history_entries: 0,
+                receipt_code: None,
+                already_here: Some(found.into()),
+            },
+        })
+    })
+    .await
+}
+
 /// Asks which backup to restore. Only while no vault is open.
 #[tauri::command]
 async fn vault_restore_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     let session = picks.session();
-    run_blocking(store.inner(), |store| match store.status()? {
+    run_blocking(store.arc(), |store| match store.status()? {
         VaultStatus::Unlocked => Err(VaultError::Invalid),
         _ => Ok(()),
     })
     .await?;
     let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
-        let picker = app.dialog().file();
+        let picker = file_dialog(&app);
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
@@ -3845,17 +5394,18 @@ fn open_restore_source(
 #[tauri::command]
 async fn vault_restore_inspect(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RestoreRequest,
 ) -> CommandResult<RestorePreview> {
+    let store = store.pin();
     let source = picks
         .restores
         .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
     tried(throttle.inner(), Attempt::Backup, async move {
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = request.credential().and_then(|credential| {
                 store.inspect_backup(open_restore_source(&app, source)?, credential)
             });
@@ -3904,12 +5454,13 @@ fn restore_warning_in(
 #[tauri::command]
 async fn vault_restore(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     request: RestoreRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
@@ -3923,7 +5474,7 @@ async fn vault_restore(
         tried(
             throttle.inner(),
             Attempt::Backup,
-            run_blocking(store.inner(), move |store| {
+            run_blocking(store.arc(), move |store| {
                 store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
             }),
         )
@@ -3953,7 +5504,7 @@ async fn vault_restore(
         .restores
         .take_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         // The file is opened again here. Another backup in its place by now,
         // or a vault that appeared or changed since, is not what the dialog
         // described, and is refused.
@@ -3966,16 +5517,17 @@ async fn vault_restore(
     .await
     .map_err(PublicError::of_restore)?;
     // The vault the counts were about is replaced, or there was none.
-    forget_vault(throttle.inner()).await;
+    forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
 }
 
 #[tauri::command]
 async fn vault_create_profile(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: NameRequest,
 ) -> CommandResult<Uuid> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.create_profile_with_details(
             &request.display_name,
             request.details,
@@ -3990,13 +5542,14 @@ async fn vault_create_profile(
 
 #[tauri::command]
 async fn vault_update_profile_details(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ProfileDetailsRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The AI helper's re-check reads these details: an open preview ends.
     picks.clear_texts();
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.update_profile_details(
             request.profile_id,
             request.details,
@@ -4009,12 +5562,13 @@ async fn vault_update_profile_details(
 
 #[tauri::command]
 async fn vault_rename_profile(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: RenameProfileRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     picks.clear_texts();
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.rename_profile(request.profile_id, &request.display_name, now_ms())
     })
     .await
@@ -4024,15 +5578,16 @@ async fn vault_rename_profile(
 /// locked documents and uncertain text return no identity, never a trust claim.
 #[tauri::command]
 async fn vault_shared_identity(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     record_id: Uuid,
 ) -> CommandResult<Option<document_identity::FoundIdentity>> {
+    let store = store.pin();
     // Phones cannot run this helper. Return before decrypting any document.
     if !cfg!(desktop) {
         return Ok(None);
     }
     let ticket = pdf_view::ViewTicket::identity();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     let result = tauri::async_runtime::spawn_blocking(move || {
         let snapshot = store.snapshot()?;
         let record = snapshot
@@ -4075,10 +5630,11 @@ async fn vault_shared_identity(
 
 #[tauri::command]
 async fn vault_create_folder(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: FolderRequest,
 ) -> CommandResult<Uuid> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.create_folder(
             request.profile_id,
             request.parent_id,
@@ -4091,10 +5647,11 @@ async fn vault_create_folder(
 
 #[tauri::command]
 async fn vault_update_folder(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: UpdateFolderRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.update_folder(request.folder_id, request.parent_id, &request.name)
     })
     .await
@@ -4102,10 +5659,11 @@ async fn vault_update_folder(
 
 #[tauri::command]
 async fn vault_rename_record(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RenameRecordRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         rename_document(store, request.record_id, &request.name)
     })
     .await
@@ -4113,10 +5671,11 @@ async fn vault_rename_record(
 
 #[tauri::command]
 async fn vault_assign_folders(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AssignFoldersRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.assign_folders(request.record_id, request.folder_ids)
     })
     .await
@@ -4124,10 +5683,11 @@ async fn vault_assign_folders(
 
 #[tauri::command]
 async fn vault_assign_folders_batch(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AssignFoldersBatchRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.assign_folders_batch(request.record_ids, request.folder_ids)
     })
     .await
@@ -4138,26 +5698,34 @@ async fn vault_assign_folders_batch(
 #[tauri::command]
 async fn vault_import_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ImportRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let session = picks.session();
     // Refuse before the picker opens; `import` still re-checks under its own lock.
     let profile_id = request.profile_id;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.ensure_import_allowed(profile_id)
     })
     .await?;
     let _open = ActivityHold::new(store.idle());
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        // The combined filter is first because the first filter is what the dialog shows by default
+        // (on Windows it is the one selected, and pictures stayed hidden behind a PDF-only list until
+        // the patient switched it by hand); PDF documents and pictures alone are one choice away,
+        // PDF first. JPEG and PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -4172,10 +5740,11 @@ async fn vault_import_pick(
 #[tauri::command]
 async fn vault_import_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: PickedImportRequest,
 ) -> CommandResult<vault::ImportOutcome> {
+    let store = store.pin();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let picked_for = ImportRequest {
         profile_id: request.profile_id,
@@ -4184,7 +5753,7 @@ async fn vault_import_picked(
     let paths = picks.take_import(request.pick_id, &picked_for)?;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         let mut sources = Vec::with_capacity(paths.len());
         {
             // A provider may download a whole document before the open returns,
@@ -4199,14 +5768,220 @@ async fn vault_import_picked(
     .await
 }
 
+/// What "+ New" picked: documents and pictures (added by `vault_import_picked`), one video (added
+/// by `vault_import_video_picked`), or a choice no import takes. A refusal is an answer, not an
+/// error, and nothing is kept for it: the page says why in a fixed sentence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum AnyPick {
+    Documents {
+        pick_id: Uuid,
+    },
+    Video {
+        pick_id: Uuid,
+    },
+    /// A video is added on its own, with its own progress and Cancel: it was chosen with other
+    /// files, or with another video.
+    VideoAlone,
+}
+
+/// Whether a picked file's name says it is a video (the import checks the bytes, as ever).
+fn is_video_name(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        ["mp4", "m4v", "mov"]
+            .iter()
+            .any(|video| extension.eq_ignore_ascii_case(video))
+    })
+}
+
+/// How a pick is routed: no video is documents and pictures; exactly one file that is a video is
+/// that video; a video among others, or two videos, is refused (`None`).
+fn route_pick(names: &[String]) -> Option<bool> {
+    let videos = names.iter().filter(|name| is_video_name(name)).count();
+    match (videos, names.len()) {
+        (0, _) => Some(false),
+        (1, 1) => Some(true),
+        _ => None,
+    }
+}
+
+/// Opens the one picker "+ New" uses: PDF documents, pictures and videos (one combined choice
+/// first, then each kind alone). Returns what was picked, or `None` when it was cancelled.
+#[tauri::command]
+async fn vault_import_any_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<AnyPick>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let all_filter = locale.text(MessageId::NativeFilterPdfPicturesAndVideos)?;
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
+        // PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(
+                &all_filter,
+                &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"],
+            )
+            .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&video_filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(paths) = picked else {
+        return Ok(None);
+    };
+    vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
+    // The name the provider gave, not the display name: an Android document id that does not end in
+    // a known extension is shown as "Imported document.pdf", which would send a video down the
+    // document path.
+    let names: Vec<String> = paths.iter().map(picked_name_tail).collect();
+    Ok(Some(match route_pick(&names) {
+        None => AnyPick::VideoAlone,
+        Some(video) => {
+            let pick_id = picks.store_import(session, request, paths);
+            if video {
+                AnyPick::Video { pick_id }
+            } else {
+                AnyPick::Documents { pick_id }
+            }
+        }
+    }))
+}
+
+/// Opens the picker for one video. Returns the id of the chosen file, or `None` when the picker
+/// was cancelled. Adding it is `vault_import_video_picked`.
+#[tauri::command]
+async fn vault_import_video_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    // Refuse before the picker opens, as for documents.
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let filter = locale.text(MessageId::NativeFilterVideo)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // The owned helper, like every other picker (a bare dialog is a separate window on Windows).
+        file_dialog(&app)
+            .add_filter(&filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    Ok(Some(picks.store_import(session, request, vec![path])))
+}
+
+/// Adds the picked video: checked, cleaned of the places and devices it names, and sealed, or
+/// refused with a reason (an answer, not an error). The patient can watch it with
+/// `vault_video_import_progress` and stop it with `vault_video_import_cancel`.
+#[tauri::command]
+async fn vault_import_video_picked(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickedImportRequest,
+) -> CommandResult<vault::PickedVideoOutcome> {
+    let store = store.pin();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let picked_for = ImportRequest {
+        profile_id: request.profile_id,
+        folder_ids: request.folder_ids.clone(),
+    };
+    let mut paths = picks.take_import(request.pick_id, &picked_for)?;
+    let (Some(path), true) = (paths.pop(), paths.is_empty()) else {
+        return Err(VaultError::ImportBatchLimit.into());
+    };
+    let job = picks.start_video_import()?;
+    let running = Arc::clone(&job);
+    let result = run_blocking(store.arc(), move |store| {
+        let name = video_import_display_name(&path);
+        let idle = Arc::clone(store.idle());
+        // Opening a source can block (a network path, or a provider that fetches the file first).
+        let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+            let _opening = Opening::new(&idle);
+            open_source_reader(&app, path.clone())
+        };
+        store.import_picked_video(
+            vault::PickedVideoRequest {
+                profile_id: request.profile_id,
+                folder_ids: request.folder_ids,
+                display_name: name,
+                max_bytes: video_import::max_video_bytes(),
+                now_ms: now_ms(),
+            },
+            &open,
+            &running,
+        )
+    })
+    .await;
+    picks.end_video_import(&job);
+    result
+}
+
+/// How far the picked video's import has come: `idle` when none is running.
+#[tauri::command]
+fn vault_video_import_progress(picks: State<'_, Arc<PendingPicks>>) -> vault::VideoImportProgress {
+    picks.video_import_job().map_or(
+        vault::VideoImportProgress {
+            stage: vault::VideoImportStage::Idle,
+            done_bytes: 0,
+            total_bytes: 0,
+        },
+        |job| job.progress(),
+    )
+}
+
+/// The patient's Cancel: stops the running import at its next read, and nothing is stored.
+#[tauri::command]
+fn vault_video_import_cancel(picks: State<'_, Arc<PendingPicks>>) {
+    if let Some(job) = picks.video_import_job() {
+        job.cancel();
+    }
+}
+
 fn open_import_source(
     app: &tauri::AppHandle,
     path: tauri_plugin_fs::FilePath,
 ) -> Result<ImportSource, VaultError> {
     let display_name = import_display_name(&path);
+    let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
-        display_name,
-        reader: require_pdf(open_source_reader(app, path)?)?,
+        display_name: picture_import_name(display_name, kind),
+        reader,
     })
 }
 
@@ -4215,9 +5990,10 @@ fn open_received_source(
     app: &tauri::AppHandle,
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
+    let (kind, reader) = open_supported_file(open_received_reader(app, &file)?)?;
     Ok(ImportSource {
-        reader: require_pdf(open_received_reader(app, &file)?)?,
-        display_name: file.name,
+        reader,
+        display_name: picture_import_name(file.name, kind),
     })
 }
 
@@ -4252,18 +6028,50 @@ fn open_source_reader(
     Ok(Box::new(file))
 }
 
-/// Refuses a file that does not start the way a PDF does. The start is read while the file is
-/// opened, so a refused file stops the import before anything is staged.
-fn require_pdf(
+/// Says what an importable file is and gives its bytes: a PDF streams in as it is (it was checked
+/// while it was opened, so a refused file stops the import before anything is staged); a JPEG is
+/// read whole (at most a photo's size) and **cleaned first** (`photo::clean_picture`): place, time,
+/// device, thumbnail and every other block are gone, and only the orientation and a plain colour
+/// profile are kept. What is stored is already clean, whatever app made the picture. Anything else
+/// is refused (`NotPdf`, worded for both kinds). A JPEG that is damaged, not a baseline or
+/// progressive image, or too large is refused as a picture (`NotPhoto`).
+#[cfg(test)]
+fn require_supported_file(
     reader: Box<dyn std::io::Read + Send>,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
-    received::require_pdf_header(reader).map_err(|error| {
+    open_supported_file(reader).map(|(_, reader)| reader)
+}
+
+/// `require_supported_file`, also saying which picture it was (`None` for a PDF), so that the
+/// import can name the picture for what it is (`picture_import_name`).
+fn open_supported_file(
+    reader: Box<dyn std::io::Read + Send>,
+) -> Result<(Option<photo::PictureKind>, Box<dyn std::io::Read + Send>), VaultError> {
+    let (kind, reader) = received::classify(reader).map_err(|error| {
         if received::is_not_pdf(&error) {
             VaultError::NotPdf
         } else {
             VaultError::from(error)
         }
-    })
+    })?;
+    match kind {
+        received::FileKind::Pdf => Ok((None, reader)),
+        received::FileKind::Jpeg | received::FileKind::Png => {
+            use std::io::Read as _;
+            // Room for the most a picture may be (and one byte over, which is enough to say it is
+            // too large) from the start: a buffer that grows leaves outgrown copies of a health
+            // picture behind, which nothing wipes.
+            let mut bytes = Zeroizing::new(Vec::with_capacity(photo::MAX_PHOTO_BYTES + 1));
+            // One byte over the cap is enough to say it is too large.
+            reader
+                .take(photo::MAX_PHOTO_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(VaultError::from)?;
+            let (picture, cleaned) = photo::clean_any(&bytes).map_err(|_| VaultError::NotPhoto)?;
+            drop(bytes);
+            Ok((Some(picture), Box::new(std::io::Cursor::new(cleaned))))
+        }
+    }
 }
 
 /// A picked file that cannot be opened is a problem with that file, not with
@@ -4288,7 +6096,7 @@ struct ReceivedState {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MoveToPersonRequest {
     record_ids: Vec<Uuid>,
     profile_id: Uuid,
@@ -4303,11 +6111,41 @@ struct ReceivedAcceptOutcome {
     skipped_duplicates: Vec<String>,
     /// Files that are not PDF documents: not added, and forgotten.
     not_pdf: Vec<String>,
+    /// Files that could not be opened when the vault was open (moved, renamed or deleted while it
+    /// was locked, or not a regular file): not added, and forgotten, so one gone file never holds
+    /// back the others.
+    unreadable: Vec<String>,
+}
+
+/// How opening one received file went, for the batch.
+enum ReceivedOpen {
+    Source(ImportSource),
+    NotPdf,
+    Unreadable,
+}
+
+/// Sorts the opening of one received file. Opening and reading the start of the file is all
+/// that has happened to it, so a file that is not a PDF, that is gone or not a regular file, or
+/// that cannot be read (a permission refused or an I/O error: on Android 11 and older a
+/// `content://` grant ends with the activity that received it, while the process lives on) is a
+/// problem with that file alone: it is named and forgotten, and never holds back the others.
+/// Anything else (the vault) fails the batch and every file keeps waiting.
+fn sort_received_open(
+    opened: Result<ImportSource, VaultError>,
+) -> Result<ReceivedOpen, VaultError> {
+    match opened {
+        Ok(source) => Ok(ReceivedOpen::Source(source)),
+        Err(VaultError::NotPdf) => Ok(ReceivedOpen::NotPdf),
+        Err(VaultError::NotFound | VaultError::Invalid | VaultError::Storage) => {
+            Ok(ReceivedOpen::Unreadable)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
-/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
-/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// renderer asks at start, after an unlock, when notified of an arrival, and whenever the
+/// window comes back to the front. Names stay off the lock screen: the renderer shows a count
 /// there.
 #[tauri::command]
 fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
@@ -4317,48 +6155,151 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
     }
 }
 
+/// A received file's reader that notes it when a read fails (a sector going bad on a share or a
+/// USB drive, an Android provider failing mid-stream), so the import that read it can name that
+/// file. The error itself passes through unchanged.
+struct NotedRead {
+    inner: Box<dyn std::io::Read + Send>,
+    failed: Arc<AtomicBool>,
+}
+
+impl std::io::Read for NotedRead {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf);
+        // An interrupted read is retried by the reader of the import and says nothing about the
+        // file, so it is not a failure.
+        if read
+            .as_ref()
+            .is_err_and(|error| error.kind() != std::io::ErrorKind::Interrupted)
+        {
+            self.failed.store(true, Ordering::SeqCst);
+        }
+        read
+    }
+}
+
+/// Adds the received files to Shared with me, each on its own account: a file that is not a PDF,
+/// that cannot be opened (see `sort_received_open`), or whose reading fails part-way (a read error
+/// inside the import, noted by `NotedRead`) is named and forgotten, and the others are still
+/// added. Anything that is not the file's (the vault locked, in recovery mode, out of space) fails
+/// the batch and every file keeps waiting. `open` opens one file as an import source.
+fn accept_received_batch(
+    store: &VaultStore,
+    files: Vec<(Uuid, received::ReceivedFile)>,
+    mut open: impl FnMut(received::ReceivedFile) -> Result<ImportSource, VaultError>,
+) -> Result<ReceivedAcceptOutcome, VaultError> {
+    let shared = store.shared_profile()?;
+    let mut not_pdf = Vec::new();
+    let mut unreadable = Vec::new();
+    let mut remaining = files;
+    loop {
+        let mut sources = Vec::with_capacity(remaining.len());
+        let mut notes: Vec<Arc<AtomicBool>> = Vec::with_capacity(remaining.len());
+        let mut kept = Vec::with_capacity(remaining.len());
+        {
+            let _opening = Opening::new(store.idle());
+            for (id, file) in remaining {
+                let name = file.name.clone();
+                match sort_received_open(open(file.clone()))? {
+                    ReceivedOpen::Source(source) => {
+                        let failed = Arc::new(AtomicBool::new(false));
+                        sources.push(ImportSource {
+                            display_name: source.display_name,
+                            reader: Box::new(NotedRead {
+                                inner: source.reader,
+                                failed: Arc::clone(&failed),
+                            }),
+                        });
+                        notes.push(failed);
+                        kept.push((id, file));
+                    }
+                    ReceivedOpen::NotPdf => not_pdf.push(name),
+                    ReceivedOpen::Unreadable => unreadable.push(name),
+                }
+            }
+        }
+        match store.import_from(shared, Vec::new(), sources, now_ms(), "shared") {
+            Ok(outcome) => {
+                return Ok(ReceivedAcceptOutcome {
+                    imported: outcome.imported,
+                    skipped_duplicates: outcome.skipped_duplicates,
+                    not_pdf,
+                    unreadable,
+                })
+            }
+            // A source that failed to read is that file's fault: name it, forget it, and add the
+            // rest (the import added nothing, so they are opened again).
+            Err(error) => match notes
+                .iter()
+                .position(|failed| failed.load(Ordering::SeqCst))
+            {
+                Some(at) => {
+                    unreadable.push(kept.remove(at).1.name);
+                    remaining = kept;
+                }
+                None => return Err(error),
+            },
+        }
+    }
+}
+
+/// The files the patient confirmed adding (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReceivedAcceptRequest {
+    ids: Vec<Uuid>,
+}
+
+/// The files the patient said No to (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReceivedDiscardRequest {
+    ids: Vec<Uuid>,
+}
+
+/// Forgets the waiting files the patient cancelled: nothing was stored, so nothing is left. A file
+/// that arrived since, or one an import has taken, is not touched.
+#[tauri::command]
+fn received_discard(
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedDiscardRequest,
+) -> usize {
+    received.forget(&request.ids)
+}
+
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
-/// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
-/// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
+/// file arrives while the vault is open. A file that is not a PDF, or that can no longer be
+/// opened (moved or deleted while the vault was locked), is not added and is forgotten, and named
+/// in the outcome. When anything else fails, every file keeps waiting for the next ask.
 #[tauri::command]
 async fn received_accept(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     received: State<'_, Arc<ReceivedFiles>>,
+    request: Option<ReceivedAcceptRequest>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
-    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    let store = store.pin();
+    // With `ids`, exactly the files the patient confirmed (a file that arrived since waits for its
+    // own question); without, every waiting file, as for files shared from another app.
+    let ids: Vec<Uuid> = match request {
+        Some(request) => request.ids,
+        // Never a file named by a path: those are added only after the patient confirms them.
+        None => received.ids_needing_no_question(),
+    };
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
             imported: Vec::new(),
             skipped_duplicates: Vec::new(),
             not_pdf: Vec::new(),
+            unreadable: Vec::new(),
         });
     }
     let taken = received
         .take(&ids)
         .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     let files = taken.clone();
-    let result = run_blocking(store.inner(), move |store| {
-        let shared = store.shared_profile()?;
-        let mut sources = Vec::with_capacity(files.len());
-        let mut not_pdf = Vec::new();
-        {
-            let _opening = Opening::new(store.idle());
-            for (_, file) in files {
-                let name = file.name.clone();
-                match open_received_source(&app, file) {
-                    Ok(source) => sources.push(source),
-                    Err(VaultError::NotPdf) => not_pdf.push(name),
-                    Err(error) => return Err(error),
-                }
-            }
-        }
-        let outcome = store.import_from(shared, Vec::new(), sources, now_ms(), "shared")?;
-        Ok(ReceivedAcceptOutcome {
-            imported: outcome.imported,
-            skipped_duplicates: outcome.skipped_duplicates,
-            not_pdf,
-        })
+    let result = run_blocking(store.arc(), move |store| {
+        accept_received_batch(store, files, |file| open_received_source(&app, file))
     })
     .await;
     match result {
@@ -4374,7 +6315,7 @@ async fn received_accept(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ViewPageRequest {
     record_id: Uuid,
     page: u32,
@@ -4434,9 +6375,11 @@ impl ViewedPage {
 /// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
 #[tauri::command]
 async fn vault_view_page(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
+    let store = store.pin();
     use pdf_unlock::Refusal;
     if request
         .password
@@ -4451,14 +6394,20 @@ async fn vault_view_page(
     drop(request);
     // Taken now: a newer page request, a lock or the reader closing stops this one.
     let ticket = pdf_view::ViewTicket::new();
-    let result = run_blocking(store.inner(), move |store| {
-        let size = store
-            .snapshot()?
+    let session = picks.session();
+    let result = run_blocking(store.arc(), move |store| {
+        let snapshot = store.snapshot()?;
+        let record = snapshot
             .records
             .iter()
             .find(|record| record.id == record_id)
-            .ok_or(VaultError::NotFound)?
-            .plaintext_size;
+            .ok_or(VaultError::NotFound)?;
+        // A hidden document is not shown, so a view that began before it was hidden cannot note
+        // its page afterwards (#240).
+        if record.hidden.is_some() {
+            return Err(VaultError::NotFound);
+        }
+        let size = record.plaintext_size;
         if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
             return Err(VaultError::PdfTooLarge);
         }
@@ -4490,18 +6439,195 @@ async fn vault_view_page(
     if !ticket.is_current() {
         return Err(VaultError::Cancelled.into());
     }
+    // What the reader is shown is what an explanation's sentence is checked against (#240), in
+    // the session it was shown in: a lock since makes `session` a stale one.
+    if let Ok(shown) = &result {
+        picks.note_shown_page(session, record_id, page, shown);
+    }
     result
 }
 
 /// Stops any page being drawn: the reader closed.
 #[tauri::command]
-fn vault_view_cancel() {
+fn vault_view_cancel(app: tauri::AppHandle) {
     pdf_view::cancel_views();
+    cancel_native_pdf(&app);
+}
+
+/// Cancels both the Android native reader and an older open still waiting to reach it.
+fn cancel_native_pdf(_app: &tauri::AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        let generation = android_pdf::GATE.next();
+        let app = _app.clone();
+        tauri::async_runtime::spawn(async move {
+            tauri_plugin_android_pdf::close(&app, generation).await;
+        });
+    }
+}
+
+/// The words the Android reader shows and speaks, from the page's own translations: the plugin has
+/// none of its own. Short, with no control characters.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AndroidPdfLabels {
+    close: String,
+    previous: String,
+    next: String,
+    zoom_in: String,
+    zoom_out: String,
+    /// "Page {page} of {total}, picture of the letter": the placeholders are filled in natively.
+    page: String,
+    /// "Page {page} of {total}".
+    page_status: String,
+    /// "Page {page} of {total} could not be shown": said, and set as the page's description, where
+    /// a page fails to render (it used to be dropped here, so the reader showed nothing).
+    page_failed: String,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl AndroidPdfLabels {
+    fn valid(&self) -> bool {
+        [
+            &self.close,
+            &self.previous,
+            &self.next,
+            &self.zoom_in,
+            &self.zoom_out,
+            &self.page,
+            &self.page_status,
+            &self.page_failed,
+        ]
+        .into_iter()
+        .all(|label| {
+            !label.is_empty() && label.len() <= 160 && !label.chars().any(char::is_control)
+        })
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AndroidPdfRequest {
+    record_id: Uuid,
+    labels: AndroidPdfLabels,
+}
+
+/// Android uses a separate, bridge-free native PdfRenderer view, never the app webview. The bytes
+/// go from the vault into a sealed in-memory file and nowhere else (`android_pdf.rs`).
+#[tauri::command]
+async fn vault_read_android_pdf(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    request: AndroidPdfRequest,
+    activity: tauri::ipc::Channel<()>,
+) -> CommandResult<()> {
+    let store = store.pin();
+    #[cfg(target_os = "android")]
+    {
+        let store = store.pin();
+        if !request.labels.valid() {
+            return Err(VaultError::Invalid.into());
+        }
+        let generation = android_pdf::GATE.next();
+        // The plugin's lifecycle epoch changes on backgrounding even when no reader is visible
+        // yet, so returning to the app cannot revive an export that was already under way.
+        let epoch = tauri_plugin_android_pdf::begin(&app)
+            .await
+            .ok_or_else(|| PublicError::from(VaultError::Cancelled))?;
+        let (document, title) = run_blocking(store.arc(), move |store| {
+            if !android_pdf::GATE.current(generation) {
+                return Err(VaultError::Cancelled);
+            }
+            android_pdf::prepare(store, request.record_id)
+        })
+        .await?;
+        if !android_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        // The descriptor stays ours until the reader has closed: the plugin duplicates it.
+        let memfd = match android_pdf::sealed_memfd(&android_pdf::Linux, &document) {
+            Ok(fd) => fd,
+            // The system refuses a memfd: no file is made instead. A recoverable message.
+            Err(_) => return Err(VaultError::PdfViewUnavailable.into()),
+        };
+        drop(document);
+        let activity_store = Arc::clone(store.arc());
+        let activity_app = app.clone();
+        let renderer_activity = activity;
+        #[derive(Deserialize)]
+        struct ReaderInput {
+            event: String,
+        }
+        let reader_activity = android_pdf::ActivityGate::new(generation);
+        let activity = tauri::ipc::Channel::<()>::new(move |message| {
+            let Ok(input) = message.deserialize::<ReaderInput>() else {
+                return Ok(());
+            };
+            if reader_activity.accepts(&android_pdf::GATE, &input.event) {
+                if activity_store.idle().touch_before_deadline(Instant::now()) {
+                    let _ = renderer_activity.send(());
+                } else {
+                    cancel_native_pdf(&activity_app);
+                }
+            }
+            Ok(())
+        });
+        use std::os::fd::AsRawFd;
+        let shown = tauri_plugin_android_pdf::open(
+            &app,
+            tauri_plugin_android_pdf::Document {
+                generation,
+                epoch,
+                fd: memfd.as_raw_fd(),
+                size: memfd_size(&memfd),
+                title: &title,
+                labels: tauri_plugin_android_pdf::Labels {
+                    close: &request.labels.close,
+                    previous: &request.labels.previous,
+                    next: &request.labels.next,
+                    zoom_in: &request.labels.zoom_in,
+                    zoom_out: &request.labels.zoom_out,
+                    page: &request.labels.page,
+                    page_status: &request.labels.page_status,
+                    page_failed: &request.labels.page_failed,
+                },
+                activity,
+            },
+        )
+        .await;
+        drop(memfd);
+        if !android_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        if !shown {
+            return Err(VaultError::PdfViewFailed.into());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, store, request.record_id, request.labels, activity);
+        Err(VaultError::PdfViewUnavailable.into())
+    }
+}
+
+#[cfg(target_os = "android")]
+fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
+    use std::os::fd::AsRawFd;
+    // SAFETY: fstat on a descriptor this function borrows for the call.
+    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(fd.as_raw_fd(), &mut stat) } == 0 {
+        stat.st_size as u64
+    } else {
+        0
+    }
 }
 
 /// Where a quoted span of a page's text is on the page picture (#292).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PageBoxesRequest {
     record_id: Uuid,
     page: u32,
@@ -4570,9 +6696,10 @@ impl PageBoxesAnswer {
 /// a page request does not.
 #[tauri::command]
 async fn vault_page_boxes(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     mut request: PageBoxesRequest,
 ) -> CommandResult<PageBoxesAnswer> {
+    let store = store.pin();
     if request
         .password
         .as_ref()
@@ -4588,7 +6715,7 @@ async fn vault_page_boxes(
     let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
     drop(request);
     let ticket = pdf_view::ViewTicket::boxes();
-    let result = run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         let size = store
             .snapshot()?
             .records
@@ -4618,7 +6745,7 @@ async fn vault_page_boxes(
 
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentTextRequest {
     record_id: Uuid,
     /// Who asks: the screen's own id, so that its cancel ends only this read.
@@ -4676,10 +6803,11 @@ const PAGE_CUT_MARGIN: usize = 3;
 /// the preview ticket the save needs.
 #[tauri::command]
 async fn vault_document_text(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     mut request: DocumentTextRequest,
 ) -> CommandResult<DocumentText> {
+    let store = store.pin();
     use pdf_unlock::Refusal;
     if !cfg!(desktop) {
         return Err(VaultError::PdfViewUnavailable.into());
@@ -4698,7 +6826,7 @@ async fn vault_document_text(
     drop(request);
     let ticket = pdf_view::ViewTicket::text_for(read_id);
     let session = picks.session();
-    let result = run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         let snapshot = store.snapshot()?;
         let record = snapshot
             .records
@@ -4845,7 +6973,7 @@ async fn vault_document_text(
 
 /// Which text read to stop: the id the screen gave when it asked.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextReadCancelRequest {
     read_id: Uuid,
 }
@@ -4863,17 +6991,18 @@ fn vault_document_text_cancel(request: TextReadCancelRequest) {
 /// patient, provider and clinic from the document's delivery manifest.
 #[tauri::command]
 async fn vault_record_known_details(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<vault::KnownIdentifiers> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.known_identifiers(request.record_id)
     })
     .await
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -4885,11 +7014,12 @@ struct TextExportPickRequest {
 #[tauri::command]
 async fn vault_export_text_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: TextExportPickRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let record_id = request.record_id;
     picks.peek_text(request.ticket, record_id)?;
     let session = picks.session();
@@ -4898,8 +7028,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -4912,12 +7041,16 @@ async fn vault_export_text_pick(
 const MAX_EXPORT_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickedRequest {
     pick_id: Uuid,
     record_id: Uuid,
     ticket: Uuid,
     text: String,
+    /// Ranges (UTF-16) of medical terms the patient kept (#366). A claim, not a fact: the native
+    /// re-check spares a hit only inside a range that is an allow-listed phrase in its own list.
+    #[serde(default)]
+    kept: Vec<text_recheck::Hit>,
 }
 
 /// How a text save ended: written, or refused with the ranges that still
@@ -4930,58 +7063,93 @@ struct TextSaveOutcome {
     hits: Vec<text_recheck::Hit>,
 }
 
-/// Writes an anonymized text where the picker chose (#72 part B, AI-02):
-/// after the native re-check, with the fixed first line (and the cut line)
-/// from the app's language written here, never by page code. One save ends
-/// the ticket.
-#[tauri::command]
-async fn vault_export_text_picked(
-    store: State<'_, Arc<VaultStore>>,
-    picks: State<'_, Arc<PendingPicks>>,
-    request: TextExportPickedRequest,
-    locale: Option<UiLocale>,
-) -> CommandResult<TextSaveOutcome> {
+/// The native re-check every text that leaves the preview goes through, whether it is saved or
+/// copied (#72 part B, AI-02): too large, a code point the cleaning drops or a vault identifier
+/// still standing, or a date that page code skipped. `Ok(hits)` with hits is a refusal; nothing may
+/// be written or copied then. One function for both, so that Copy is never weaker than Save.
+async fn recheck_export_text(
+    store: &Arc<VaultStore>,
+    record_id: Uuid,
+    text: &str,
+    kept: &[text_recheck::Hit],
+) -> CommandResult<Vec<text_recheck::Hit>> {
     // Refused before anything else looks at the text.
-    if request.text.len() > MAX_EXPORT_TEXT_BYTES {
+    if text.len() > MAX_EXPORT_TEXT_BYTES {
         return Err(VaultError::Invalid.into());
     }
-    let record_id = request.record_id;
-    let ticket = picks.peek_text(request.ticket, record_id)?;
-    let hits = text_recheck::forbidden_ranges(&request.text);
+    let hits = text_recheck::forbidden_ranges(text);
     if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
+        return Ok(hits);
     }
-    let known = run_blocking(store.inner(), move |store| {
-        store.known_identifiers(record_id)
-    })
-    .await?;
-    let hits = text_recheck::identifier_hits(&request.text, &known.names, &known.birth_dates);
+    let known = run_blocking(store, move |store| store.known_identifiers(record_id)).await?;
+    // A medical term the patient kept ("Graves' disease") is not an identifier, but only as the
+    // native allow-list reads it (#366): never on the page's word.
+    let hits = text_recheck::without_kept_terms(
+        text,
+        text_recheck::identifier_hits(text, &known.names, &known.birth_dates),
+        kept,
+    );
     if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
+        return Ok(hits);
     }
     // The remover sends no date: each is a placeholder. One still standing
     // means page code skipped it (AI-01, AI-02).
-    let hits = text_recheck::date_hits(&request.text);
-    if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
-    }
-    let locale = locale.unwrap_or_default();
+    Ok(text_recheck::date_hits(text))
+}
+
+/// The file a save writes, and exactly what a copy returns: the fixed first line (and the cut
+/// line) from the app's language, written here, never by page code.
+fn compose_export_text(
+    locale: UiLocale,
+    text: &str,
+    cut_after_page: Option<u32>,
+) -> CommandResult<String> {
     let mut content = locale.text(MessageId::AiHelperExportHeader)?;
     content.push_str("\n\n");
-    content.push_str(&request.text);
-    if let Some(page) = ticket.cut_after_page {
+    content.push_str(text);
+    if let Some(page) = cut_after_page {
         content.push_str("\n\n");
         content.push_str(
             &locale.render(MessageId::AiHelperExportCut, &[("page", &page.to_string())])?,
         );
     }
     content.push('\n');
+    Ok(content)
+}
+
+/// Writes an anonymized text where the picker chose (#72 part B, AI-02):
+/// after the native re-check, with the fixed first line (and the cut line)
+/// from the app's language written here, never by page code. One save ends
+/// the ticket.
+#[tauri::command]
+async fn vault_export_text_picked(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: TextExportPickedRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<TextSaveOutcome> {
+    let store = store.pin();
+    let record_id = request.record_id;
+    // The size check comes first, before the ticket is looked at.
+    if request.text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let ticket = picks.peek_text(request.ticket, record_id)?;
+    let hits = recheck_export_text(store.arc(), record_id, &request.text, &request.kept).await?;
+    if !hits.is_empty() {
+        return Ok(TextSaveOutcome { saved: false, hits });
+    }
+    let content = compose_export_text(
+        locale.unwrap_or_default(),
+        &request.text,
+        ticket.cut_after_page,
+    )?;
     let destination = picks.take_text_export(request.pick_id, record_id)?;
     let Ok(destination_path) = destination.into_path() else {
         // Only computers read a document's text, and they pick paths.
         return Err(VaultError::Invalid.into());
     };
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.export_text_atomic(record_id, &destination_path, content.as_bytes())
     })
     .await?;
@@ -4994,15 +7162,71 @@ async fn vault_export_text_picked(
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TextExportCopyRequest {
+    record_id: Uuid,
+    ticket: Uuid,
+    text: String,
+    /// See `TextExportPickedRequest::kept`.
+    #[serde(default)]
+    kept: Vec<text_recheck::Hit>,
+}
+
+/// How a copy ended: the approved file text, to be put on the clipboard as it is, or a refusal
+/// with the same ranges a save would give. Never both.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextCopyOutcome {
+    approved: Option<String>,
+    hits: Vec<text_recheck::Hit>,
+}
+
+/// The text a copy may put on the clipboard (#72 part B): the same native re-check as a save, on
+/// the same text, and the same file content a save would write, first line and cut line included.
+/// Copy is never weaker than Save: the page writes to the clipboard only what this returns. It
+/// leaves the ticket alone (a copy is not a save), so a save may still follow.
+#[tauri::command]
+async fn vault_export_text_copy(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: TextExportCopyRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<TextCopyOutcome> {
+    let store = store.pin();
+    if request.text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let record_id = request.record_id;
+    let ticket = picks.peek_text(request.ticket, record_id)?;
+    let hits = recheck_export_text(store.arc(), record_id, &request.text, &request.kept).await?;
+    if !hits.is_empty() {
+        return Ok(TextCopyOutcome {
+            approved: None,
+            hits,
+        });
+    }
+    let content = compose_export_text(
+        locale.unwrap_or_default(),
+        &request.text,
+        ticket.cut_after_page,
+    )?;
+    Ok(TextCopyOutcome {
+        approved: Some(content),
+        hits: Vec::new(),
+    })
+}
+
 /// Moves files to another person, into the folders chosen. A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
 async fn vault_move_to_person(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: MoveToPersonRequest,
 ) -> CommandResult<vault::MoveOutcome> {
+    let store = store.pin();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.move_to_profile(request.record_ids, request.profile_id, request.folder_ids)
     })
     .await
@@ -5029,24 +7253,30 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
     received.receive(urls.len(), sources);
 }
 
-/// Opens the save picker with the record's name. Returns the id of the chosen
-/// destination, or `None` when the picker was cancelled. The copy itself is
+/// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
+/// id of the chosen destination, or `None` when the picker was cancelled. The copy itself is
 /// written by `vault_export_picked`.
 #[tauri::command]
 async fn vault_export_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ExportRequest,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let record_id = request.record_id;
+    let local_date = request.local_date;
     let session = picks.session();
-    let suggested_name =
-        run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
+    // `export_name` still refuses a lost or hidden record before a picker opens; only its answer
+    // (the document's own name) is not what the dialog is given.
+    let suggested_name = export_suggested_name(
+        &run_blocking(store.arc(), move |store| store.export_name(record_id)).await?,
+        local_date.as_deref(),
+        now_ms(),
+    );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -5058,15 +7288,16 @@ async fn vault_export_pick(
 #[tauri::command]
 async fn vault_export_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: PickedExportRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let record_id = request.record_id;
     let destination = picks.take_export(request.pick_id, record_id)?;
 
     if let Ok(destination_path) = destination.clone().into_path() {
-        return run_blocking(store.inner(), move |store| {
+        return run_blocking(store.arc(), move |store| {
             store.export_atomic(record_id, &destination_path)
         })
         .await;
@@ -5075,7 +7306,7 @@ async fn vault_export_picked(
     // Android content providers can return a content URI rather than a filesystem path, so an
     // atomic rename is unavailable. Authenticate the complete object before opening/truncating
     // the selected URI; the second pass streams the verified plaintext to the provider.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.export(record_id, std::io::sink())
     })
     .await?;
@@ -5083,7 +7314,7 @@ async fn vault_export_picked(
     // Opening the provider's document can block too, so it shares the blocking
     // task with the write. Only a failure after the open, which truncates the
     // destination, can leave a partial copy; a failed open changed nothing.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -5106,67 +7337,340 @@ async fn vault_export_picked(
 /// Hides the documents shown as damaged (#71: they used to be removed).
 #[tauri::command]
 async fn vault_hide_unavailable_records(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), move |store| {
-        store.hide_unavailable_records(&request.confirmed, now_ms())
+    let store = store.pin();
+    // As when one document is hidden: its tickets, kept answers and shown pages end, and a page
+    // being drawn for it stops.
+    for record_id in &request.confirmed {
+        picks.forget_texts_for(*record_id);
+    }
+    pdf_view::cancel_views();
+    let hidden = run_blocking(store.arc(), move |store| {
+        store.hide_unavailable_records_covering(
+            &request.confirmed,
+            request.hidden_people_documents,
+            now_ms(),
+        )
     })
     .await
     .map_err(|error| match error.code {
         "recovery_mode" => PublicError::removal_not_possible(),
         _ => error,
-    })
+    })?;
+    // Pages drawn while it ran were of documents that are hidden now.
+    for record_id in &hidden {
+        picks.forget_texts_for(*record_id);
+    }
+    Ok(hidden)
 }
 
 /// Saves a photo taken with the camera dialog. The request's body is its
 /// target and the JPEG (see `photo_request`).
 #[tauri::command]
 async fn vault_save_photo(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: tauri::ipc::Request<'_>,
 ) -> CommandResult<vault::ImportOutcome> {
+    let store = store.pin();
     // The IPC layer's own copy is freed when the call ends, but not
     // overwritten (THREAT_MODEL.md); these are.
     let (target, photo) = photo_request(request.body())?;
-    run_blocking(store.inner(), move |store| save_photo(store, target, photo)).await
+    run_blocking(store.arc(), move |store| save_photo(store, target, photo)).await
 }
 
 #[tauri::command]
 async fn vault_is_photo(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<bool> {
-    run_blocking(store.inner(), move |store| {
-        is_photo(store, request.record_id)
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| is_photo(store, request.record_id)).await
+}
+
+#[tauri::command]
+async fn vault_view_photo(
+    store: State<'_, StoreHandle>,
+    request: PhotoRequest,
+) -> CommandResult<String> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        view_photo(store, request.record_id)
+    })
+    .await
+}
+
+// ---- video recording and playback (#359) ------------------------------------
+//
+// The page records with the webview's own MediaRecorder and sends each piece
+// (about one a second) here as base64 in the ordinary JSON arguments: a byte
+// body would arrive on Android as a JSON array of numbers several times its
+// size. Each piece carries a sequence number the vault checks. Playback goes
+// by a token for the `mycarlos-video` address (video_scheme.rs); no path, id or
+// name of a file ever reaches the page.
+
+/// The most base64 text one piece may be: `MAX_RECORDING_PIECE` bytes, 4/3
+/// larger, with room for padding. Checked before anything is decoded.
+const MAX_VIDEO_PIECE_BASE64: usize = vault::MAX_RECORDING_PIECE / 3 * 4 + 8;
+/// The most folders a recording may be filed in at once, as an import's.
+const MAX_VIDEO_FOLDERS: usize = 64;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoStartRequest {
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoStarted {
+    recording_id: Uuid,
+}
+
+#[tauri::command]
+async fn vault_video_start(
+    store: State<'_, StoreHandle>,
+    request: VideoStartRequest,
+) -> CommandResult<VideoStarted> {
+    let store = store.pin();
+    if request.folder_ids.len() > MAX_VIDEO_FOLDERS {
+        return Err(VaultError::Invalid.into());
+    }
+    run_blocking(store.arc(), move |store| {
+        store
+            .recording_start(
+                request.profile_id,
+                request.folder_ids,
+                &request.name,
+                now_ms(),
+            )
+            .map(|recording_id| VideoStarted { recording_id })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoAppendRequest {
+    recording_id: Uuid,
+    sequence: u64,
+    data: String,
+}
+
+// The piece's text is wiped however the command ends.
+impl Drop for VideoAppendRequest {
+    fn drop(&mut self) {
+        self.data.zeroize();
+    }
+}
+
+/// A piece's bytes from its base64 text: refused, before it is decoded, if the
+/// text is longer than a piece may be.
+fn decode_video_piece(data: &str) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    // The length of the text is checked, not of the bytes it would decode to:
+    // decoding allocates a piece's size, and a hostile page could otherwise send
+    // text for a far larger one before anything bounded it. The limit is the
+    // base64 length of `MAX_RECORDING_PIECE` bytes (4/3 of it) plus padding.
+    if data.len() > MAX_VIDEO_PIECE_BASE64 {
+        return Err(VaultError::Invalid);
+    }
+    BASE64
+        .decode(data)
+        .map(Zeroizing::new)
+        .map_err(|_| VaultError::Invalid)
+}
+
+#[tauri::command]
+async fn vault_video_append(
+    store: State<'_, StoreHandle>,
+    request: VideoAppendRequest,
+) -> CommandResult<vault::RecordingProgress> {
+    let store = store.pin();
+    let piece = decode_video_piece(&request.data)?;
+    let (id, sequence) = (request.recording_id, request.sequence);
+    drop(request);
+    run_blocking(store.arc(), move |store| {
+        store.recording_append_numbered(id, Some(sequence), &piece)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecordingRequest {
+    recording_id: Uuid,
+}
+
+#[tauri::command]
+async fn vault_video_pause(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordingRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.recording_pause(request.recording_id)
     })
     .await
 }
 
 #[tauri::command]
-async fn vault_view_photo(
-    store: State<'_, Arc<VaultStore>>,
-    request: PhotoRequest,
-) -> CommandResult<String> {
-    run_blocking(store.inner(), move |store| {
-        view_photo(store, request.record_id)
+async fn vault_video_resume(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordingRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.recording_resume(request.recording_id)
+    })
+    .await
+}
+
+/// What ended a recording: the video that was added to the library, or nothing
+/// (nothing complete had been recorded).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoSaved {
+    record_id: Option<Uuid>,
+}
+
+#[tauri::command]
+async fn vault_video_stop(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordingRequest,
+) -> CommandResult<VideoSaved> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store
+            .recording_stop(request.recording_id, now_ms())
+            .map(|record_id| VideoSaved { record_id })
+    })
+    .await
+}
+
+/// How much room there is to record: asked before the camera and microphone are
+/// turned on, and again on every resume.
+#[tauri::command]
+async fn vault_video_space(store: State<'_, StoreHandle>) -> CommandResult<vault::RecordingSpace> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recording_space).await
+}
+
+/// The recordings a crash or a lock left unfinished, for the question at unlock.
+#[tauri::command]
+async fn vault_video_pending(
+    store: State<'_, StoreHandle>,
+) -> CommandResult<vault::PendingRecordings> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recordings_pending).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecoverRequest {
+    recording_id: Uuid,
+    keep: bool,
+}
+
+/// Answers the question at unlock: keep what was saved (it becomes a video) or
+/// delete it.
+#[tauri::command]
+async fn vault_video_recover(
+    store: State<'_, StoreHandle>,
+    request: VideoRecoverRequest,
+) -> CommandResult<VideoSaved> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store
+            .recording_recover(request.recording_id, request.keep, now_ms())
+            .map(|record_id| VideoSaved { record_id })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecordRequest {
+    record_id: Uuid,
+}
+
+/// Whether a record is a video myCarlos recorded: the history says it was added
+/// with the camera, and its file starts as an MP4 does (`ftyp` at byte 4). The
+/// origin decides, never the bytes alone: an iPhone's HEIC photo, an M4A voice
+/// memo and a camera raw file also carry `ftyp`, and are not videos. The
+/// details ask this before offering Play video.
+fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    if !store.added_with_camera(record_id)? {
+        return Ok(false);
+    }
+    let mut start = FileStartN::<8>::default();
+    let exported = store.read_for_view(record_id, &mut start);
+    if start.complete() {
+        return Ok(&start.bytes[4..8] == b"ftyp");
+    }
+    exported.map(|()| false)
+}
+
+#[tauri::command]
+async fn vault_is_video(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordRequest,
+) -> CommandResult<bool> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| is_video(store, request.record_id)).await
+}
+
+/// Opens a stored video for playback: the token the page puts in a `<video>`'s
+/// address, and the length of the file a player sees.
+#[tauri::command]
+async fn vault_video_open(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordRequest,
+) -> CommandResult<vault::PlaybackOpened> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.playback_open(request.record_id)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoCloseRequest {
+    token: String,
+}
+
+/// Ends one video's playback (the player closed). Locking ends every one.
+#[tauri::command]
+async fn vault_video_close(
+    store: State<'_, StoreHandle>,
+    request: VideoCloseRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.playback_close(&request.token);
+        Ok(())
     })
     .await
 }
 
 #[tauri::command]
 async fn vault_is_locked_pdf(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<bool> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         is_locked_pdf(store, request.record_id)
     })
     .await
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UnlockPdfRequest {
     record_id: Uuid,
     password: String,
@@ -5181,15 +7685,174 @@ impl Drop for UnlockPdfRequest {
 
 /// Unlocks a stored PDF with the password the patient typed (#54); see
 /// `unlock_pdf`. The password is used once and wiped.
+/// Unlock by name (#357, PR 4b). A name and a passphrase choose the vault: the vaults the name
+/// matched are tried with the passphrase, decoys fill the rest to a fixed number of derivations, and
+/// the one that opens becomes the vault the screen is on (the old one locked, the app's work for it
+/// stopped). **One counted try per attempt, taken BEFORE the name is looked up**, on the one
+/// device-wide counter: an unknown name, a name whose vault was never made and a wrong passphrase
+/// are all `wrong_passphrase`, count the same and take the same derivations. An empty name is the
+/// default vault, as `vault_unlock`. The opened vault gets the same follow-up as `vault_unlock`.
+#[tauri::command]
+async fn vault_unlock_named(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: NamedPassphraseRequest,
+) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let vaults = store.clone();
+    let opened = tried(throttle.inner(), Attempt::Unlock, async move {
+        let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
+        let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+        drop(request);
+        tauri::async_runtime::spawn_blocking(move || {
+            vaults
+                .unlock_named(&name, &passphrase, || {
+                    stop_work_for_switch(&picks, &received)
+                })
+                // As `vault_unlock`: a pick that read the old session passes no check in the new one.
+                .inspect(|_| picks.clear())
+        })
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+    })
+    .await?;
+    after_open(&opened);
+    run_blocking(&opened, VaultStore::snapshot).await
+}
+
+/// Add a vault (#357 4c). The name is what the owner will type to find it, the passphrase opens it
+/// and the profile name is its first person; the registry entry is written first and the vault second
+/// (`VaultSlots::add_vault`), and the new vault becomes the one the screen is on. An add is not a
+/// guess, so it is not counted on the device-wide counter, but it is refused while a wait is running:
+/// a screen the device has locked out must not be a way to make vaults. Adding never clears the
+/// counter (the counts are about the device). Not granted to the renderer until the screen for
+/// several vaults exists (PR 5). A refusal after the vault was made (the window was closed to the
+/// tray meanwhile, or the old vault began something while the new one was made) leaves the new vault
+/// registered and locked: the screen must say it was already added, not offer to add it again.
+#[tauri::command]
+async fn vault_add_vault(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: AddVaultRequest,
+) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    // As `vault_create` and `vault_unlock`: an add that finishes after the window was closed to the
+    // tray is closed again and refused (#206), or the new vault would open in a window nobody sees.
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
+    let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let now = now_ms();
+    if let Some(left) = on_throttle(throttle.inner(), move |throttle| {
+        throttle.wait(Attempt::Unlock, now)
+    })
+    .await?
+    {
+        return Err(PublicError::wait(left));
+    }
+    let vaults = store.clone();
+    let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
+    let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+    let profile = std::mem::take(&mut request.initial_profile_name);
+    drop(request);
+    let opened = tauri::async_runtime::spawn_blocking(move || {
+        vaults
+            .add_vault(&name, &passphrase, &profile, now_ms(), || {
+                stop_work_for_switch(&picks, &received)
+            })
+            // As `vault_create`: a pick that read the old session passes no check in the new one.
+            .inspect(|_| picks.clear())
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(PublicError::from)?;
+    // The vault is made and stays registered; it is locked again and the screen is told no.
+    refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
+    after_open(&opened);
+    run_blocking(&opened, VaultStore::snapshot).await
+}
+
+/// "Find my other vaults" (#357 4c-2): tries the passphrase on each folder the registry does not
+/// list, one derivation each, every one counted on the device-wide counter (it is a guess at
+/// those vaults). Writes nothing and opens nothing for good. Not granted to the renderer until
+/// the several-vaults screen exists.
+#[tauri::command]
+async fn vault_find_other_vaults(
+    store: State<'_, StoreHandle>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: FindVaultsRequest,
+) -> CommandResult<FoundVaultsReply> {
+    let store = store.pin();
+    let throttle = Arc::clone(throttle.inner());
+    let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+    drop(request);
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        let started = std::cell::Cell::new(None);
+        store.find_unlisted_vaults(
+            &passphrase,
+            || {
+                let begun = throttle.begin(Attempt::Unlock, now_ms())?;
+                started.set(Some(begun));
+                Ok(())
+            },
+            |outcome| {
+                if let Some(begun) = started.take() {
+                    throttle.settle(Attempt::Unlock, begun, outcome, now_ms());
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(|error| match error {
+        vault_slots::FindError::Wait { left, .. } => PublicError::wait(left),
+        vault_slots::FindError::Vault(error) => PublicError::from(error),
+    })?;
+    Ok(FoundVaultsReply {
+        found: found.found.iter().map(|slot| slot.text()).collect(),
+        not_opened: found.not_opened,
+        empty: found.empty,
+    })
+}
+
+/// Gives the vaults a search found the names their owner chose, so they are found by name again
+/// (#357 4c-2). All or none. Not granted to the renderer yet.
+#[tauri::command]
+async fn vault_name_found_vaults(
+    store: State<'_, StoreHandle>,
+    mut request: NameFoundRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let mut named = Vec::new();
+    for vault in &mut request.vaults {
+        let slot = vault_registry::SlotId::parse(&vault.id)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        named.push((slot, std::mem::take(&mut vault.name)));
+    }
+    drop(request);
+    tauri::async_runtime::spawn_blocking(move || store.register_found(&named))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 async fn vault_unlock_pdf(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     mut request: UnlockPdfRequest,
 ) -> CommandResult<UnlockedPdf> {
+    let store = store.pin();
     let record_id = request.record_id;
     let password = zeroize::Zeroizing::new(std::mem::take(&mut request.password));
     drop(request);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         // The helper's time counts as activity: the vault does not lock under it.
         let _opening = Opening::new(store.idle());
         unlock_pdf(store, record_id, &password, pdf_unlock::unlock_in_helper)
@@ -5200,25 +7863,33 @@ async fn vault_unlock_pdf(
 /// Hides a document (#71). There is no command that deletes one.
 #[tauri::command]
 async fn vault_hide_record(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
-    // A hidden document's text can no longer be saved (#72, AI-02).
+    let store = store.pin();
+    // A hidden document's text can no longer be saved (#72, AI-02), and a page being drawn for
+    // it stops.
     picks.forget_texts_for(request.record_id);
-    run_blocking(store.inner(), move |store| {
+    pdf_view::cancel_views();
+    let record_id = request.record_id;
+    let hidden = run_blocking(store.arc(), move |store| {
         store.hide_record(request.record_id, now_ms())
     })
-    .await
+    .await;
+    // A page drawn while it ran was of a document that is hidden now.
+    picks.forget_texts_for(record_id);
+    hidden
 }
 
 /// Keeps the AI helper's answer with its document, encrypted (#72 part D).
 #[tauri::command]
 async fn vault_ai_result_save(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: SaveAiResultRequest,
 ) -> CommandResult<vault::AiResultInfo> {
+    let store = store.pin();
     // The answer is the runtime's own, kept when it was given (#212): page code
     // only names it and adds a summary's source places.
     let answer = picks
@@ -5239,7 +7910,7 @@ async fn vault_ai_result_save(
             .map(|model| (model.name.as_str(), model.sha256.as_str())),
     )?;
     let record_id = request.record_id;
-    let saved = run_blocking(store.inner(), move |store| {
+    let saved = run_blocking(store.arc(), move |store| {
         store.save_ai_result(record_id, input, content.as_bytes(), now_ms())
     })
     .await?;
@@ -5250,10 +7921,11 @@ async fn vault_ai_result_save(
 /// The AI helper's answers kept with a document, newest first (#72).
 #[tauri::command]
 async fn vault_ai_results(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<Vec<vault::AiResultInfo>> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.ai_results(request.record_id)
     })
     .await
@@ -5262,10 +7934,11 @@ async fn vault_ai_results(
 /// One kept answer's text (#72).
 #[tauri::command]
 async fn vault_ai_result_read(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AiResultRequest,
 ) -> CommandResult<String> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         let bytes = store.read_ai_result(request.record_id, request.result_id)?;
         String::from_utf8(bytes).map_err(|_| vault::VaultError::Corrupt)
     })
@@ -5275,11 +7948,48 @@ async fn vault_ai_result_read(
 /// Puts a hidden document back (#71).
 #[tauri::command]
 async fn vault_unhide_record(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.unhide_record(request.record_id)
+    })
+    .await
+}
+
+/// Hides a whole person (#360): one flag, one history entry, nothing deleted. Whatever the
+/// AI helper holds for their documents is forgotten, as for one hidden document.
+#[tauri::command]
+async fn vault_hide_profile(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileIdRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let picks = Arc::clone(picks.inner());
+    run_blocking(store.arc(), move |store| {
+        // Forgotten only once the person is hidden: a refused hide changes nothing.
+        let ids = store.profile_record_ids(request.profile_id);
+        store.hide_profile(request.profile_id, now_ms())?;
+        for record_id in ids {
+            picks.forget_texts_for(record_id);
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// Brings a hidden person back (#360), and says which documents arrived for them while they
+/// were hidden and wait in Shared with me, so the screen can offer to move them back.
+#[tauri::command]
+async fn vault_restore_profile(
+    store: State<'_, StoreHandle>,
+    request: ProfileIdRequest,
+) -> CommandResult<Vec<vault::ArrivedWhileHidden>> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.restore_profile(request.profile_id)
     })
     .await
 }
@@ -5322,12 +8032,13 @@ fn set_aside_vault_warning_in(
 #[tauri::command]
 async fn vault_reset(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     request: ResetRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     if !locale.reset_phrase_matches(&request.confirmation)? {
         return Err(PublicError::from(VaultError::Invalid));
@@ -5351,12 +8062,12 @@ async fn vault_reset(
     }
     picks.clear();
     cloud_ai_on_lock();
-    run_blocking(store.inner(), VaultStore::reset).await?;
+    run_blocking(store.arc(), VaultStore::reset).await?;
     cloud_ai_on_lock();
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
-    forget_vault(throttle.inner()).await;
+    forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
 }
 
@@ -5448,6 +8159,55 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
+// Fixed, payload-free notification: paths, names and even counts stay out of this channel.
+#[cfg(windows)]
+const RECEIVED_CHANGED_SCRIPT: &str =
+    "window.dispatchEvent(new Event('mycarlos-received-changed'));";
+
+#[cfg(windows)]
+fn notify_received(app: &tauri::AppHandle) {
+    let app = app.clone();
+    // Wry can execute UI dispatch inline on the window thread. Post UI work
+    // from an async worker instead; never wait for JavaScript or open files in that callback.
+    let _notification = tauri::async_runtime::spawn(async move {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.eval(RECEIVED_CHANGED_SCRIPT);
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        // Missing/destroying windows leave the queue intact. Mount/focus/unlock also refresh.
+    });
+}
+
+/// What a second launch on Windows says when it cannot hand what was opened to
+/// the myCarlos already running (#133): fixed text, never a path or file name,
+/// in the Windows display language when myCarlos has it, else English.
+/// `language` is a Windows LANGID: the primary language in the low 10 bits and
+/// the sublanguage above it, which tells Traditional from Simplified Chinese.
+#[cfg(any(windows, test))]
+fn handoff_failed_text(language: u16) -> (&'static str, &'static str) {
+    let text = match (language & 0x3ff, language >> 10) {
+        // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
+        (0x0c, _) => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
+        (0x0a, _) => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
+        (0x15, _) => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
+        (0x16, _) => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        // LANG_CHINESE: Traditional for Taiwan, Hong Kong, Macau and zh-Hant;
+        // Simplified for the rest (China, Singapore, zh-Hans).
+        (0x04, 0x01 | 0x03 | 0x05 | 0x1f) => "myCarlos 已開啟，但無法與其連線。未新增任何內容。請關閉 myCarlos，然後重試。",
+        (0x04, _) => "myCarlos 已打开，但无法与其连接。未添加任何内容。请关闭 myCarlos，然后重试。",
+        _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
+    };
+    ("myCarlos", text)
+}
+
+/// The Windows display language, as a LANGID.
+#[cfg(windows)]
+fn windows_display_language() -> u16 {
+    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() }
+}
+
 // Keep one generated context for every runtime. On macOS the macro also
 // embeds the application Info.plist, whose process-wide symbol must be unique.
 // Tests use this same production configuration and capability authority.
@@ -5457,10 +8217,62 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    // Queue before plugins or any webview exist. A callback during startup keeps its
+    // files in this same Arc, after initial argv and before ordinary vault setup.
+    let received = Arc::new(ReceivedFiles::default());
+    #[cfg(any(windows, target_os = "linux"))]
+    received.receive_command_line(std::env::args_os());
+    let builder = tauri::Builder::default().manage(Arc::clone(&received));
+    #[cfg(windows)]
+    let builder = {
+        let (title, text) = handoff_failed_text(windows_display_language());
+        builder.plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(move |app, args, _cwd| {
+                    // A start from the login entry (`--background`) that finds myCarlos already
+                    // running changes nothing on screen (#206); any files it carries are still taken.
+                    let shows = second_launch_shows_window(&args);
+                    received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
+                    if shows {
+                        notify_received(app);
+                        // From the tray: the window comes back as the tray's Open brings it, and a
+                        // screen that did not take the lock while hidden is told first (#206).
+                        desktop_background::desktop::show_main(app);
+                    }
+                })
+                .handoff_failed_message(title, text)
+                .build(),
+        )
+    };
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_trust::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
+        // The address a stored video plays from (#359): only a token made at this
+        // unlock is answered, and nothing else is served.
+        // Only the main window may ask, and the answer (a range of ciphertext
+        // decrypted) is made off the UI thread.
+        .register_asynchronous_uri_scheme_protocol(
+            video_scheme::SCHEME,
+            |context, request, responder| {
+                let store = video_scheme::webview_allowed(context.webview_label())
+                    .then(|| context.app_handle().try_state::<StoreHandle>())
+                    .flatten()
+                    .map(|store| Arc::clone(store.arc()));
+                match store {
+                    Some(store) => {
+                        tauri::async_runtime::spawn_blocking(move || {
+                            responder.respond(video_scheme::respond(&store, &request));
+                        });
+                    }
+                    None => responder.respond(video_scheme::refused()),
+                }
+            },
+        )
         .setup(|app| {
             // The window is made here, not by the configuration, so that it
             // can refuse to open others: nothing in the app opens a window,
@@ -5518,30 +8330,27 @@ pub fn run() {
             // would lock its own copy of the lock file. Earlier evaluation builds
             // kept the vault at `<data>/vault-v1`; that is left untouched and
             // never read.
-            let store = Arc::new(VaultStore::new(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("vault-v1"),
-            ));
-            store.configure_notifications(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("document-notifications-v1.json"),
+            // The device's vaults (#357): Main at `vault-home/vault-v1` as it has always been, plus
+            // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
+            // nothing is written, so this is what it was. Each slot has its own notification ledger
+            // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            let slots = Arc::new(vault_slots::VaultSlots::open(
+                app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),
-            );
-            #[cfg(windows)]
-            store.start_document_collection()?;
-            app.manage(store);
-            // Wrong tries at a secret, counted beside the vault in
-            // `attempts.json`, and read only when needed, not here.
-            app.manage(Arc::new(AttemptThrottle::new(Some(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("attempts.json"),
-            ))));
+            ));
+            // One worker for the app, ticking whichever vault the screen is on.
+            #[cfg(desktop)]
+            slots.start_document_collection()?;
+            // Commands ask the handle for "the" vault.
+            app.manage(StoreHandle::from_source(slots));
+            // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
+            // the vault registry and not inside Main's `vault-home`, and read only when needed,
+            // not here. The old file is copied over once and left where it was.
+            let data_dir = app.path().app_local_data_dir()?;
+            throttle::migrate_counts(&data_dir);
+            app.manage(Arc::new(AttemptThrottle::new(Some(throttle::counts_path(
+                &data_dir,
+            )))));
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
@@ -5567,6 +8376,23 @@ pub fn run() {
                 Box::new(local_model::RuntimeSource(Arc::clone(&models))),
                 Box::new(local_model::SystemMemory),
             );
+            // Each checked card the helper makes is saved beside the models (#305), so the
+            // settings know a model's confirmed context after a restart.
+            {
+                let saver = Arc::clone(&models);
+                // Readable at once; written on a thread of its own, so a start does not wait for
+                // the disk.
+                model_runtime::app()
+                    .runner()
+                    .set_card_saver(Box::new(move |sha256, card| {
+                        saver.remember_card(sha256, card);
+                        let (saver, sha256, card) =
+                            (Arc::clone(&saver), sha256.to_owned(), card.clone());
+                        let _ = std::thread::Builder::new()
+                            .name("model-card-save".into())
+                            .spawn(move || saver.save_card(&sha256, &card));
+                    }));
+            }
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
@@ -5576,26 +8402,61 @@ pub fn run() {
                 cloud_ai::install(Arc::clone(&session));
                 app.manage(session);
             }
-            app.manage(Arc::new(ReceivedFiles::default()));
-            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
-            // second launch while the app is open is not forwarded yet (#53).
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                let (offered, sources) = received::accept_command_line(std::env::args_os());
-                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
-            }
-            let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+            // The startup receipt of files named on the command line, and a second launch's, belong
+            // to `run` (#133): the received files are managed there, before any plugin.
+            let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            let idle_app = app.handle().clone();
+            let received = Arc::clone(app.state::<Arc<ReceivedFiles>>().inner());
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
-                    lock_if_idle(&store, &picks, Instant::now());
+                    // Every vault the device has, at this tick, not the one at start-up; the screen
+                    // is told when any of them locked.
+                    if idle_step(&idle_app, &vaults.all(), &picks, Instant::now()) {
+                        cancel_native_pdf(&idle_app);
+                        // A lock returns the screen to the default vault (a no-op with one).
+                        vaults.return_to_default(|| stop_work_for_switch(&picks, &received));
+                    }
                 })?;
+            // The background mode (M2): the tray icon, the quiet start and the lock on close.
+            #[cfg(desktop)]
+            {
+                let background = desktop_background::desktop::install(
+                    app,
+                    app.path()
+                        .app_local_data_dir()?
+                        .join("vault-home")
+                        .join("background-v1.json"),
+                    close_lock(app.handle()),
+                );
+                // Tray notices (#230) need this switch: the poller and the notice keys read it.
+                tray_notices::set_keep_running(background.status().keep_running);
+                // The check that runs while locked in the tray: it waits until the tray, a locked
+                // vault and a notice key are all there.
+                let poll_vaults = app.state::<StoreHandle>().inner().clone();
+                tray_poller::driver::start(
+                    app.handle().clone(),
+                    Arc::new(move || poll_vaults.arc().open_vault_id().is_none()),
+                    Arc::clone(&background),
+                );
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            desktop_background::desktop::on_window_event(window, event);
+            #[cfg(not(desktop))]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            background_status,
+            background_set_keep_running,
+            background_set_start_at_login,
+            background_report_locale,
+            tray_waiting_status,
             ai_model_catalog,
             ai_model_status,
             ai_models,
@@ -5608,6 +8469,8 @@ pub fn run() {
             ai_model_download,
             ai_model_remove,
             ai_summarize,
+            ai_speed_check,
+            ai_model_speed,
             ai_explain,
             ai_cancel,
             #[cfg(feature = "cloud-ai")]
@@ -5633,6 +8496,10 @@ pub fn run() {
             vault_passphrase_rules,
             vault_create,
             vault_unlock,
+            vault_unlock_named,
+            vault_add_vault,
+            vault_find_other_vaults,
+            vault_name_found_vaults,
             vault_lock,
             vault_touch,
             vault_set_auto_lock,
@@ -5641,9 +8508,11 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_portal_remove_link,
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
+            vault_send_test_notice,
             vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,
@@ -5657,7 +8526,16 @@ pub fn run() {
             vault_recovery_key_cancel,
             vault_recover,
             vault_backup_pick,
+            vault_backup_size,
+            vault_left_out_records,
             vault_backup_picked,
+            vault_profile_export_prepare,
+            vault_profile_export_pick,
+            vault_profile_export_picked,
+            vault_profile_import_pick,
+            vault_profile_import_key_kind,
+            vault_profile_import_inspect,
+            vault_profile_import,
             vault_restore_pick,
             vault_restore_inspect,
             vault_restore,
@@ -5672,26 +8550,47 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            vault_import_any_pick,
+            vault_import_video_pick,
+            vault_import_video_picked,
+            vault_video_import_progress,
+            vault_video_import_cancel,
             received_list,
             received_accept,
+            received_discard,
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_read_android_pdf,
             vault_page_boxes,
             vault_document_text,
             vault_document_text_cancel,
             vault_record_known_details,
             vault_export_text_pick,
             vault_export_text_picked,
+            vault_export_text_copy,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
             vault_is_photo,
             vault_view_photo,
+            vault_video_start,
+            vault_video_append,
+            vault_video_pause,
+            vault_video_resume,
+            vault_video_stop,
+            vault_video_space,
+            vault_video_pending,
+            vault_video_recover,
+            vault_is_video,
+            vault_video_open,
+            vault_video_close,
             vault_is_locked_pdf,
             vault_unlock_pdf,
             vault_hide_record,
             vault_unhide_record,
+            vault_hide_profile,
+            vault_restore_profile,
             vault_ai_result_save,
             vault_ai_results,
             vault_ai_result_read,
@@ -5705,7 +8604,21 @@ pub fn run() {
                 _event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
-                _app.state::<Arc<VaultStore>>().stop_document_collection();
+                // Every store the device has made, not only the current one.
+                for store in _app.state::<StoreHandle>().all() {
+                    store.stop_document_collection();
+                }
+            }
+            // macOS: a click on the Dock icon, or opening myCarlos again, while its window is
+            // hidden in the tray brings it back as the tray's Open does, the screen told first
+            // that the vault is locked (#206). macOS itself keeps one copy of an app running.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = &_event
+            {
+                desktop_background::desktop::show_main(_app);
             }
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
@@ -5724,6 +8637,96 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_name_is_a_video_by_its_extension_in_any_case() {
+        for name in ["a.mp4", "A.MP4", "clip.M4V", "x.y.mov", "Scan 10:30.MoV"] {
+            assert!(is_video_name(name), "{name}");
+        }
+        for name in [
+            "a.pdf",
+            "mp4",
+            ".mp4x",
+            "a.mp4.pdf",
+            "movie",
+            "a.jpeg",
+            "",
+            "a.",
+        ] {
+            // ".mp4x" and "mp4" are not videos; "a.mp4.pdf" ends in pdf
+            assert!(!is_video_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pick_goes_to_documents_to_one_video_or_is_refused() {
+        // No video: documents and pictures, as before.
+        assert_eq!(
+            route_pick(&names(&["a.pdf", "b.png", "c.jpg"])),
+            Some(false)
+        );
+        assert_eq!(route_pick(&names(&[])), Some(false));
+        // Exactly one file, and it is a video.
+        assert_eq!(route_pick(&names(&["Clip.MP4"])), Some(true));
+        // A video among others, or two videos, is one the video import does not take.
+        assert_eq!(route_pick(&names(&["a.pdf", "b.mp4"])), None);
+        assert_eq!(route_pick(&names(&["b.mov", "a.png"])), None);
+        assert_eq!(route_pick(&names(&["a.mp4", "b.m4v"])), None);
+    }
+
+    #[test]
+    fn a_pick_answer_names_its_kind_and_carries_no_path() {
+        let pick_id = Uuid::nil();
+        let documents = serde_json::to_value(AnyPick::Documents { pick_id }).unwrap();
+        assert_eq!(
+            documents,
+            serde_json::json!({"kind": "documents", "pickId": pick_id})
+        );
+        let video = serde_json::to_value(AnyPick::Video { pick_id }).unwrap();
+        assert_eq!(
+            video,
+            serde_json::json!({"kind": "video", "pickId": pick_id})
+        );
+        let refused = serde_json::to_value(AnyPick::VideoAlone).unwrap();
+        assert_eq!(refused, serde_json::json!({"kind": "videoAlone"}));
+    }
+
+    #[test]
+    fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
+        let (title, english) = handoff_failed_text(0x09);
+        assert_eq!(title, "myCarlos");
+        assert!(english.starts_with("myCarlos is already open, but it couldn't be reached."));
+        // A language myCarlos does not have (German) falls back to English.
+        assert_eq!(handoff_failed_text(0x07), (title, english));
+        for (language, start) in [
+            (0x0c, "myCarlos est déjà ouvert"),
+            (0x0a, "myCarlos ya está abierto"),
+            (0x15, "myCarlos jest już uruchomiony"),
+            (0x16, "O myCarlos já está aberto"),
+            // Full LANGIDs: the sublanguage picks the Chinese script.
+            (0x040c, "myCarlos est déjà ouvert"),
+            (0x0804, "myCarlos 已打开"),
+            (0x1004, "myCarlos 已打开"),
+            (0x0004, "myCarlos 已打开"),
+            (0x0404, "myCarlos 已開啟"),
+            (0x0c04, "myCarlos 已開啟"),
+            (0x1404, "myCarlos 已開啟"),
+            (0x7c04, "myCarlos 已開啟"),
+        ] {
+            let (title, text) = handoff_failed_text(language);
+            assert_eq!(title, "myCarlos");
+            assert!(text.starts_with(start), "{language:#x}");
+        }
+        // Fixed text only: never a path or a file name.
+        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16, 0x0804, 0x0404] {
+            let text = handoff_failed_text(language).1;
+            assert!(!text.contains('\\') && !text.contains('/') && !text.contains(':'));
+        }
+    }
 
     #[test]
     fn does_not_return_a_page_for_a_cancelled_view_ticket() {
@@ -5835,6 +8838,76 @@ mod tests {
         assert_eq!(origin_for(false, true), APP_SCHEME);
         assert_eq!(origin_for(true, false), HOST_NAME);
         assert_eq!(origin_for(true, true), SECURE_HOST_NAME);
+    }
+
+    #[test]
+    fn the_main_window_opens_maximized_and_keeps_its_size_to_come_back_to() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let window = config.app.windows.first().unwrap();
+        // Maximized, not fullscreen: the title bar, the close button and the taskbar stay.
+        assert!(window.maximized, "the window starts maximized");
+        assert!(!window.fullscreen, "and is not fullscreen");
+        // Un-maximizing comes back to this size, which must stay a usable one.
+        assert_eq!((window.width, window.height), (1100.0, 760.0));
+        assert!(window.resizable && window.decorations);
+        assert!(window.min_width.is_some_and(|width| width <= window.width));
+        assert!(window
+            .min_height
+            .is_some_and(|height| height <= window.height));
+    }
+
+    /// Nothing sets, moves, centres or changes the main window after it is built, so showing it
+    /// again from the tray (`unminimize`, `show`, `set_focus`) brings it back as the patient left
+    /// it: maximized unless they restored it. A hide and a show keep the window's state.
+    #[test]
+    fn no_source_file_resizes_moves_or_changes_the_state_of_the_main_window() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        // Spelled in two parts so that this test does not find itself.
+        let calls: Vec<String> = [
+            ("set_", "fullscreen("),
+            ("set_", "size("),
+            ("set_", "position("),
+            ("set_", "maximized("),
+            ("set_", "min_size("),
+            ("set_", "max_size("),
+            (".", "center()"),
+            (".", "maximize()"),
+            (".", "unmaximize()"),
+            (".", "fullscreen("),
+        ]
+        .iter()
+        .map(|(head, tail)| format!("{head}{tail}"))
+        .collect();
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(files.len() > 40, "the scan found the source files");
+        let mut found = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap();
+            for call in &calls {
+                if text.contains(call.as_str()) {
+                    found.push(format!("{} has {call}", file.display()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "these change the main window after it opens; the window is made maximized by \
+             tauri.conf.json and must stay as the patient leaves it: {found:?}"
+        );
     }
 
     #[test]
@@ -6039,6 +9112,71 @@ mod tests {
     }
 
     #[test]
+    fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+                                     // The document's name never reaches the dialog, whoever it names.
+        for (own, expected) in [
+            ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
+            ("Photo.jpg", "Document 2026-11-26.jpg"),
+            ("Holiday.JPEG", "Document 2026-11-26.JPEG"),
+            ("scan.final.png", "Document 2026-11-26.png"),
+            (".jpg", "Document 2026-11-26.jpg"),
+            ("no extension at all", "Document 2026-11-26"),
+            ("ends with a dot.", "Document 2026-11-26"),
+            ("odd.é", "Document 2026-11-26"),
+            ("long.extensions9", "Document 2026-11-26"),
+            ("slash.p/f", "Document 2026-11-26"),
+            ("clip.MP4", "Document 2026-11-26.MP4"),
+            ("Letter.Pdf", "Document 2026-11-26.Pdf"),
+            // A dotted end that is part of a name is not a kind of file: nothing of it is kept.
+            ("dots.p.d.f", "Document 2026-11-26"),
+            ("Dr.Smith", "Document 2026-11-26"),
+            ("J.Lopez", "Document 2026-11-26"),
+            ("Lab results 14.30", "Document 2026-11-26"),
+            ("Dr.Smith referral.pdf", "Document 2026-11-26.pdf"),
+        ] {
+            let name = export_suggested_name(own, Some("2026-11-26"), utc);
+            assert_eq!(name, expected, "{own}");
+            assert!(!name.to_lowercase().contains("ana"), "{own}");
+            assert!(!name.contains("Smith") && !name.contains("Lopez"), "{own}");
+        }
+    }
+
+    #[test]
+    fn a_single_document_export_names_the_patients_own_day_or_else_the_utc_day() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        assert_eq!(
+            export_suggested_name("a.pdf", Some("2026-09-27"), utc),
+            "Document 2026-09-27.pdf"
+        );
+        // A date that does not read as a date is never put in a file name.
+        for text in ["../2026-09-27", "2026-9-27", "2026-09-27\\x", ""] {
+            assert_eq!(
+                export_suggested_name("a.pdf", Some(text), utc),
+                "Document 2026-09-28.pdf",
+                "{text}"
+            );
+        }
+        assert_eq!(
+            export_suggested_name("a.pdf", None, utc),
+            "Document 2026-09-28.pdf"
+        );
+    }
+
+    #[test]
+    fn an_export_request_without_a_date_still_reads() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let without: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
+        assert!(without.local_date.is_none());
+        let with: ExportRequest = serde_json::from_str(&format!(
+            r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#
+        ))
+        .unwrap();
+        assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
+    }
+
+    #[test]
     fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
         use portal_link::LinkError;
         let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
@@ -6151,19 +9289,22 @@ mod tests {
         for (command, clears) in [
             (
                 "async fn vault_create(",
-                "if created.is_ok() { forget_vault(throttle.inner()).await; }",
+                concat!(
+                    "if created.is_ok() { forget_vault(throttle.inner(), store.arc(), store.all()).await; ",
+                    "refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?; }",
+                ),
             ),
             (
                 "async fn vault_reset(",
                 concat!(
                     "VaultStore::reset).await?; ",
                     "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
-                    "forget_vault(throttle.inner()).await; Ok(true)",
+                    "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
             (
                 "async fn vault_restore(",
-                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner()).await; Ok(true)",
+                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
             ),
         ] {
             let body = source.split(command).nth(1).unwrap();
@@ -6184,12 +9325,58 @@ mod tests {
             let body = &body[..body.find("\n}\n").unwrap()];
             let tried = &body[body.find("tried(").unwrap()..body.find(".await?;").unwrap()];
             assert!(!tried.contains("snapshot"), "{command}");
-            assert!(body.contains("run_blocking(store.inner(), VaultStore::snapshot)"));
+            assert!(body.contains("run_blocking(store.arc(), VaultStore::snapshot)"));
         }
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
         let restore = &restore[..restore.find("\n}\n").unwrap()];
-        assert!(restore.ends_with("forget_vault(throttle.inner()).await;\n    Ok(true)"));
+        assert!(restore.ends_with(
+            "forget_vault(throttle.inner(), store.arc(), store.all()).await;\n    Ok(true)"
+        ));
+    }
+
+    /// Every command that opens a vault the owner cannot yet see closes it again if the window was
+    /// closed to the tray while it worked (#206): `started` is taken before any work and the refusal
+    /// comes after it and before the screen is given the vault. (`vault_unlock_named` is the same
+    /// gap and is listed in the PR that fixes it.)
+    #[test]
+    fn adding_a_vault_is_refused_when_the_window_was_closed_to_the_tray_meanwhile() {
+        let source = include_str!("lib.rs");
+        let body = source.split("async fn vault_add_vault(").nth(1).unwrap();
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let code = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let started = code.find("desktop_background::close_locks()").unwrap();
+        let work = code.find("spawn_blocking").unwrap();
+        let refused = code
+            .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
+            .unwrap();
+        let shown = code.find("after_open(&opened)").unwrap();
+        assert!(started < work && work < refused && refused < shown);
+    }
+
+    #[test]
+    fn the_counts_are_forgotten_only_when_no_other_vault_exists_on_the_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = Arc::new(VaultStore::new(temp.path().join("this")));
+        let other = Arc::new(VaultStore::new(temp.path().join("other")));
+        let all = vec![Arc::clone(&this), Arc::clone(&other)];
+        // Alone on the device (the other slot has no vault): its counts go.
+        assert!(!other_vault_exists(&this, &all));
+        assert!(!other_vault_exists(&this, std::slice::from_ref(&this)));
+        // Another vault exists, locked or open: the counts are the device's and stay.
+        other
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Person", 1)
+            .unwrap();
+        assert!(other_vault_exists(&this, &all));
+        other.lock();
+        assert!(other_vault_exists(&this, &all));
+        // The vault asking is never counted as "another".
+        assert!(!other_vault_exists(&other, std::slice::from_ref(&other)));
     }
 
     #[test]
@@ -6428,6 +9615,36 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_for_memory_carries_what_was_needed_and_what_was_free() {
+        use model_runtime::{AiError, MemoryShortfall};
+        let refusal = ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_641_000_000,
+            available_bytes: Some(1_950_000_000),
+        })));
+        assert_eq!(refusal.code, "aiMemory");
+        let sent = serde_json::to_value(&refusal).unwrap();
+        assert_eq!(sent["code"], "aiMemory");
+        assert_eq!(sent["messageKey"], "ai.error.memory");
+        assert_eq!(sent["memory"]["neededBytes"], 3_641_000_000u64);
+        assert_eq!(sent["memory"]["availableBytes"], 1_950_000_000u64);
+        // A computer that could not say what is free sends only the need.
+        let unknown = serde_json::to_value(ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_000_000_000,
+            available_bytes: None,
+        }))))
+        .unwrap();
+        assert_eq!(unknown["memory"]["neededBytes"], 3_000_000_000u64);
+        assert!(unknown["memory"].get("availableBytes").is_none());
+        // Every other refusal, and a memory refusal with no numbers, sends none.
+        for error in [AiError::Memory(None), AiError::Busy, AiError::Failed] {
+            assert!(serde_json::to_value(ai_error(error))
+                .unwrap()
+                .get("memory")
+                .is_none());
+        }
+    }
+
+    #[test]
     fn ai_errors_carry_their_code_and_words_the_catalogue_has() {
         use model_runtime::AiError;
         for (error, code, words) in [
@@ -6437,7 +9654,7 @@ mod tests {
                 "isn't on this device",
             ),
             (AiError::Damaged, "aiDamaged", "isn't on this device"),
-            (AiError::Memory, "aiMemory", "enough free memory"),
+            (AiError::Memory(None), "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
             (
@@ -6550,8 +9767,9 @@ mod tests {
         // platform it is the same directory.
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        // The app builds its vaults from the local data folder, handed to `VaultSlots::open`.
         let setup = startup
-            .split_once("let store = Arc::new(VaultStore::new(")
+            .split_once("vault_slots::VaultSlots::open(")
             .unwrap()
             .1;
         let root = setup.split_once("));").unwrap().0;
@@ -6560,11 +9778,16 @@ mod tests {
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
         // and on macOS and Linux local and roaming data are one directory. A
         // home of that name would hold an old vault's files loose beside the new
-        // one, where nothing cleans them up.
-        let home = root.split(".join(\"").nth(1).unwrap();
-        let home = &home[..home.find('"').unwrap()];
-        assert_ne!(home, "vault-v1");
-        assert_eq!(home, "vault-home");
+        // one, where nothing cleans them up. The Main slot is `vault-home/vault-v1`.
+        let data = std::path::Path::new("/FAKE/data");
+        assert_eq!(
+            vault_registry::slot_store_root(data, vault_registry::SlotId::Main),
+            data.join("vault-home").join("vault-v1")
+        );
+        assert_eq!(
+            vault_registry::slot_home(data, vault_registry::SlotId::Main),
+            data.join("vault-home")
+        );
     }
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
@@ -6706,15 +9929,19 @@ mod tests {
     }
 
     #[test]
-    fn a_file_that_is_not_a_pdf_is_refused_and_named() {
+    fn a_file_that_is_not_a_pdf_or_a_jpeg_is_refused_and_named() {
         let text = std::io::Cursor::new(b"FAKE plain text".to_vec());
         assert!(matches!(
-            require_pdf(Box::new(text)),
+            require_supported_file(Box::new(text)),
             Err(VaultError::NotPdf)
         ));
         let pdf = std::io::Cursor::new(b"%PDF-1.7 FAKE".to_vec());
         let mut kept = Vec::new();
-        std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(pdf)).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
         assert_eq!(kept, b"%PDF-1.7 FAKE");
         let json = serde_json::to_value(PublicError::from(VaultError::NotPdf)).unwrap();
         assert_eq!(json["code"], "not_pdf");
@@ -6906,6 +10133,217 @@ mod tests {
         assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
     }
 
+    /// Every `vault-locked` word a mock app's screen would hear, as its JSON payload.
+    fn screen_hears(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> std::sync::mpsc::Receiver<String> {
+        use tauri::Listener;
+        let (heard, hears) = std::sync::mpsc::channel();
+        app.listen_any(VAULT_LOCKED, move |event| {
+            let _ = heard.send(event.payload().to_owned());
+        });
+        hears
+    }
+
+    /// A mock app holding an unlocked FAKE vault and its picks, as the built app manages them.
+    fn app_with_unlocked_vault(
+        root: &std::path::Path,
+    ) -> (tauri::App<tauri::test::MockRuntime>, Arc<VaultStore>) {
+        let store = Arc::new(VaultStore::new(root.join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        let app = tauri::test::mock_builder()
+            .manage(StoreHandle::single(Arc::clone(&store)))
+            .manage(Arc::new(PendingPicks::default()))
+            .build(production_context())
+            .unwrap();
+        (app, store)
+    }
+
+    #[test]
+    fn a_second_launch_brings_the_window_forward_unless_it_is_the_login_start() {
+        assert!(second_launch_shows_window::<&str>(&[]));
+        assert!(second_launch_shows_window(&["C:\\myCarlos\\myCarlos.exe"]));
+        assert!(second_launch_shows_window(&[
+            "C:\\myCarlos\\myCarlos.exe",
+            "C:\\Users\\Jamie\\FAKE.pdf",
+        ]));
+        assert!(!second_launch_shows_window(&[
+            "C:\\myCarlos\\myCarlos.exe",
+            "--background",
+        ]));
+        // Only the exact login argument: a look-alike opens the window as always.
+        assert!(second_launch_shows_window(&[
+            "myCarlos.exe",
+            "--background-x"
+        ]));
+    }
+
+    #[test]
+    fn closing_to_the_tray_locks_the_vault_and_then_tells_the_screen_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let hears = screen_hears(&app);
+        let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+        let pick_id = picks.store_export(
+            picks.session(),
+            Uuid::new_v4(),
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+
+        // What the window's close (and Quit) runs: the `LockAll` that `run` gives the background
+        // mode, built the same way from the app's own vault and picks.
+        (close_lock(app.handle()))();
+
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        assert!(matches!(
+            picks.take_export(pick_id, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        let said = hears
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the screen must be told the vault locked");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "closed" })
+        );
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    #[test]
+    fn the_native_idle_lock_tells_the_screen_and_a_check_that_does_not_lock_says_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let hears = screen_hears(&app);
+        let picks = PendingPicks::default();
+        // The idle thread's own step, the one `run` spawns.
+        let stores = [Arc::clone(&store)];
+        assert!(!idle_step(app.handle(), &stores, &picks, Instant::now()));
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+        assert!(idle_step(
+            app.handle(),
+            &stores,
+            &picks,
+            idle_past(Instant::now())
+        ));
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        let said = hears.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "idle" })
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn showing_the_window_again_tells_the_screen_only_while_the_vault_is_locked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let hears = screen_hears(&app);
+        // `show_main` itself: what the tray's Open, a tray click and a second launch run.
+        let show = || desktop_background::desktop::show_main(app.handle());
+
+        // Open from the tray while unlocked and shown: nothing is said, nothing locks.
+        show();
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+
+        store.lock();
+        main.hide().unwrap();
+        show();
+        let said = hears.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "closed" })
+        );
+        // (While another call holds the session, `is_unlocked_now` is `None` and nothing is said:
+        // vault.rs `is_unlocked_now_never_waits_for_the_session`.)
+    }
+
+    #[test]
+    fn stop_work_for_lock_stops_what_every_lock_path_stops() {
+        // One list for "Lock now", the idle deadline and a switch to another vault (#357): the picks a
+        // native dialog was about to hand over, and a page view in flight.
+        let picks = PendingPicks::default();
+        let record_id = Uuid::new_v4();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let pick_id = picks.store_export(picks.session(), record_id, path());
+        let ticket = pdf_view::ViewTicket::new();
+        assert!(ticket.is_current());
+
+        stop_work_for_lock(&picks);
+
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+        assert!(!ticket.is_current());
+        // Nothing to stop is not an error, and it may be called again after the vault has locked.
+        stop_work_for_lock(&picks);
+    }
+
+    #[test]
+    fn the_idle_check_locks_every_vault_not_only_the_current_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let (a, b) = (
+            Arc::new(VaultStore::new(temp.path().join("a"))),
+            Arc::new(VaultStore::new(temp.path().join("b"))),
+        );
+        a.create(PASSWORD, "Jamie", 1).unwrap();
+        let other = "lantern-orbit-willow-cascade-572";
+        b.create(other, "Sam", 1).unwrap();
+        let picks = PendingPicks::default();
+        let stores = [Arc::clone(&a), Arc::clone(&b)];
+        // Nothing is due yet.
+        assert!(!lock_all_if_idle(&stores, &picks, Instant::now()));
+        assert!(matches!(a.status(), Ok(VaultStatus::Unlocked)));
+        // Both are past their deadline: both lock, and one answer says so.
+        assert!(lock_all_if_idle(&stores, &picks, idle_past(Instant::now())));
+        assert!(matches!(a.status(), Ok(VaultStatus::Locked)));
+        assert!(matches!(b.status(), Ok(VaultStatus::Locked)));
+        assert!(!lock_all_if_idle(
+            &stores,
+            &picks,
+            idle_past(Instant::now())
+        ));
+    }
+
+    #[test]
+    fn a_switch_stops_the_work_of_a_lock_and_forgets_the_files_the_system_offered() {
+        let picks = PendingPicks::default();
+        let received = ReceivedFiles::default();
+        received.receive(
+            1,
+            vec![ReceivedSource::Path("/home/jamie/FAKE-offered.pdf".into())],
+        );
+        assert_eq!(received.len(), 1);
+        let record_id = Uuid::new_v4();
+        let pick_id = picks.store_export(
+            picks.session(),
+            record_id,
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+        // A lock stops the picks but does not touch what the system offered.
+        stop_work_for_lock(&picks);
+        assert_eq!(received.len(), 1);
+        // A switch does both.
+        let again = picks.store_export(
+            picks.session(),
+            record_id,
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+        stop_work_for_switch(&picks, &received);
+        assert_eq!(received.len(), 0);
+        assert!(matches!(
+            picks.take_export(again, record_id),
+            Err(VaultError::NotFound)
+        ));
+        let _ = pick_id;
+    }
+
     /// When the default delay and the margin after `from` run out, exactly.
     fn due_at(from: Instant) -> Instant {
         from + Duration::from_secs(15 * 60) + idle::MARGIN
@@ -6935,6 +10373,923 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    /// The automatic document check is a desktop feature, not a Windows one: the worker, its tick
+    /// and the arrival notice all sit behind `desktop`, so Mac and Linux run the check and the
+    /// notice runtime says "nothing to show" there. A `cfg(windows)` on any of them stops the check
+    /// from ever running there while the consent is saved and shown (#473 review).
+    #[test]
+    fn the_automatic_document_check_is_gated_by_desktop_not_by_windows() {
+        let gated = |source: &str, item: &str| {
+            let at = source
+                .find(item)
+                .unwrap_or_else(|| panic!("missing {item}"));
+            let before = source[..at].trim_end_matches(' ');
+            let attributes: Vec<&str> = before
+                .lines()
+                .rev()
+                .take_while(|line| {
+                    let line = line.trim();
+                    line.starts_with("#[") || line.starts_with("///") || line.starts_with("//")
+                })
+                .filter(|line| line.trim().starts_with("#["))
+                .collect();
+            attributes
+                .iter()
+                .map(|line| line.trim().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let checks: [(&str, &str, &str); 4] = [
+            (
+                include_str!("vault_slots.rs"),
+                "pub(crate) fn start_document_collection(",
+                "start_document_collection",
+            ),
+            (
+                include_str!("vault.rs"),
+                "fn automatic_document_tick(&self)",
+                "automatic_document_tick",
+            ),
+            (
+                include_str!("vault/delivery.rs"),
+                "impl VaultStore {\n    /// Only a freshly committed local custody record",
+                "notify_local_arrival",
+            ),
+            (
+                include_str!("lib.rs"),
+                "slots.start_document_collection()?;",
+                "setup start",
+            ),
+        ];
+        for (source, item, name) in checks {
+            let attributes = gated(source, item);
+            assert!(
+                attributes.iter().any(|a| a == "#[cfg(desktop)]"),
+                "{name} must be #[cfg(desktop)], found {attributes:?}"
+            );
+            assert!(
+                !attributes.iter().any(|a| a.contains("windows")),
+                "{name} must not be gated by windows: {attributes:?}"
+            );
+        }
+        // The tick calls the check on every desktop, and the pickup calls the notice on every
+        // desktop; neither may be reached only on Windows.
+        let tick = include_str!("vault.rs");
+        let call = tick.find("self.automatic_document_tick();").unwrap();
+        assert!(tick[..call].trim_end().ends_with("#[cfg(desktop)]"));
+        let manual = include_str!("portal_pickup.rs");
+        let call = manual.find("store.notify_local_arrival(").unwrap();
+        let near = &manual[call.saturating_sub(120)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+        let pickup = include_str!("document_collection_pickup.rs");
+        let call = pickup
+            .find("store.notify_local_arrival_controlled(")
+            .unwrap();
+        let near = &pickup[call.saturating_sub(160)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+    }
+
+    /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
+    /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
+    /// top-level window that can be lost behind the app while its command waits for it. The rules,
+    /// over every source file (not only this one), in non-test code:
+    ///   - the plugin's dialog extension (`DialogExt`) is imported in this file and nowhere else;
+    ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
+    ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
+    ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
+    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
+    ///     here on purpose, and a lost one is noticed).
+    #[test]
+    fn every_file_dialog_is_opened_through_the_owned_helper() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        /// The code before the file's own `mod tests {` (its tests may name anything), comment lines
+        /// dropped, and every space and line break removed (so a call split over lines or spaced
+        /// oddly still matches). A file with no such module is read whole.
+        fn code(text: &str) -> String {
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            text[..end]
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .split_whitespace()
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let (mut dialog_ext, mut calls, mut file_calls, mut builders, mut sites) = (0, 0, 0, 0, 0);
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let code = code(&text);
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let imports = code.matches("DialogExt").count();
+            if name != "lib.rs" {
+                assert_eq!(imports, 0, "{name} imports DialogExt");
+            }
+            dialog_ext += imports;
+            calls += code.matches(".dialog()").count();
+            file_calls += code.matches(".dialog().file()").count();
+            builders += code.matches("FileDialogBuilder::new").count();
+            sites += code.matches("file_dialog(&").count();
+        }
+        assert_eq!(dialog_ext, 1, "DialogExt is imported once, in lib.rs");
+        assert_eq!(
+            calls, 2,
+            ".dialog() is called in the helper and the native confirmation only"
+        );
+        assert_eq!(file_calls, 1, "only the helper builds a file dialog");
+        assert_eq!(builders, 0, "a file dialog builder is made directly");
+        assert_eq!(
+            sites, 11,
+            "the eleven file dialog sites go through file_dialog"
+        );
+        // The helper keeps its owner.
+        let source = include_str!("lib.rs");
+        let helper = source.split("fn file_dialog(").nth(1).unwrap();
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("app.dialog().file()"));
+        assert!(helper.contains("set_parent(&window)"));
+        assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
+    }
+
+    /// The renderer sends `hiddenPeopleDocuments` (src/vault.ts). A snake_case field without a
+    /// camelCase rename read it as an unknown key and used 0, which made the removal fail whenever
+    /// a hidden person had a lost document.
+    #[test]
+    fn hide_unavailable_request_reads_the_renderers_camel_case_count() {
+        let id = Uuid::new_v4();
+        let sent = format!(r#"{{"confirmed":["{id}"],"hiddenPeopleDocuments":3}}"#);
+        let request: HideUnavailableRequest = serde_json::from_str(&sent).unwrap();
+        assert_eq!(request.confirmed, vec![id]);
+        assert_eq!(request.hidden_people_documents, 3);
+        // Left out, it is 0 (a vault with no hidden people sends none).
+        let none: HideUnavailableRequest =
+            serde_json::from_str(&format!(r#"{{"confirmed":["{id}"]}}"#)).unwrap();
+        assert_eq!(none.hidden_people_documents, 0);
+        // A key the struct does not know is refused, not ignored: the old snake_case spelling (or
+        // any other slip) fails loudly instead of leaving a field at its default.
+        assert!(serde_json::from_str::<HideUnavailableRequest>(
+            r#"{"confirmed":[],"hidden_people_documents":3}"#
+        )
+        .is_err());
+    }
+
+    /// What the renderer sends reaches a command through serde, which by default IGNORES a key it
+    /// does not know and fills a field it does not receive from its default: a spelling slip
+    /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
+    /// it did for the recovery of a hidden person's lost document. So, for every Tauri command
+    /// (a function under the command attribute) in any source file, each parameter type that is a
+    /// struct this crate deserializes must:
+    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
+    ///     every struct such a request holds); and
+    ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
+    ///     renderer does.
+    ///
+    /// Every struct such a request holds in a field is held to the same two rules. The attribute is
+    /// not spelled out here: `production_webview_configuration_has_no_development_network_access`
+    /// counts its exact text in this file, and a quoted copy would add one to the count.
+    #[test]
+    fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
+        use std::collections::{BTreeMap, BTreeSet};
+        struct Definition {
+            attributes: String,
+            fields: Vec<(String, String)>,
+            field_attributes: Vec<String>,
+            file: String,
+        }
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        fn words(text: &str) -> Vec<&str> {
+            text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        // The file system's order is not the same on every machine, and a struct name defined in
+        // two files must be read the same way on all of them.
+        files.sort();
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let mut definitions: BTreeMap<String, Definition> = BTreeMap::new();
+        // Struct names defined more than once with different contents (the first one, in file
+        // order, is the one read), and the enums commands may reach.
+        let mut conflicts: BTreeSet<String> = BTreeSet::new();
+        let mut enums: BTreeSet<String> = BTreeSet::new();
+        // The other copies of a conflicting name: each is checked on its own below, since the
+        // contract can only name one.
+        let mut conflict_copies: Vec<(String, Definition)> = Vec::new();
+        // Types with a hand-written `impl Deserialize`: what it accepts is not in the source's
+        // attributes, so a command may not take one.
+        let mut manual_impls: BTreeSet<String> = BTreeSet::new();
+        let mut command_parameters: Vec<(String, String)> = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            let code = &text[..end];
+            let mut attributes = String::new();
+            let mut lines = code.lines().peekable();
+            while let Some(line) = lines.next() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("#[") {
+                    attributes.push_str(trimmed);
+                    attributes.push('\n');
+                    continue;
+                }
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                let declaration = trimmed
+                    .strip_prefix("pub(crate) ")
+                    .or_else(|| trimmed.strip_prefix("pub "))
+                    .unwrap_or(trimmed);
+                if attributes.contains("tauri::command") {
+                    // The parameter list, however many lines it takes.
+                    let mut signature = declaration.to_owned();
+                    while !signature.contains("->") && !signature.contains('{') {
+                        match lines.next() {
+                            Some(next) => {
+                                signature.push(' ');
+                                signature.push_str(next.trim());
+                            }
+                            None => break,
+                        }
+                    }
+                    if let Some(open) = signature.find('(') {
+                        let function = signature[..open]
+                            .rsplit(' ')
+                            .next()
+                            .unwrap()
+                            .trim_end_matches(['<', '>'])
+                            .to_owned();
+                        let parameters = &signature[open..];
+                        command_parameters.push((function, parameters.to_owned()));
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("struct ") {
+                    if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                        let struct_name = rest
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .next()
+                            .unwrap()
+                            .to_owned();
+                        let mut fields = Vec::new();
+                        let mut field_attributes = Vec::new();
+                        let mut pending_attributes = String::new();
+                        for field in lines.by_ref() {
+                            let field = field.trim();
+                            if field == "}" {
+                                break;
+                            }
+                            if field.starts_with('#') {
+                                pending_attributes.push_str(field);
+                                pending_attributes.push('\n');
+                                continue;
+                            }
+                            if field.starts_with("//") {
+                                continue;
+                            }
+                            let field = field
+                                .strip_prefix("pub(crate) ")
+                                .or_else(|| field.strip_prefix("pub "))
+                                .unwrap_or(field);
+                            if let Some((field_name, field_type)) = field.split_once(':') {
+                                fields.push((
+                                    field_name.trim().trim_start_matches("r#").to_owned(),
+                                    field_type.trim().trim_end_matches(',').to_owned(),
+                                ));
+                                field_attributes.push(std::mem::take(&mut pending_attributes));
+                            }
+                        }
+                        let definition = Definition {
+                            attributes: attributes.clone(),
+                            fields,
+                            field_attributes,
+                            file: name.clone(),
+                        };
+                        let differs = definitions.get(&struct_name).map(|first| {
+                            first.attributes != definition.attributes
+                                || first.fields != definition.fields
+                                || first.field_attributes != definition.field_attributes
+                        });
+                        match differs {
+                            None => {
+                                definitions.insert(struct_name, definition);
+                            }
+                            Some(true) => {
+                                conflicts.insert(struct_name.clone());
+                                conflict_copies.push((struct_name, definition));
+                            }
+                            Some(false) => {}
+                        }
+                    }
+                } else if declaration.starts_with("impl") && declaration.contains("Deserialize<") {
+                    // Whatever the lifetime is called (`'de`, `'a`, `'__de`, `'_`) and however the
+                    // trait is named (`Deserialize`, `serde::Deserialize`, `serde::de::Deserialize`).
+                    for part in declaration.split("Deserialize<").skip(1) {
+                        if let Some((_, rest)) = part.split_once("> for ") {
+                            manual_impls.insert(
+                                rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .next()
+                                    .unwrap()
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("enum ") {
+                    if attributes.contains("Deserialize") {
+                        enums.insert(
+                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .next()
+                                .unwrap()
+                                .to_owned(),
+                        );
+                    }
+                }
+                attributes.clear();
+            }
+        }
+        // The structs a command takes, and (for the camelCase rule only) every struct they hold.
+        let mut at_the_command = BTreeSet::new();
+        for (_, parameters) in &command_parameters {
+            for word in words(parameters) {
+                if definitions.contains_key(word) && !conflicts.contains(word) {
+                    at_the_command.insert(word.to_owned());
+                }
+            }
+        }
+        assert!(
+            at_the_command.len() >= 40,
+            "only {} command argument structs found: the scan is not reading the commands",
+            at_the_command.len()
+        );
+        let mut every = at_the_command.clone();
+        let mut pending: Vec<String> = at_the_command.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            for (_, field_type) in &definitions[&name].fields {
+                for word in words(field_type) {
+                    if definitions.contains_key(word)
+                        && !conflicts.contains(word)
+                        && every.insert(word.to_owned())
+                    {
+                        pending.push(word.to_owned());
+                    }
+                }
+            }
+        }
+        let mut problems = Vec::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let multi_word = definition
+                .fields
+                .iter()
+                .any(|(field, _)| field.contains('_'));
+            if multi_word && !definition.attributes.contains("rename_all = \"camelCase\"") {
+                problems.push(format!(
+                    "{name} ({}) needs rename_all = \"camelCase\"",
+                    definition.file
+                ));
+            }
+            if !definition.attributes.contains("deny_unknown_fields") {
+                problems.push(format!(
+                    "{name} ({}) needs deny_unknown_fields",
+                    definition.file
+                ));
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
+
+        // The contract the renderer's calls are checked against (src/commandArgumentContract.test.ts):
+        // every command's arguments and every struct they reach, written sorted to a checked-in
+        // file. A change to a command or a struct fails here until the file is regenerated, so
+        // the renderer's check never reads an out-of-date list.
+        #[derive(serde::Serialize, PartialEq)]
+        struct ArgumentContract {
+            optional: bool,
+            #[serde(rename = "struct")]
+            struct_name: Option<String>,
+        }
+        #[derive(serde::Serialize, PartialEq)]
+        struct CommandContract {
+            arguments: BTreeMap<String, ArgumentContract>,
+            raw: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct StructContract {
+            /// Defined more than once with different contents: read as `open`.
+            ambiguous: bool,
+            #[serde(rename = "denyUnknown")]
+            deny_unknown: bool,
+            fields: BTreeMap<String, ArgumentContract>,
+            open: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct Contract {
+            /// Where a key cannot be checked (the elements of a list of structs, an enum's
+            /// variants), by command: this list is for the reviewer of a change to read.
+            #[serde(rename = "blindSpots")]
+            blind_spots: BTreeMap<String, Vec<String>>,
+            commands: BTreeMap<String, CommandContract>,
+            #[serde(rename = "generatedBy")]
+            generated_by: &'static str,
+            structs: BTreeMap<String, StructContract>,
+        }
+        fn camel(name: &str) -> String {
+            let mut out = String::new();
+            let mut upper = false;
+            for c in name.chars() {
+                if c == '_' {
+                    upper = true;
+                } else if upper {
+                    out.extend(c.to_uppercase());
+                    upper = false;
+                } else {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        // Whether a `#[serde(..)]` attribute in `attributes` names `word` (as a whole word).
+        fn serde_has(attributes: &str, word: &str) -> bool {
+            attributes
+                .lines()
+                .filter(|line| line.contains("serde("))
+                .any(|line| words(line).contains(&word))
+        }
+        fn split_top_level(list: &str) -> Vec<String> {
+            let mut parts = Vec::new();
+            let mut depth = 0_i32;
+            let mut current = String::new();
+            let mut previous = ' ';
+            for c in list.chars() {
+                match c {
+                    '(' | '<' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    '>' if previous != '-' => depth -= 1,
+                    _ => {}
+                }
+                if c == ',' && depth == 0 {
+                    parts.push(current.trim().to_owned());
+                    current.clear();
+                } else {
+                    current.push(c);
+                }
+                previous = c;
+            }
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_owned());
+            }
+            parts
+        }
+        let struct_in = |ty: &str| -> Option<String> {
+            words(ty)
+                .into_iter()
+                .find(|word| definitions.contains_key(*word))
+                .map(str::to_owned)
+        };
+        // What the list of a struct's or a command's arguments cannot say about the values it takes.
+        let unchecked = |ty: &str| -> Option<String> {
+            let words = words(ty);
+            if let Some(name) = words.iter().find(|word| enums.contains(**word)) {
+                return Some(format!("enum {name}"));
+            }
+            let several = ty.contains("Vec<") || ty.contains("Map<") || ty.contains('[');
+            if several {
+                return struct_in(ty).map(|name| format!("the elements of {name}"));
+            }
+            None
+        };
+        let mut contract = Contract {
+            blind_spots: BTreeMap::new(),
+            commands: BTreeMap::new(),
+            generated_by: "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
+            structs: BTreeMap::new(),
+        };
+        let mut command_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (function, parameters) in &command_parameters {
+            let mut depth = 0_i32;
+            let mut close = None;
+            for (index, c) in parameters.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let close = close.unwrap_or_else(|| panic!("{function}: no closing parenthesis"));
+            let mut command = CommandContract {
+                arguments: BTreeMap::new(),
+                raw: false,
+            };
+            for parameter in split_top_level(&parameters[1..close]) {
+                let (name, ty) = parameter
+                    .split_once(':')
+                    .unwrap_or_else(|| panic!("{function}: parameter {parameter:?}"));
+                // A leading underscore (an unused argument) is not part of the wire name.
+                let name = name
+                    .trim()
+                    .trim_start_matches("mut ")
+                    .trim()
+                    .trim_start_matches('_');
+                let ty = ty.trim().trim_start_matches('&').trim();
+                let injected = [
+                    "State<",
+                    "tauri::State<",
+                    "AppHandle",
+                    "tauri::AppHandle",
+                    "Window",
+                    "tauri::Window",
+                    "WebviewWindow",
+                    "tauri::WebviewWindow",
+                ]
+                .iter()
+                .any(|prefix| ty.starts_with(prefix));
+                if injected {
+                    continue;
+                }
+                if ty.starts_with("tauri::ipc::Request") {
+                    command.raw = true;
+                    continue;
+                }
+                if let Some(kind) = unchecked(ty) {
+                    command_blind
+                        .entry(function.clone())
+                        .or_default()
+                        .insert(format!("{}: {kind}", camel(name)));
+                }
+                command.arguments.insert(
+                    camel(name),
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            match contract.commands.get(function) {
+                // The same command written once for each platform (`#[cfg]`) takes the same
+                // arguments in each.
+                Some(existing) => assert!(
+                    *existing == command,
+                    "the command {function} is defined twice with different arguments"
+                ),
+                None => {
+                    contract.commands.insert(function.clone(), command);
+                }
+            }
+        }
+        // A custom deserializer (or a conversion through another type) decides what is accepted
+        // where the list cannot see it. The few that only validate a list or accept a null are
+        // named here; any other is refused until it is modelled and named.
+        const REVIEWED_DESERIALIZERS: [(&str, &str, &str, &str); 3] = [
+            (
+                "Page",
+                "document_collection_pickup.rs",
+                "next_cursor",
+                "nullable",
+            ),
+            (
+                "ProfileDetails",
+                "vault.rs",
+                "previous_full_names",
+                "present_previous_names",
+            ),
+            (
+                "SaveAiResultRequest",
+                "lib.rs",
+                "sources",
+                "summary_contract::deserialize_sources",
+            ),
+        ];
+        let custom_deserializers = |name: &str, definition: &Definition| -> Vec<String> {
+            let mut found = Vec::new();
+            for word in ["from", "try_from", "remote"] {
+                if serde_has(&definition.attributes, word) {
+                    found.push(format!("{name}: serde({word}) on the struct"));
+                }
+            }
+            // `flatten` defeats `deny_unknown_fields` (serde does not enforce it on a struct that
+            // flattens another), and `serde_as` / `serde_with` change what is accepted where the
+            // list cannot see it: a command argument may use none of them.
+            for attributes in
+                std::iter::once(&definition.attributes).chain(&definition.field_attributes)
+            {
+                if attributes.contains("#[serde_as") || attributes.contains("#[serde_with") {
+                    found.push(format!("{name}: serde_as or serde_with"));
+                }
+            }
+            for ((field, _), attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(attributes, "flatten") {
+                    found.push(format!(
+                        "{name}.{field}: serde(flatten) defeats deny_unknown_fields"
+                    ));
+                }
+                for word in ["with", "deserialize_with", "from", "try_from", "remote"] {
+                    if !serde_has(attributes, word) {
+                        continue;
+                    }
+                    let function = attributes
+                        .split("deserialize_with = \"")
+                        .nth(1)
+                        .and_then(|rest| rest.split('"').next());
+                    let reviewed = word == "deserialize_with"
+                        && function.is_some_and(|f| {
+                            REVIEWED_DESERIALIZERS.contains(&(
+                                name,
+                                definition.file.as_str(),
+                                field.as_str(),
+                                f,
+                            ))
+                        });
+                    if !reviewed {
+                        found.push(format!("{name}.{field}: serde({word}) on a field"));
+                    }
+                }
+            }
+            for (field, ty) in &definition.fields {
+                if let Some(word) = words(ty).into_iter().find(|w| manual_impls.contains(*w)) {
+                    found.push(format!(
+                        "{name}.{field}: {word} has a hand-written Deserialize"
+                    ));
+                }
+            }
+            found
+        };
+        // What the list cannot model is refused, so that nobody adds it unseen.
+        let mut unmodelled = Vec::new();
+        let mut struct_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let camel_case = definition.attributes.contains("rename_all = \"camelCase\"");
+            if serde_has(&definition.attributes, "rename_all") && !camel_case {
+                unmodelled.push(format!("{name}: a rename_all other than camelCase"));
+            }
+            if serde_has(&definition.attributes, "alias") {
+                unmodelled.push(format!("{name}: an alias"));
+            }
+            unmodelled.extend(custom_deserializers(name, definition));
+            let mut fields = BTreeMap::new();
+            let mut open = conflicts.contains(name);
+            for ((field, ty), field_attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(field_attributes, "skip")
+                    || serde_has(field_attributes, "skip_deserializing")
+                {
+                    continue;
+                }
+                if serde_has(field_attributes, "flatten") {
+                    open = true;
+                }
+                if field_attributes.contains("rename(") || serde_has(field_attributes, "alias") {
+                    unmodelled.push(format!("{name}.{field}: a rename(..) or an alias"));
+                }
+                let key = match field_attributes.split("rename = \"").nth(1) {
+                    Some(rest) => rest.split('"').next().unwrap().to_owned(),
+                    None if camel_case => camel(field),
+                    None => field.clone(),
+                };
+                if let Some(kind) = unchecked(ty) {
+                    struct_blind
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(format!("{name}.{key}: {kind}"));
+                }
+                fields.insert(
+                    key,
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<")
+                            || serde_has(field_attributes, "default")
+                            || serde_has(&definition.attributes, "default"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            contract.structs.insert(
+                name.clone(),
+                StructContract {
+                    ambiguous: conflicts.contains(name),
+                    deny_unknown: definition.attributes.contains("deny_unknown_fields"),
+                    fields,
+                    open,
+                },
+            );
+        }
+        // A command that takes a type with a hand-written `impl Deserialize` itself.
+        for (function, parameters) in &command_parameters {
+            if let Some(word) = words(parameters)
+                .into_iter()
+                .find(|w| manual_impls.contains(*w))
+            {
+                unmodelled.push(format!("{function}: {word} has a hand-written Deserialize"));
+            }
+        }
+        // A struct name defined twice with different contents cannot be told apart by name: what
+        // a command or a struct reaches under that name is listed as an open, ambiguous struct,
+        // and its keys are not checked (a reviewer reads these in the file). So that it is not an
+        // escape from the rules, EVERY copy is held to them here.
+        let referenced: BTreeSet<String> = contract
+            .commands
+            .values()
+            .flat_map(|command| command.arguments.values())
+            .chain(contract.structs.values().flat_map(|s| s.fields.values()))
+            .filter_map(|argument| argument.struct_name.clone())
+            .filter(|name| conflicts.contains(name))
+            .collect();
+        // A copy of a conflicting name that is not what a command takes but the portal's own
+        // answer, which arrives in the portal's snake_case: it is held to `deny_unknown_fields`
+        // like the others but not to camelCase.
+        const PORTAL_ANSWERS: [(&str, &str); 1] = [("Page", "document_collection_pickup.rs")];
+        for name in &referenced {
+            let copies = std::iter::once(&definitions[name]).chain(
+                conflict_copies
+                    .iter()
+                    .filter(|(copy, _)| copy == name)
+                    .map(|(_, definition)| definition),
+            );
+            for copy in copies {
+                let multi_word = copy.fields.iter().any(|(field, _)| field.contains('_'));
+                let camel_case = copy.attributes.contains("rename_all = \"camelCase\"");
+                if !copy.attributes.contains("deny_unknown_fields") {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs deny_unknown_fields",
+                        copy.file
+                    ));
+                }
+                let portal_answer = PORTAL_ANSWERS.contains(&(name.as_str(), copy.file.as_str()));
+                if (multi_word && !camel_case && !portal_answer)
+                    || (serde_has(&copy.attributes, "rename_all") && !camel_case)
+                {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs rename_all = \"camelCase\" or none",
+                        copy.file
+                    ));
+                }
+                if serde_has(&copy.attributes, "alias")
+                    || copy
+                        .field_attributes
+                        .iter()
+                        .any(|a| a.contains("rename(") || serde_has(a, "alias"))
+                {
+                    unmodelled.push(format!("{name} ({}): a rename(..) or an alias", copy.file));
+                }
+                unmodelled.extend(custom_deserializers(name, copy));
+            }
+        }
+        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
+        for name in referenced {
+            contract.structs.entry(name).or_insert(StructContract {
+                ambiguous: true,
+                deny_unknown: false,
+                fields: BTreeMap::new(),
+                open: true,
+            });
+        }
+        // For each command: what its own arguments and every struct they reach cannot check.
+        for (function, command) in &contract.commands {
+            let mut reached: BTreeSet<String> = command
+                .arguments
+                .values()
+                .filter_map(|argument| argument.struct_name.clone())
+                .collect();
+            let mut pending: Vec<String> = reached.iter().cloned().collect();
+            while let Some(name) = pending.pop() {
+                for field in contract.structs[&name].fields.values() {
+                    if let Some(inner) = &field.struct_name {
+                        if reached.insert(inner.clone()) {
+                            pending.push(inner.clone());
+                        }
+                    }
+                }
+            }
+            let mut blind = command_blind.get(function).cloned().unwrap_or_default();
+            for name in &reached {
+                blind.extend(struct_blind.get(name).cloned().unwrap_or_default());
+            }
+            if !blind.is_empty() {
+                contract
+                    .blind_spots
+                    .insert(function.clone(), blind.into_iter().collect());
+            }
+        }
+        let generated = serde_json::to_string_pretty(&contract).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/command-args.json");
+        if std::env::var_os("UPDATE_COMMAND_ARGS").is_some() {
+            // CI must never rewrite the file and then pass: it compares.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "UPDATE_COMMAND_ARGS is refused when CI is set: regenerate the file locally and commit it"
+            );
+            std::fs::write(&path, &generated).unwrap();
+        }
+        let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            checked_in == generated,
+            "src-tauri/tests/fixtures/command-args.json is out of date with the commands: \
+             regenerate it with `UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys` \
+             and commit it"
+        );
+    }
+
+    /// The Android reader's labels cross three layers: the renderer's `AndroidReaderLabels`
+    /// (src/vault.ts), this struct, and the plugin's own. `pageFailed` was sent by the renderer and
+    /// dropped by this struct, so the reader showed nothing for a page it could not draw. The
+    /// struct now takes exactly the renderer's labels: no more, no fewer.
+    #[test]
+    fn the_android_reader_labels_are_exactly_the_renderers_eight() {
+        let renderer = include_str!("../../src/vault.ts");
+        let interface = renderer
+            .split("export interface AndroidReaderLabels {")
+            .nth(1)
+            .unwrap();
+        let interface = &interface[..interface.find('}').unwrap()];
+        let mut sent: Vec<&str> = interface
+            .lines()
+            .filter_map(|line| line.trim().split_once(':').map(|(name, _)| name.trim()))
+            .collect();
+        sent.sort_unstable();
+        assert_eq!(
+            sent,
+            [
+                "close",
+                "next",
+                "page",
+                "pageFailed",
+                "pageStatus",
+                "previous",
+                "zoomIn",
+                "zoomOut"
+            ]
+        );
+        let all = sent
+            .iter()
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let labels: AndroidPdfLabels = serde_json::from_str(&format!("{{{all}}}")).unwrap();
+        assert!(labels.valid());
+        assert_eq!(labels.page_failed, "A label");
+        // One fewer is refused (a missing label would be shown as nothing), and so is one more.
+        let fewer = sent
+            .iter()
+            .filter(|name| **name != "pageFailed")
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(serde_json::from_str::<AndroidPdfLabels>(&format!("{{{fewer}}}")).is_err());
+        assert!(
+            serde_json::from_str::<AndroidPdfLabels>(&format!(r#"{{{all},"extra":"x"}}"#)).is_err()
+        );
+        // A label that is blank or has a control character is not valid.
+        let blank: AndroidPdfLabels = serde_json::from_str(
+            &format!("{{{all}}}").replace(r#""pageFailed":"A label""#, r#""pageFailed":"""#),
+        )
+        .unwrap();
+        assert!(!blank.valid());
     }
 
     #[test]
@@ -7166,7 +11521,7 @@ mod tests {
         // and a failure, as an answer stopped at its limit ends.
         for ending in [
             Ok(()),
-            Err(AiError::Memory),
+            Err(AiError::Memory(None)),
             Err(AiError::Cancelled),
             Err(AiError::Failed),
         ] {
@@ -7309,6 +11664,7 @@ mod tests {
             replaces,
             differs_from_this_device: differs,
             document_count: 3,
+            left_out: 0,
             fingerprint: [0; 32],
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
@@ -7472,6 +11828,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_picked_video_is_recognised_from_the_name_the_provider_gave_not_the_display_name() {
+        let tail =
+            |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
+        // An Android document id that ends in a video extension is a video, though the document
+        // import would call it "Imported document.pdf".
+        let clip =
+            "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
+        assert_eq!(tail(clip), "clip.mp4");
+        assert_eq!(
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap())),
+            "Imported document.pdf"
+        );
+        assert!(is_video_name(&tail(clip)));
+        // A video among documents is therefore refused, not sent down the document path.
+        let pdf = "content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf";
+        assert_eq!(route_pick(&[tail(clip), tail(pdf)]), None);
+        assert_eq!(route_pick(&[tail(clip)]), Some(true));
+        // An opaque id says nothing: it is not a video, so it stays on the document path as before.
+        let opaque = "content://com.android.providers.downloads.documents/document/msf%3A31";
+        assert_eq!(tail(opaque), "31");
+        assert_eq!(route_pick(&[tail(opaque)]), Some(false));
+        // Desktop paths and file URLs are their own names.
+        assert!(is_video_name(&picked_name_tail(
+            &tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into())
+        )));
+        assert!(is_video_name(&tail(
+            "file:///private/var/mobile/Inbox/My%20Clip.m4v"
+        )));
+    }
+
+    #[test]
+    fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
+        let named = |value: &str| {
+            video_import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+        };
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
+            "clip.mp4"
+        );
+        assert_eq!(
+            named("content://com.android.providers.downloads.documents/document/msf%3A31"),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/My%20Clip.mov"),
+            "My Clip.mov"
+        );
+        assert_eq!(
+            video_import_display_name(&tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into())),
+            "/home/x/clip.mp4"
+        );
+    }
+
     #[cfg(all(unix, desktop))]
     #[test]
     fn local_import_rejects_symbolic_links() {
@@ -7524,6 +11934,20 @@ mod tests {
         ] {
             assert!(production_csp.contains(directive));
         }
+        // Stored videos play from the app's own scheme and nowhere else (#359).
+        for csp in [production_csp, security["devCsp"].as_str().unwrap()] {
+            assert!(
+                csp.contains("media-src 'self' mycarlos-video: http://mycarlos-video.localhost;")
+            );
+            let connect = csp
+                .split(';')
+                .find(|d| d.trim_start().starts_with("connect-src"))
+                .unwrap();
+            assert!(
+                !connect.contains("mycarlos-video"),
+                "scripts may not fetch videos"
+            );
+        }
         assert!(security["devCsp"].as_str().unwrap().contains("ws://*:1421"));
         assert_eq!(security["freezePrototype"], true);
         assert_eq!(config["build"]["removeUnusedCommands"], true);
@@ -7564,6 +11988,24 @@ mod tests {
             assert!(build_script.contains(&format!("\"{command}\"")));
             not_granted += usize::from(!granted);
         }
+        // Registered and compiled, but not granted to the renderer until a screen calls them
+        // (least privilege): the grant arrives with the screen that needs it.
+        const WITHHELD: &[&str] = &[
+            "vault_unlock_named",
+            "vault_add_vault",
+            "vault_find_other_vaults",
+            "vault_name_found_vaults",
+        ];
+        for &command in WITHHELD {
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            assert!(
+                !permissions.contains(&grant.as_str()),
+                "{grant} is withheld until its screen exists (#357 PR 5)"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += 1;
+        }
         assert_eq!(
             permissions.len() + not_granted,
             library.matches(&command_marker).count()
@@ -7578,6 +12020,270 @@ mod tests {
             );
             assert!(build_script.contains(&format!("\"{command}\"")));
         }
+    }
+
+    /// The speed check saves under the key the reader's question looks it up by (a mismatch once
+    /// made a result that was never found again on a computer with five or more cores).
+    #[test]
+    fn a_measured_speed_is_found_again_by_the_question_that_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = local_model::Store::new(temp.path().join("models"), local_model::CATALOG);
+        let sha = local_model::CATALOG[0].sha256;
+        assert_eq!(recorded_speed_for(&store, sha), None);
+        let speed = speed_check::Speed {
+            prompt_milli_tps: 9_000,
+            answer_milli_tps: 2_500,
+        };
+        // `ai_speed_check` saves through `keep_speed`; `ai_model_speed` reads through
+        // `recorded_speed_for`: the same key, whatever the cores.
+        assert!(keep_speed(&store, sha, speed, 1));
+        assert_eq!(recorded_speed_for(&store, sha), Some(speed));
+        assert_eq!(speed_threads(), model_runtime::threads());
+        // Another model's speed is not this one's.
+        assert_eq!(recorded_speed_for(&store, &"cd".repeat(32)), None);
+    }
+
+    /// Every command's `State<..>` parameter must be something the app manages: a command asking for
+    /// a type nobody manages panics ("state not managed") the first time it is called, and
+    /// nothing at build time says so (#393 made the vault `StoreHandle`; commands merged after it from
+    /// branches that began before it still asked for `Arc<VaultStore>`, #421). Each managed type is
+    /// listed here with the text in the app's `.setup` closure that manages it, so the list cannot
+    /// drift from the code in either direction: a new type fails until it is added WITH its evidence,
+    /// and a removed `manage` fails its evidence.
+    ///
+    /// Reads every source file under `src/` (a command in a module is found, not only one in
+    /// `lib.rs`), accepts `#[tauri::command(..)]` with arguments, and every spelling of the type:
+    /// `State<'_, T>`, `State<'a, T>`, `State<T>` and `tauri::State<..>`. The older, narrower scan of
+    /// the VaultStore type is `no_source_file_takes_or_manages_the_store_directly` in
+    /// `vault_source.rs`, and `scripts/vault-store-handle-codemod.py` rewrites what that one finds.
+    #[test]
+    fn the_named_unlock_command_is_registered_but_not_granted_until_its_screen_exists() {
+        // Least privilege (#357 PR 4b): `vault_unlock_named` is declared and compiled, so the next
+        // PR's screen only needs a grant, but nothing in the renderer may call it before then. The
+        // grant is added with the screen (PR 5) and this test is then changed with it.
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let permissions: Vec<&str> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|permission| permission.as_str().unwrap())
+            .collect();
+        assert!(
+            !permissions.contains(&"allow-vault-unlock-named"),
+            "the renderer may not call vault_unlock_named before a screen needs it"
+        );
+        assert!(include_str!("../build.rs").contains("\"vault_unlock_named\""));
+        assert!(include_str!("lib.rs").contains("async fn vault_unlock_named("));
+    }
+
+    #[test]
+    fn a_failed_named_unlock_never_reaches_the_notice_keys() {
+        // `vault_unlock_named` follows an unlock with `after_open`, which deletes the notice keys of
+        // every OTHER vault. That must happen only once the unlock SUCCEEDED, so a wrong attempt,
+        // an unknown name or a refusal leaves every vault's keys alone. The notice-key store is a
+        // process-wide singleton that a unit test cannot install, so this guards the structure (the
+        // `?` on the unlock comes before the only call); PR 5 makes the keys per vault and adds the
+        // behavior test.
+        let library = include_str!("lib.rs");
+        let production = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let body = production
+            .split_once("async fn vault_unlock_named(")
+            .expect("the command exists")
+            .1
+            // Built here so that this text is not itself counted as a command by the capability test.
+            .split_once(["#[tauri", "::command]"].concat().as_str())
+            .expect("another command follows it")
+            .0;
+        let unlocked = body
+            .find(".await?;")
+            .expect("the unlock's failure is returned with `?`");
+        let follow_up = body.find("after_open(").expect("a success follows up");
+        assert!(unlocked < follow_up, "after_open runs only after the `?`");
+        assert!(
+            !body[..unlocked].contains("notice_key") && !body[..unlocked].contains("after_open"),
+            "nothing before the unlock's `?` may touch the notice keys"
+        );
+        assert_eq!(body.matches("after_open(").count(), 1);
+    }
+
+    #[test]
+    fn every_state_a_command_asks_for_is_managed_by_the_setup() {
+        const MANAGED: &[(&str, &str)] = &[
+            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            (
+                "Arc<AttemptThrottle>",
+                "app.manage(Arc::new(AttemptThrottle::new(",
+            ),
+            ("Arc<local_model::Store>", "app.manage(models)"),
+            (
+                "Arc<ModelAddActive>",
+                "app.manage(Arc::new(ModelAddActive::default()))",
+            ),
+            (
+                "Arc<PendingPicks>",
+                "app.manage(Arc::new(PendingPicks::default()))",
+            ),
+            ("Arc<ReceivedFiles>", ".manage(Arc::clone(&received))"),
+        ];
+        let library = include_str!("lib.rs");
+        let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        // The evidence must be in `run()`, which builds the app and its setup (ReceivedFiles is
+        // managed on the builder, before the setup closure, so files a start-up callback takes are not
+        // lost): a `manage` elsewhere (a test app, a helper) does not make the real app manage a type.
+        let run_text = startup.split_once("pub fn run() {").unwrap().1;
+        let setup: String = run_text
+            .split_once(".invoke_handler(")
+            .unwrap()
+            .0
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        for (state, evidence) in MANAGED {
+            let evidence: String = evidence.chars().filter(|c| !c.is_whitespace()).collect();
+            assert!(
+                setup.contains(&evidence),
+                "{state} is no longer managed by run(): {evidence}"
+            );
+        }
+
+        let mut asked = Vec::new();
+        let mut folders = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(folder) = folders.pop() {
+            for item in std::fs::read_dir(&folder).unwrap() {
+                let path = item.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    // Not the tests: they define commands and apps of their own.
+                    for state in command_state_types(production_part(&source)) {
+                        asked.push((path.display().to_string(), state));
+                    }
+                }
+            }
+        }
+        assert!(
+            asked.len() > 100,
+            "the scan found only {} state parameters",
+            asked.len()
+        );
+        for (file, state) in &asked {
+            assert!(
+                MANAGED.iter().any(|(managed, _)| managed == state),
+                "{file}: a command asks for State<{state}>, which the setup does not manage: it \
+                 would panic \"state not managed\" when called"
+            );
+        }
+    }
+
+    #[test]
+    fn the_state_scan_reads_every_spelling_and_ignores_what_is_not_a_command() {
+        // The marker is assembled here so this text is not itself counted as a command.
+        let marker = ["#[tauri", "::command]"].concat();
+        let source = "\
+            @cmd@\n\
+            async fn a(picks: State<'_, Arc<ModelAddActive>>, x: u8) {}\n\
+            @cmdopen@(rename_all = \"snake_case\")]\n\
+            fn b(picks: tauri::State<'a, Arc<PendingPicks>>) {}\n\
+            @cmd@\n\
+            fn c(\n    one: State<Arc<ReceivedFiles>>,\n    two: tauri::State<'_,\n        Arc<local_model::Store>,\n    >,\n) {}\n\
+            @cmd@\n\
+            fn d<T: Send>(value: T) {}\n\
+            fn helper(state: State<'_, NotACommand>) {}\n"
+            .replace("@cmd@", &marker)
+            .replace("@cmdopen@", marker.trim_end_matches(']'));
+        assert_eq!(
+            command_state_types(&source),
+            vec![
+                "Arc<ModelAddActive>",
+                "Arc<PendingPicks>",
+                "Arc<ReceivedFiles>",
+                "Arc<local_model::Store>"
+            ]
+        );
+    }
+
+    /// `source` up to its main test module (`#[cfg(test)]` then `mod tests {`). Smaller inline test
+    /// modules before it are kept, so a command in one is read too.
+    fn production_part(source: &str) -> &str {
+        source
+            .split_once("\n#[cfg(test)]\nmod tests {")
+            .map_or(source, |(head, _)| head)
+    }
+
+    /// The `State<..>` types in the parameters of every command function (the Tauri command attribute) in `source`.
+    fn command_state_types(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for part in source.split("#[tauri::command").skip(1) {
+            // The attribute may carry arguments: `#[tauri::command(rename_all = "..")]`.
+            let Some(after_attribute) = part.find(']').map(|at| &part[at + 1..]) else {
+                continue;
+            };
+            let Some(fn_at) = after_attribute.find("fn ") else {
+                continue;
+            };
+            let signature = &after_attribute[fn_at..];
+            let Some(open) = signature.find('(') else {
+                continue;
+            };
+            let mut depth = 0usize;
+            let mut close = None;
+            for (index, c) in signature[open..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(open + index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let Some(close) = close else { continue };
+            let params: String = signature[open + 1..close]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            for (at, _) in params.match_indices("State<") {
+                // A word ending in `State` (`SomeState<..>`) is not Tauri's.
+                if params[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                {
+                    continue;
+                }
+                let mut rest = &params[at + "State<".len()..];
+                // An optional lifetime first: `'_,` or `'a,`.
+                if rest.starts_with('\'') {
+                    let Some(comma) = rest.find(',') else {
+                        continue;
+                    };
+                    rest = &rest[comma + 1..];
+                }
+                let mut depth = 1usize;
+                let mut end = rest.len();
+                for (index, c) in rest.char_indices() {
+                    match c {
+                        '<' => depth += 1,
+                        '>' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = index;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // A trailing comma inside the generics (`Arc<X>,>`) is not part of the type.
+                found.push(rest[..end].trim_end_matches(',').to_owned());
+            }
+        }
+        found
     }
 
     /// The cloud AI commands (#72) live in `cloud_ai/commands.rs`, compiled only with the `cloud-ai`
@@ -7818,7 +12524,7 @@ mod tests {
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
-            let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupWriteRequest>(&payload);
             let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
@@ -7887,7 +12593,7 @@ mod historical_identifier_export_tests {
             tauri_plugin_fs::FilePath::Path(destination.clone()),
         );
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .manage(picks)
             .build(production_context())
             .unwrap();
@@ -7896,6 +12602,7 @@ mod historical_identifier_export_tests {
             ticket,
             pick_id,
             text: "Zorvana".to_owned(),
+            kept: vec![],
         };
         // The current label alone must not reject the unique former token.
         let current_only = vec!["FAKE Neralis".to_owned()];
@@ -7926,6 +12633,276 @@ mod historical_identifier_export_tests {
         ))
         .is_err());
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn a_kept_medical_term_passes_copy_and_save_only_as_the_native_allow_list_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        // A save may not write inside the vault's own folder, so the file goes to another one.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let destination = elsewhere.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(temp.path().join("FAKE-vault")));
+        // The profile's own surname is also the eponym's name word.
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Graves", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "FAKE a")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(StoreHandle::single(Arc::clone(&store)))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let text = "History of Graves' disease. Graves' son drove.";
+        let copy = |kept: Vec<text_recheck::Hit>| {
+            tauri::async_runtime::block_on(vault_export_text_copy(
+                app.state(),
+                app.state(),
+                TextExportCopyRequest {
+                    record_id: record,
+                    ticket,
+                    text: text.to_owned(),
+                    kept,
+                },
+                None,
+            ))
+            .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"))
+        };
+        let range = |start, end| text_recheck::Hit { start, end };
+        // Nothing kept: both standing surnames are refused, as before.
+        assert_eq!(copy(vec![]).hits.len(), 2);
+        // The patient kept "Graves' disease" (11..26): that one passes, "Graves' son" does not.
+        let partly = copy(vec![range(11, 26)]);
+        assert!(partly.approved.is_none());
+        assert_eq!(
+            partly
+                .hits
+                .iter()
+                .map(|h| (h.start, h.end))
+                .collect::<Vec<_>>(),
+            [(28, 34)]
+        );
+        // A page's claim over a place that is no phrase of the native list spares nothing.
+        assert_eq!(copy(vec![range(28, 39)]).hits.len(), 2);
+        // Both kept as phrases of the list: only a text whose every hit is such a phrase passes.
+        let only_term = "History of Graves' disease.";
+        let approved = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            TextExportCopyRequest {
+                record_id: record,
+                ticket,
+                text: only_term.to_owned(),
+                kept: vec![range(11, 26)],
+            },
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("copy"));
+        assert!(approved.hits.is_empty());
+        assert!(approved.approved.unwrap().contains("Graves' disease"));
+        // Save takes the same decision and writes the file.
+        let saved = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            TextExportPickedRequest {
+                record_id: record,
+                ticket,
+                pick_id,
+                text: only_term.to_owned(),
+                kept: vec![range(11, 26)],
+            },
+            None,
+        ))
+        .unwrap_or_else(|error| panic!("save: {}", error.code));
+        assert!(saved.saved && saved.hits.is_empty());
+        assert!(std::fs::read_to_string(&destination)
+            .unwrap()
+            .contains("Graves' disease"));
+    }
+
+    #[test]
+    fn native_text_copy_gives_the_saved_file_or_the_same_refusal_and_never_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                // A cut document: the cut line is part of the file, so part of the copy.
+                cut_after_page: Some(2),
+                truncated: true,
+                pages_missing: false,
+                last_index: Some(1),
+                page_count: 3,
+                pages_digest: pages_digest([(0, "FAKE a"), (1, "FAKE b")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(StoreHandle::single(Arc::clone(&store)))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let copy = |text: &str| TextExportCopyRequest {
+            record_id: record,
+            ticket,
+            text: text.to_owned(),
+            kept: vec![],
+        };
+
+        // A vault identifier still standing: refused with the ranges Save gives, nothing approved.
+        let refused = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy("Zorvana"),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"));
+        assert!(refused.approved.is_none());
+        assert_eq!(refused.hits.len(), 1);
+        assert_eq!((refused.hits[0].start, refused.hits[0].end), (0, 7));
+        // The same refusal a save gives, over the same text.
+        let save_refused = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            TextExportPickedRequest {
+                record_id: record,
+                ticket,
+                pick_id,
+                text: "Zorvana".to_owned(),
+                kept: vec![],
+            },
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"));
+        assert!(!save_refused.saved);
+        assert_eq!(
+            save_refused
+                .hits
+                .iter()
+                .map(|hit| (hit.start, hit.end))
+                .collect::<Vec<_>>(),
+            refused
+                .hits
+                .iter()
+                .map(|hit| (hit.start, hit.end))
+                .collect::<Vec<_>>()
+        );
+        assert!(!destination.exists());
+        // A text over the size limit is an error for both, before the ticket is looked at.
+        let too_large = "x".repeat(MAX_EXPORT_TEXT_BYTES + 1);
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(&too_large),
+            None,
+        ))
+        .is_err());
+
+        // A clean text: the copy is the file a save writes (both build it with
+        // `compose_export_text`, here with the cut line of this ticket), and a copy does not use
+        // up the ticket: a second copy works.
+        let clean = "plain text with no identifier.";
+        let approved = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a clean text is approved"))
+        .approved
+        .expect("approved");
+        assert_eq!(
+            approved,
+            compose_export_text(UiLocale::default(), clean, Some(2))
+                .unwrap_or_else(|_| { panic!("the file text composes") })
+        );
+        assert!(approved.contains(clean));
+        assert!(approved.ends_with('\n'));
+        assert!(!destination.exists(), "a copy writes no file");
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("the ticket survives a copy"))
+        .approved
+        .is_some());
+        // A lock ends the ticket: a copy after it is refused, as a save is.
+        store.lock();
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .is_err());
+        // An unknown ticket is refused as it is for a save.
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            TextExportCopyRequest {
+                record_id: record,
+                ticket: Uuid::new_v4(),
+                text: clean.to_owned(),
+                kept: vec![],
+            },
+            None,
+        ))
+        .is_err());
     }
 
     #[test]
@@ -8009,7 +12986,7 @@ mod historical_identifier_export_tests {
             tauri_plugin_fs::FilePath::Path(destination.clone()),
         );
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .manage(picks)
             .build(production_context())
             .unwrap();
@@ -8018,6 +12995,7 @@ mod historical_identifier_export_tests {
             ticket,
             pick_id,
             text: "Velorina".to_owned(),
+            kept: vec![],
         };
         let with_previous = store.known_identifiers(record).unwrap();
         let hits = text_recheck::identifier_hits(
@@ -8266,6 +13244,266 @@ mod photo_command_tests {
         );
     }
 
+    /// A phone picture, as a test sample: the canvas JPEG (FAKE) with, after its JFIF header, an
+    /// Exif block holding a make, an orientation of 6 (turned a quarter) and a pointer to a GPS
+    /// block, and a comment with text.
+    fn phone_picture() -> Vec<u8> {
+        let mut tiff = b"MM\0\x2a\0\0\0\x08".to_vec();
+        // IFD0 at 8: Make (ASCII, at 50), Orientation (SHORT) 6, GPSInfo (LONG, at 62).
+        tiff.extend_from_slice(&[0, 3]);
+        tiff.extend_from_slice(&[0x01, 0x0f, 0, 2, 0, 0, 0, 12, 0, 0, 0, 50]);
+        tiff.extend_from_slice(&[0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0]);
+        tiff.extend_from_slice(&[0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 62]);
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"FAKE Phone\0\0");
+        // The GPS IFD: LatitudeRef "N".
+        tiff.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0, 0, 0, 0, 0]);
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend_from_slice(&tiff);
+        let segment = |code: u8, payload: &[u8]| {
+            let mut bytes = vec![0xff, code];
+            bytes.extend_from_slice(&(payload.len() as u16 + 2).to_be_bytes());
+            bytes.extend_from_slice(payload);
+            bytes
+        };
+        // Past the JFIF header (20 bytes with the start marker) and before the rest.
+        let mut bytes = CANVAS[..20].to_vec();
+        bytes.extend(segment(0xe1, &exif));
+        bytes.extend(segment(0xfe, b"FAKE comment: taken at home %PDF-1.7"));
+        bytes.extend_from_slice(&CANVAS[20..]);
+        bytes
+    }
+
+    #[test]
+    fn a_picture_the_patient_picks_is_cleaned_on_import_and_stored_clean() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = phone_picture();
+        assert!(picture.windows(10).any(|w| w == b"FAKE Phone"));
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: "IMG_0042.jpg".to_owned(),
+                    reader: require_supported_file(Box::new(std::io::Cursor::new(picture)))
+                        .unwrap(),
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "IMG_0042.jpg");
+        assert_eq!(record.media_type, "application/octet-stream");
+        let stored = exported(&store, record.id);
+        // Place, device, comment (and the "%PDF-" in it, which must not make this a PDF) are gone;
+        // the orientation is kept, in a block built here.
+        for gone in [&b"FAKE Phone"[..], b"FAKE comment", b"%PDF-", b"\x88\x25"] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert!(stored
+            .windows(8)
+            .any(|w| w == [b'E', b'x', b'i', b'f', 0, 0, b'M', b'M']));
+        assert_eq!(&stored[..2], [0xff, 0xd8]);
+        // What the picture view shows is the same cleaned picture.
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/jpeg;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        assert_eq!(record.plaintext_size, stored.len() as u64);
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_clean_jpeg_is_refused_before_anything_is_staged() {
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        // Not a picture or a PDF at all: a GIF (even named .jpg), HEIC, a truncated file of
+        // nothing, plain text.
+        for other in [
+            b"GIF89a FAKE".to_vec(),
+            b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec(),
+            Vec::new(),
+            b"FAKE".to_vec(),
+        ] {
+            assert!(matches!(refused(other), Some(VaultError::NotPdf)));
+        }
+        // Starts as a JPEG but is not a whole baseline or progressive picture: cut short, or
+        // only the start.
+        let whole = phone_picture();
+        for bad in [
+            whole[..whole.len() - 2].to_vec(),
+            whole[..200].to_vec(),
+            vec![0xff, 0xd8, 0xff],
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size: refused, however it starts.
+        let mut huge = vec![0xff, 0xd8, 0xff, 0xe0];
+        huge.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(huge), Some(VaultError::NotPhoto)));
+    }
+
+    /// A PNG as a patient might bring it, as a test sample: a 2 by 2 picture with, after its
+    /// header, text with a FAKE place, time and camera, an Exif block and a time chunk, and bytes
+    /// after its end.
+    fn dirty_png() -> Vec<u8> {
+        use crate::photo_png::tests::{chunk, file, header, pixels};
+        let mut bytes = file(&[
+            header(2, 2, 8, 2),
+            chunk(b"tEXt", b"Location\0FAKE place 51.05,-114.07"),
+            chunk(b"zTXt", b"Comment\0\0FAKE camera Phone X"),
+            chunk(b"eXIf", b"MM\0*\0\0\0\x08FAKE Make GPS"),
+            chunk(b"tIME", &[7, 234, 11, 25, 12, 30, 0]),
+            chunk(b"IDAT", &pixels()),
+            chunk(b"IEND", &[]),
+        ]);
+        bytes.extend_from_slice(b"FAKE hidden after the end");
+        bytes
+    }
+
+    #[test]
+    fn a_png_the_patient_picks_is_cleaned_on_import_stored_clean_and_named_png() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = dirty_png();
+        let (kind, reader) =
+            open_supported_file(Box::new(std::io::Cursor::new(picture.clone()))).unwrap();
+        assert_eq!(kind, Some(photo::PictureKind::Png));
+        // A name with no suffix of its own gets the one of what it is, and a name that has it
+        // keeps it.
+        let (a, b) = (
+            picture_import_name("Screenshot 2026-11-25".to_owned(), kind),
+            picture_import_name("Screenshot.PNG".to_owned(), kind),
+        );
+        assert_eq!(
+            (a.as_str(), b.as_str()),
+            ("Screenshot 2026-11-25.png", "Screenshot.PNG")
+        );
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: a,
+                    reader,
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "Screenshot 2026-11-25.png");
+        let stored = exported(&store, record.id);
+        for gone in [
+            &b"FAKE"[..],
+            b"Location",
+            b"tEXt",
+            b"zTXt",
+            b"eXIf",
+            b"tIME",
+            b"hidden",
+        ] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert_eq!(&stored[..8], &crate::photo_png::PNG_SIGNATURE);
+        // The vault knows it is a picture, which kind, and shows exactly what it stored.
+        assert_eq!(
+            photo_kind(&store, record.id).unwrap(),
+            Some(photo::PictureKind::Png)
+        );
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/png;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        // A rename keeps a PNG a `.png`, and refuses a suffix that says another kind.
+        rename_document(&store, record.id, "Letter.png").unwrap();
+        for wrong in ["Letter.jpg", "Letter.jpeg", "Letter", ".png", "Letter.pdf"] {
+            assert!(
+                matches!(
+                    rename_document(&store, record.id, wrong),
+                    Err(VaultError::Invalid)
+                ),
+                "{wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_png_that_is_damaged_animated_or_too_large_is_refused_before_anything_is_staged() {
+        use crate::photo_png::tests::{chunk, file, header, plain};
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        let whole = dirty_png();
+        let mut animated = plain();
+        animated.insert(1, chunk(b"acTL", &[0, 0, 0, 2, 0, 0, 0, 0]));
+        let mut huge = plain();
+        huge[0] = header(60_000, 60_000, 8, 2);
+        let mut no_data = plain();
+        no_data.remove(1);
+        for bad in [
+            whole[..whole.len() - 30].to_vec(),
+            whole[..20].to_vec(),
+            b"\x89PNG\r\n\x1a\n".to_vec(),
+            file(&animated),
+            file(&huge),
+            file(&no_data),
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size, however it starts.
+        let mut over = file(&plain());
+        over.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(over), Some(VaultError::NotPhoto)));
+    }
+
+    #[test]
+    fn a_picture_is_named_for_what_it_is_and_never_as_a_pdf() {
+        use photo::PictureKind::{Jpeg, Png};
+        let named = |name: &str, kind| picture_import_name(name.to_owned(), kind);
+        // A PDF's name is not touched.
+        assert_eq!(named("Scan", None), "Scan");
+        assert_eq!(named("Letter.pdf", None), "Letter.pdf");
+        for (name, kind, want) in [
+            ("IMG_1.jpg", Some(Jpeg), "IMG_1.jpg"),
+            ("IMG_1.JPEG", Some(Jpeg), "IMG_1.JPEG"),
+            ("IMG_1", Some(Jpeg), "IMG_1.jpg"),
+            ("shot.png", Some(Jpeg), "shot.png.jpg"),
+            ("shot.png", Some(Png), "shot.png"),
+            ("shot.jpg", Some(Png), "shot.jpg.png"),
+            ("shot", Some(Png), "shot.png"),
+            (".png", Some(Png), ".png.png"),
+            ("Imported document.pdf", Some(Png), "Imported picture.png"),
+            ("Imported document.pdf", Some(Jpeg), "Imported picture.jpg"),
+        ] {
+            assert_eq!(named(name, kind), want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pdf_still_streams_in_as_it_is_and_a_jpeg_is_never_taken_for_one() {
+        // A picture with "%PDF-" in its first bytes is a picture (cleaned), never a PDF kept raw.
+        let mut sneaky = vec![0xff, 0xd8, 0xff, 0xfe, 0, 12];
+        sneaky.extend_from_slice(b"%PDF-1.7 FA");
+        assert!(matches!(
+            require_supported_file(Box::new(std::io::Cursor::new(sneaky))).err(),
+            Some(VaultError::NotPhoto)
+        ));
+        // A PDF whose own bytes include a JPEG later on is still a PDF, unchanged.
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        pdf.extend_from_slice(CANVAS);
+        let mut kept = Vec::new();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(std::io::Cursor::new(pdf.clone()))).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
+        assert_eq!(kept, pdf);
+    }
+
     #[test]
     fn native_localization_generated_photo_names_survive_store_reopen_exactly() {
         for locale in [
@@ -8473,7 +13711,10 @@ mod photo_command_tests {
         let shown = BASE64
             .decode(url.strip_prefix("data:image/jpeg;base64,").unwrap())
             .unwrap();
-        assert_eq!(shown, *photo::clean_jpeg(CANVAS).unwrap());
+        // Shown as a picture the patient brought is: the canvas photo's plain colour profile
+        // stays, the tagged Exif (place) does not.
+        assert_eq!(shown, *photo::clean_picture(CANVAS).unwrap());
+        assert!(!shown.windows(3).any(|w| w == b"GPS"));
         // What is stored is not changed by viewing it.
         assert_eq!(exported(&store, ids[0]), tagged());
 
@@ -8532,7 +13773,7 @@ mod photo_command_tests {
         assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
 
         // It stops the export once it has three bytes.
-        let mut start = FileStart::default();
+        let mut start = FileStartN::<3>::default();
         assert_eq!(start.write(&[0xff]).unwrap(), 1);
         assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
         assert!(start.complete());
@@ -8611,6 +13852,434 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn an_explained_sentence_must_be_from_pages_shown_for_that_document() {
+        let shown = ShownPages::default();
+        let (here, other, session) = (Uuid::from_u128(1), Uuid::from_u128(2), 7);
+        let accepts = |session: u64, record: Uuid, term: &str, context: &str| {
+            shown
+                .accept(session, record, term, context)
+                .map(|sentence| sentence.to_string())
+        };
+        shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE Patient\n  has a   fake\tcondition. Next sentence.",
+            "FAKE Patient has a fake condition. Next sentence.",
+        );
+        // As the reader cuts it from the page, with the page's own line breaks and spacing: what
+        // comes back is the sentence collapsed, which is what is asked and filed.
+        assert_eq!(
+            accepts(session, here, "fake", "has a fake condition.").as_deref(),
+            Some("has a fake condition.")
+        );
+        assert_eq!(
+            accepts(
+                session,
+                here,
+                "FAKE condition",
+                "FAKE Patient\nhas a   fake condition."
+            )
+            .as_deref(),
+            Some("FAKE Patient has a fake condition.")
+        );
+        assert_eq!(
+            accepts(session, here, "next", "  Next sentence.  ").as_deref(),
+            Some("Next sentence.")
+        );
+        // The term may be typed in another case, or across the page's line break.
+        assert!(accepts(session, here, "HAS A FAKE", "has a fake condition.").is_some());
+        assert!(accepts(session, here, "fake\n condition", "has a fake condition.").is_some());
+        // Nothing to mislead with: an empty sentence, whatever the term.
+        assert_eq!(accepts(session, here, "anything", "").as_deref(), Some(""));
+        assert_eq!(
+            accepts(session, here, "anything", " \n ").as_deref(),
+            Some("")
+        );
+        // A Greek capital sigma at the end of a word folds as the reader folds it (to σ), so a
+        // term found on the page is not refused for the context's final-sigma form.
+        shown.note(
+            &|| session,
+            session,
+            other,
+            0,
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+        );
+        assert!(accepts(session, other, "οδυσσεασ", "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.").is_some());
+        shown.forget_record(other);
+        // A sentence that does not hold the term is refused, though it is the page's own.
+        assert!(accepts(session, here, "pneumonia", "has a fake condition.").is_none());
+        // Words the pages never held, a sentence stitched from two, another document's pages, and
+        // another session's.
+        assert!(accepts(session, here, "fake", "has a different fake condition.").is_none());
+        assert!(accepts(session, here, "fake", "fake condition. Another sentence.").is_none());
+        assert!(accepts(
+            session,
+            here,
+            "fake",
+            "has a fake condition. Next sentence. And more."
+        )
+        .is_none());
+        assert!(accepts(session, other, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session + 1, here, "fake", "has a fake condition.").is_none());
+        // The page's text is checked as it is: case matters in the sentence.
+        assert!(accepts(session, here, "fake", "HAS A FAKE CONDITION.").is_none());
+        // A page shown again replaces itself; another session's pages go on a new note.
+        shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE changed page.",
+            "FAKE changed page.",
+        );
+        assert!(accepts(session, here, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_some());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE next session.",
+            "FAKE next session.",
+        );
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_none());
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_some());
+        // A document hidden, and a lock, forget what was shown.
+        shown.forget_record(here);
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_none());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE again.",
+            "FAKE again.",
+        );
+        shown.clear();
+        assert!(accepts(session + 1, here, "again", "FAKE again.").is_none());
+    }
+
+    #[test]
+    fn a_page_shown_after_a_lock_has_ended_its_session_is_not_remembered() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(4);
+        // The page was drawn in session 5; by the time it is noted the vault is in session 6.
+        shown.note(&|| 6, 5, record, 0, "FAKE late page.", "FAKE late page.");
+        assert!(shown.list().is_empty());
+        assert!(shown.accept(5, record, "late", "FAKE late page.").is_none());
+        assert!(shown.accept(6, record, "late", "FAKE late page.").is_none());
+        // Through the real path: a clear ends the session first, so a note after it is dropped.
+        let picks = PendingPicks::default();
+        let before = picks.session();
+        picks.clear();
+        let page = ViewedPage {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            image: String::new(),
+            text: "FAKE page text".into(),
+            readable_text: "FAKE page text".into(),
+        };
+        picks.note_shown_page(before, record, 0, &page);
+        assert!(picks
+            .explain_context(before, record, "page", "FAKE page text")
+            .is_none());
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+        picks.note_shown_page(picks.session(), record, 0, &page);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_some());
+        // Hiding the document forgets its pages.
+        picks.forget_texts_for(record);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+    }
+
+    #[test]
+    fn the_pages_shown_are_bounded_and_the_oldest_go_first() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(3);
+        for page in 0..(MAX_SHOWN_PAGES as u32 + 5) {
+            let text = format!("FAKE page number {page}.");
+            shown.note(&|| 1, 1, record, page, &text, &text);
+        }
+        assert_eq!(shown.list().len(), MAX_SHOWN_PAGES);
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 0.")
+            .is_none());
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 36.")
+            .is_some());
+        // Size is bounded too (in bytes), and the page just shown always stays.
+        let big = "x".repeat(MAX_SHOWN_BYTES);
+        shown.note(&|| 1, 1, record, 99, &big, "");
+        assert_eq!(shown.list().len(), 1);
+        assert!(shown.accept(1, record, "xx", "xxxx").is_some());
+    }
+
+    #[test]
+    fn explaining_for_a_document_checks_its_sentence_against_the_pages_shown_first() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        // Before the model is asked anything, and before anything is kept, and what is asked
+        // is the collapsed sentence.
+        let explain = body("async fn ai_explain(");
+        let checked = explain.find("explain_context(").unwrap();
+        assert!(checked < explain.find("run_ai(").unwrap());
+        assert!(explain.contains("request.context = std::mem::take(&mut *sentence)"));
+        // What the reader is shown is noted only from a page native really drew.
+        let view = body("async fn vault_view_page(");
+        assert!(view.contains("note_shown_page("));
+        assert!(view.find("note_shown_page(").unwrap() > view.find("ticket.is_current()").unwrap());
+        // A hidden document is not drawn at all.
+        assert!(view.contains("record.hidden.is_some()"));
+        // Hiding a document, one or several, forgets its pages and stops a page being drawn.
+        for command in [
+            "async fn vault_hide_record(",
+            "async fn vault_hide_unavailable_records(",
+        ] {
+            let hide = body(command);
+            assert!(hide.contains("forget_texts_for("), "{command}");
+            assert!(hide.contains("pdf_view::cancel_views()"), "{command}");
+        }
+    }
+
+    #[test]
+    fn one_received_file_that_is_gone_or_not_a_pdf_never_holds_back_the_others() {
+        let source = || ImportSource {
+            display_name: "FAKE.pdf".into(),
+            reader: Box::new(std::io::empty()),
+        };
+        assert!(matches!(
+            sort_received_open(Ok(source())),
+            Ok(ReceivedOpen::Source(_))
+        ));
+        assert!(matches!(
+            sort_received_open(Err(VaultError::NotPdf)),
+            Ok(ReceivedOpen::NotPdf)
+        ));
+        // Moved or deleted while the vault was locked, no longer a regular file, or unreadable
+        // (a dead `content://` grant, a refused permission, an I/O error): that file only.
+        for gone in [
+            VaultError::NotFound,
+            VaultError::Invalid,
+            VaultError::Storage,
+        ] {
+            assert!(matches!(
+                sort_received_open(Err(gone)),
+                Ok(ReceivedOpen::Unreadable)
+            ));
+        }
+        // The vault failing is not the file's fault: the batch fails and every file keeps
+        // waiting.
+        for failure in [VaultError::Locked, VaultError::RecoveryMode] {
+            assert!(sort_received_open(Err(failure)).is_err());
+        }
+    }
+
+    /// A reader of one received file for the tests: its bytes, and optionally an error after the
+    /// first read (a bad sector, a provider failing mid-stream).
+    struct Bytes {
+        data: std::io::Cursor<Vec<u8>>,
+        fail_after_first: bool,
+        read_once: bool,
+        /// The first read is interrupted (and succeeds when tried again).
+        interrupt_first: bool,
+    }
+
+    impl std::io::Read for Bytes {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.interrupt_first && !self.read_once {
+                self.read_once = true;
+                return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
+            }
+            if self.fail_after_first && self.read_once {
+                return Err(std::io::Error::other("FAKE bad sector"));
+            }
+            self.read_once = true;
+            let wanted = if self.fail_after_first {
+                buf.len().min(8)
+            } else {
+                buf.len()
+            };
+            self.data.read(&mut buf[..wanted])
+        }
+    }
+
+    fn received_file(name: &str) -> (Uuid, received::ReceivedFile) {
+        (
+            Uuid::new_v4(),
+            received::ReceivedFile {
+                source: received::ReceivedSource::Path(format!("/FAKE/{name}").into()),
+                name: name.to_owned(),
+            },
+        )
+    }
+
+    #[test]
+    fn a_batch_adds_the_good_files_and_names_each_one_that_cannot_be_taken() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_first.pdf"),
+            received_file("FAKE_not_a_pdf.jpg"),
+            received_file("FAKE_gone.pdf"),
+            received_file("FAKE_bad_sector.pdf"),
+            received_file("FAKE_second.pdf"),
+        ];
+        let opened = std::cell::RefCell::new(Vec::new());
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.borrow_mut().push(file.name.clone());
+            let bytes = |fail_after_first: bool| {
+                Ok(ImportSource {
+                    display_name: file.name.clone(),
+                    reader: Box::new(Bytes {
+                        data: std::io::Cursor::new(
+                            format!("%PDF-1.4 FAKE {} {}", file.name, "x".repeat(4096))
+                                .into_bytes(),
+                        ),
+                        fail_after_first,
+                        read_once: false,
+                        interrupt_first: false,
+                    }),
+                })
+            };
+            match file.name.as_str() {
+                "FAKE_not_a_pdf.jpg" => Err(VaultError::NotPdf),
+                "FAKE_gone.pdf" => Err(VaultError::NotFound),
+                "FAKE_bad_sector.pdf" => bytes(true),
+                _ => bytes(false),
+            }
+        })
+        .unwrap();
+        // Both good files were added, though one failed after the others had been read.
+        assert_eq!(outcome.imported.len(), 2);
+        assert_eq!(outcome.not_pdf, ["FAKE_not_a_pdf.jpg"]);
+        assert_eq!(outcome.unreadable, ["FAKE_gone.pdf", "FAKE_bad_sector.pdf"]);
+        assert!(outcome.skipped_duplicates.is_empty());
+        let snapshot = store.snapshot().unwrap();
+        let names: Vec<_> = snapshot
+            .records
+            .iter()
+            .map(|record| record.display_name.as_str())
+            .collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"FAKE_first.pdf") && names.contains(&"FAKE_second.pdf"));
+        // The good files were opened again for the second attempt, the others not.
+        let opened = opened.into_inner();
+        assert_eq!(
+            opened.iter().filter(|name| name.contains("first")).count(),
+            2
+        );
+        assert_eq!(
+            opened.iter().filter(|name| name.contains("gone")).count(),
+            1
+        );
+    }
+
+    /// A reader of a small PDF-looking file for the tests of the batch.
+    fn small_source(name: &str, fail_after_first: bool, interrupt_first: bool) -> ImportSource {
+        ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(Bytes {
+                data: std::io::Cursor::new(
+                    format!("%PDF-1.4 FAKE {name} {}", "y".repeat(4096)).into_bytes(),
+                ),
+                fail_after_first,
+                read_once: false,
+                interrupt_first,
+            }),
+        }
+    }
+
+    #[test]
+    fn two_files_that_fail_to_read_are_both_named_and_an_interrupted_read_is_not_a_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_interrupted.pdf"),
+            received_file("FAKE_bad_one.pdf"),
+            received_file("FAKE_good.pdf"),
+            received_file("FAKE_bad_two.pdf"),
+        ];
+        let outcome = accept_received_batch(&store, files, |file| {
+            Ok(small_source(
+                &file.name,
+                file.name.contains("bad"),
+                file.name.contains("interrupted"),
+            ))
+        })
+        .unwrap();
+        // The file whose read was interrupted once and then went on is added, not forgotten
+        // because another file failed later.
+        let names: Vec<_> = store
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .map(|record| record.display_name)
+            .collect();
+        assert_eq!(outcome.imported.len(), 2, "{names:?}");
+        assert!(names.contains(&"FAKE_interrupted.pdf".to_owned()));
+        assert!(names.contains(&"FAKE_good.pdf".to_owned()));
+        assert_eq!(outcome.unreadable, ["FAKE_bad_one.pdf", "FAKE_bad_two.pdf"]);
+    }
+
+    #[test]
+    fn a_read_that_failed_followed_by_a_vault_failure_fails_the_batch_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_bad.pdf"),
+            received_file("FAKE_good.pdf"),
+        ];
+        let opened = std::cell::Cell::new(0);
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.set(opened.get() + 1);
+            // The second attempt (after the bad file was named) finds the vault locked.
+            if opened.get() == 3 {
+                store.lock();
+            }
+            Ok(small_source(&file.name, file.name.contains("bad"), false))
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn a_batch_that_fails_for_the_vault_fails_whole_and_every_file_keeps_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // Locked: nothing is opened, nothing is named, and the caller restores every file.
+        let outcome = accept_received_batch(&store, vec![received_file("FAKE_a.pdf")], |_| {
+            panic!("nothing is opened while the vault is locked")
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        // Unlocked again, a vault error from the open itself also fails the batch.
+        store.unlock(PASSWORD).unwrap();
+        let outcome = accept_received_batch(
+            &store,
+            vec![received_file("FAKE_a.pdf"), received_file("FAKE_b.pdf")],
+            |_| Err(VaultError::Locked),
+        );
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        assert!(store.snapshot().unwrap().records.is_empty());
+    }
+
+    #[test]
     fn the_photo_commands_are_wired_as_the_renderer_calls_them() {
         let source = include_str!("lib.rs");
         let body = |command: &str| {
@@ -8628,6 +14297,181 @@ mod photo_command_tests {
         let saved = body("fn save_photo(");
         assert!(saved.contains("store.import_from("));
         assert!(saved.contains("\"camera\""));
+    }
+
+    // ---- video (#359) -------------------------------------------------------
+
+    #[test]
+    fn a_piece_of_video_is_decoded_only_within_its_limit() {
+        let bytes = vec![7_u8; 1000];
+        let text = BASE64.encode(&bytes);
+        assert_eq!(*decode_video_piece(&text).unwrap(), bytes);
+        assert!(decode_video_piece("").unwrap().is_empty());
+        for bad in ["not base64!", "AAA", "====", "\u{0}"] {
+            assert!(
+                matches!(decode_video_piece(bad), Err(VaultError::Invalid)),
+                "{bad:?}"
+            );
+        }
+        // The largest piece goes through; one character more of text is refused
+        // before it is decoded.
+        let largest = BASE64.encode(vec![1_u8; vault::MAX_RECORDING_PIECE]);
+        assert!(largest.len() <= MAX_VIDEO_PIECE_BASE64);
+        assert_eq!(
+            decode_video_piece(&largest).unwrap().len(),
+            vault::MAX_RECORDING_PIECE
+        );
+        let too_long = "A".repeat(MAX_VIDEO_PIECE_BASE64 + 1);
+        assert!(matches!(
+            decode_video_piece(&too_long),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn the_video_requests_take_exactly_the_fields_they_name() {
+        let id = Uuid::new_v4();
+        let ok = |value: serde_json::Value| serde_json::from_value::<VideoAppendRequest>(value);
+        assert!(ok(serde_json::json!({"recordingId": id, "sequence": 3, "data": "AAAA"})).is_ok());
+        for bad in [
+            serde_json::json!({"recordingId": id, "sequence": 3, "data": "AAAA", "path": "/x"}),
+            serde_json::json!({"recordingId": id, "sequence": -1, "data": "AAAA"}),
+            serde_json::json!({"recordingId": "nope", "sequence": 3, "data": "AAAA"}),
+            serde_json::json!({"recordingId": id, "data": "AAAA"}),
+        ] {
+            assert!(ok(bad).is_err());
+        }
+        assert!(
+            serde_json::from_value::<VideoStartRequest>(serde_json::json!({
+                "profileId": id, "folderIds": [], "name": "FAKE clip.mp4"
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<VideoStartRequest>(serde_json::json!({
+                "profileId": id, "folderIds": [], "name": "FAKE", "extra": 1
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<VideoRecoverRequest>(serde_json::json!({
+                "recordingId": id, "keep": true
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<VideoRecoverRequest>(serde_json::json!({
+                "recordingId": id
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<VideoCloseRequest>(serde_json::json!({
+                "token": "x", "recordId": id
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn the_video_commands_are_wired_as_the_renderer_calls_them() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        for command in [
+            "async fn vault_video_start(",
+            "async fn vault_video_pause(",
+            "async fn vault_video_resume(",
+            "async fn vault_video_stop(",
+            "async fn vault_video_space(",
+            "async fn vault_video_pending(",
+            "async fn vault_video_recover(",
+            "async fn vault_is_video(",
+            "async fn vault_video_open(",
+            "async fn vault_video_close(",
+        ] {
+            assert!(body(command).contains("run_blocking("), "{command}");
+        }
+        // A piece is decoded, with its limit checked, before the blocking work,
+        // and numbered so a lost or repeated one is noticed.
+        let append = body("async fn vault_video_append(");
+        assert!(append.contains("decode_video_piece(&request.data)"));
+        assert!(append.contains("recording_append_numbered("));
+        assert!(append.contains("run_blocking("));
+        // Playback hands out a token, never a path.
+        let open = body("async fn vault_video_open(");
+        assert!(open.contains("playback_open("));
+        assert!(!open.contains("objects"));
+    }
+
+    #[test]
+    fn a_record_is_a_video_when_its_file_starts_as_an_mp4_does() {
+        use crate::mp4_stream::fake::{fragment, ftyp, moov};
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let id = store
+            .recording_start(profile, vec![], "FAKE clip.mp4", 5)
+            .unwrap();
+        let movie = [ftyp(), moov(), fragment(1, 0, 0, 3000)].concat();
+        store.recording_append(id, &movie).unwrap();
+        let video = store.recording_stop(id, 6).unwrap().unwrap();
+        assert!(is_video(&store, video).unwrap());
+        // A photo, a PDF-like file and a tiny file are not, and neither is anything
+        // else that carries `ftyp` where an MP4 does and was imported: an iPhone's
+        // HEIC and AVIF photos, an M4A voice memo, a camera raw (CR3) and a PDF
+        // with `ftyp` in the same place.
+        let with_ftyp = |brand: &[u8; 4]| {
+            let mut bytes = vec![0, 0, 0, 0x18];
+            bytes.extend_from_slice(b"ftyp");
+            bytes.extend_from_slice(brand);
+            bytes.extend_from_slice(&[0; 12]);
+            bytes
+        };
+        let mut pdf = b"%PDF".to_vec();
+        pdf.extend_from_slice(b"ftyp FAKE junk, not an MP4");
+        for (name, bytes) in [
+            (
+                "FAKE a.jpg",
+                vec![0xff, 0xd8, 0xff, 0xe0, 0, 0x10, b'J', b'F', b'I', b'F'],
+            ),
+            ("FAKE b.pdf", b"%PDF-1.7 FAKE".to_vec()),
+            ("FAKE c.txt", b"hi".to_vec()),
+            ("FAKE d.heic", with_ftyp(b"heic")),
+            ("FAKE e.avif", with_ftyp(b"avif")),
+            ("FAKE f.m4a", with_ftyp(b"M4A ")),
+            ("FAKE g.cr3", with_ftyp(b"crx ")),
+            ("FAKE h.mov", with_ftyp(b"qt  ")),
+            ("FAKE i.mp4 (picked, not recorded)", with_ftyp(b"isom")),
+            ("FAKE j.pdf", pdf),
+        ] {
+            store
+                .import(
+                    profile,
+                    vec![],
+                    vec![ImportSource {
+                        display_name: name.to_owned(),
+                        reader: Box::new(std::io::Cursor::new(bytes)),
+                    }],
+                    9,
+                )
+                .unwrap();
+        }
+        let records = store.snapshot().unwrap().records;
+        for record in records.iter().filter(|r| r.id != video) {
+            assert!(
+                !is_video(&store, record.id).unwrap(),
+                "{}",
+                record.display_name
+            );
+        }
+        assert!(matches!(
+            is_video(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
     }
 }
 
@@ -9038,6 +14882,8 @@ mod native_localization_tests {
             VaultError::AiResultsFull,
             VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
+            VaultError::PackagePassphraseTriesUsed,
+            VaultError::LastVisibleProfile,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
             VaultError::PdfLocked,
@@ -9158,8 +15004,8 @@ mod event_permission_ipc_tests {
 
     /// With the real generated capability authority (only the OS runtime is mocked), as the
     /// built app checks it: the main window may listen for every event the page listens to (the
-    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
-    /// emit, and no other window may listen.
+    /// model download's, an AI answer's start for the idle lock, the native lock) and stop
+    /// listening, may not emit, and no other window may listen.
     #[test]
     fn the_main_window_may_listen_for_events_and_may_not_emit() {
         let app = tauri::test::mock_builder()
@@ -9182,6 +15028,7 @@ mod event_permission_ipc_tests {
             "ai-model-add-ended",
             "ai-answer-started",
             "ai-answer-progress",
+            VAULT_LOCKED,
         ] {
             let id = tauri::test::get_ipc_response(&main, listen(event))
                 .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
@@ -9290,6 +15137,7 @@ mod audit_history_ipc_tests {
                 later,
                 complete,
                 every_event_shown: complete,
+                about_hidden_people: 0,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -9322,7 +15170,7 @@ mod audit_history_ipc_tests {
         let root = temp.path().join("FAKE-vault");
         let store = Arc::new(VaultStore::new(root.clone()));
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .invoke_handler(tauri::generate_handler![vault_history])
             .build(production_context())
             .unwrap();
@@ -9365,6 +15213,7 @@ mod audit_history_ipc_tests {
         assert_eq!(
             top,
             [
+                "aboutHiddenPeople",
                 "checkedFromMs",
                 "checkedUntilMs",
                 "complete",
@@ -9425,7 +15274,8 @@ mod audit_history_ipc_tests {
                 "complete": false,
                 "checkedUntilMs": null,
                 "checkedFromMs": null,
-                "everyEventShown": false
+                "everyEventShown": false,
+                "aboutHiddenPeople": 0
             })
         );
         store.lock();

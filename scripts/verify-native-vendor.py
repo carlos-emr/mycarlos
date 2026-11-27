@@ -10,6 +10,8 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "src-tauri" / "vendor"
+# The local copies, in the order upstream.json lists them. Anything else is unreviewed.
+REVIEWED = ["glib", "tauri-plugin-single-instance", "wry"]
 
 
 def file_contents(directory):
@@ -24,8 +26,8 @@ def file_contents(directory):
 
 def verify():
     entries = json.loads((VENDOR / "upstream.json").read_text())
-    if len(entries) != 1 or entries[0]["name"] != "glib":
-        raise ValueError("The reviewed glib dependency must be present exactly once")
+    if [entry["name"] for entry in entries] != REVIEWED:
+        raise ValueError(f"The reviewed dependencies must be exactly {REVIEWED}, once each")
     # Anything else under vendor/ would be unreviewed source that no check covers.
     allowed = {"README.md", "upstream.json"} | {
         item for entry in entries for item in (entry["name"], f"{entry['name']}.patch")
@@ -36,8 +38,6 @@ def verify():
         raise ValueError(f"Unexpected entries in vendor/: {', '.join(unexpected)}")
     for entry in entries:
         name, version = entry["name"], entry["version"]
-        if name != "glib":
-            raise ValueError(f"Unexpected local dependency: {name}")
         with tempfile.TemporaryDirectory(prefix="mycarlos-vendor-") as temporary:
             temporary = Path(temporary)
             archive = temporary / "upstream.crate"

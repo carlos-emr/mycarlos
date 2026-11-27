@@ -422,6 +422,7 @@ pub(crate) enum RunnerError {
 
 /// One page of a document's text, by its index from 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,
@@ -571,6 +572,11 @@ pub(crate) struct Summary {
     /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) fallbacks: Vec<crate::safety::Fallback>,
+    /// The unsourced absence-shaped sentences left out before the post-steps (`safety::
+    /// is_absence_sentence`), for measuring: `index` is the place the model wrote it, `before` its
+    /// words, `after` empty; never shown.
+    #[allow(dead_code)]
+    pub(crate) dropped: Vec<crate::safety::Fallback>,
     /// How the helper made this answer, when it said (counts and times only): the measured
     /// speed the next estimate starts from (`summary_progress`).
     pub(crate) stats: Option<crate::model_helper::Stats>,
@@ -714,6 +720,9 @@ pub(crate) struct Runner {
     /// The checked cards of the models started in this session, by their SHA-256 (model
     /// limits): kept after the helper ends, for the settings.
     cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
+    /// Told each checked card as it is kept, to save it beside the models (#305 PR 2). A save
+    /// that fails changes nothing: the card then lives for this session only.
+    card_saver: Mutex<Option<CardSaver>>,
     /// The last card a helper sent, kept or not, and why not, its architecture cut to a short
     /// name: for support and the engine test, never for the settings.
     last_card: Mutex<
@@ -723,6 +732,9 @@ pub(crate) struct Runner {
         )>,
     >,
 }
+
+/// Saves a checked card (the model's SHA-256 and the card).
+pub(crate) type CardSaver = Box<dyn Fn(&str, &crate::model_limits::ModelCard) + Send + Sync>;
 
 /// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
 /// the answer, and the renderer's (D19).
@@ -779,6 +791,7 @@ impl Runner {
             answer_watch: Mutex::new(None),
             threads_override: Mutex::new(None),
             cards: Mutex::new(Vec::new()),
+            card_saver: Mutex::new(None),
             last_card: Mutex::new(None),
         }
     }
@@ -796,8 +809,15 @@ impl Runner {
             .clone()
     }
 
+    /// Names who saves each card the helper makes (the models store).
+    pub(crate) fn set_card_saver(&self, saver: CardSaver) {
+        *self.card_saver.lock().unwrap_or_else(|e| e.into_inner()) = Some(saver);
+    }
+
     /// The checked card of the model with this SHA-256, when the helper has run it in this
-    /// session (model limits).
+    /// session (model limits). Readers go to the models store (`Store::stored_card`), which this
+    /// feeds; kept for the runner's own tests.
+    #[cfg(test)]
     pub(crate) fn card_for(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
         let cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
         cards
@@ -809,6 +829,14 @@ impl Runner {
     /// Keeps a started model's card, in place of an older one for the same file. At most
     /// [`MAX_CARDS`] are kept: the oldest goes.
     fn remember_card(&self, sha256: &str, card: crate::model_limits::ModelCard) {
+        if let Some(save) = self
+            .card_saver
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            save(sha256, &card);
+        }
         let mut cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
         cards.retain(|(hash, _)| hash != sha256);
         if cards.len() >= MAX_CARDS {
@@ -1181,18 +1209,47 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
-        let mut sentences: Vec<Sentence> = sentences
-            .into_iter()
-            .take(request.max_sentences)
-            .enumerate()
-            .map(|(index, mut sentence)| {
-                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
-                }
-                sentence
+        let incoming: Vec<Sentence> = sentences.into_iter().take(request.max_sentences).collect();
+        let found: Vec<bool> = incoming
+            .iter()
+            .map(|sentence| {
+                quote_in(&text, &sentence.quote) && !quote_is_heading(&text, &sentence.quote)
             })
             .collect();
+        // A sentence that only says what the document does NOT say ("The document does not give
+        // instructions for taking medicine.") has no true quote, and the model was told to leave
+        // out a sentence it has no quote for. When its quote is not in the pages read either, it
+        // is dropped here (English summaries only, never the last one left, and never a sentence
+        // whose quote IS found): it would otherwise reach the screen as "No source found", and
+        // may be wrong (the letter may list the very thing). The model's answer is not touched.
+        let absent: Vec<bool> = incoming
+            .iter()
+            .zip(&found)
+            .map(|(sentence, &found)| {
+                request.lang == "en" && !found && crate::safety::is_absence_sentence(&sentence.text)
+            })
+            .collect();
+        let drop_absent = absent.iter().any(|&a| a) && absent.iter().any(|&a| !a);
+        let mut dropped = Vec::new();
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
+        let mut sentences: Vec<Sentence> = Vec::new();
+        for (index, ((mut sentence, found), absent)) in
+            incoming.into_iter().zip(found).zip(absent).enumerate()
+        {
+            if drop_absent && absent {
+                dropped.push(crate::safety::Fallback {
+                    check: "absence",
+                    index,
+                    before: Some(sentence.text),
+                    after: String::new(),
+                });
+                continue;
+            }
+            if !found {
+                unlocated_quotes.record(sentences.len(), std::mem::take(&mut sentence.quote));
+            }
+            sentences.push(sentence);
+        }
         // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
         // as the patient's own says who the line is for (`addressee`). English summaries only,
         // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
@@ -1338,6 +1395,7 @@ impl Runner {
             rewrites,
             explained,
             fallbacks,
+            dropped,
             stats,
         })
     }
@@ -1519,6 +1577,8 @@ impl Drop for Runner {
 /// model when there is one, looking every `CANCEL_POLL` whether it is still `wanted`.
 fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, RunnerError> {
     let mut command = Command::new(&config.command);
+    // No console window on Windows (a sandboxed start goes through the confined launcher, which has its own flag).
+    crate::process_flags::hide_console(&mut command);
     command.args(&config.args);
     let (process, input, output) = start_process(command, config)?;
     let (sender, lines) = mpsc::channel();
@@ -1963,6 +2023,23 @@ mod tests {
         // The oldest went to make room.
         assert!(runner.card_for("a").is_none());
         assert_eq!(runner.card_for("other 0"), Some(card));
+    }
+
+    #[test]
+    fn each_card_a_runner_keeps_is_handed_to_the_saver_and_a_runner_without_one_still_works() {
+        let runner = Runner::new(idle_config());
+        let card: crate::model_limits::ModelCard =
+            serde_json::from_value(card_json(8_192)).unwrap();
+        // No saver: kept for the session, as before.
+        runner.remember_card("a", card.clone());
+        assert_eq!(runner.card_for("a"), Some(card.clone()));
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&saved);
+        runner.set_card_saver(Box::new(move |sha256, card| {
+            sink.lock().unwrap().push((sha256.to_owned(), card.clone()));
+        }));
+        runner.remember_card("b", card.clone());
+        assert_eq!(saved.lock().unwrap().as_slice(), [("b".to_owned(), card)]);
     }
 
     #[test]
@@ -3247,6 +3324,84 @@ mod tests {
                 .iter()
                 .all(|sentence| sentence.quote.is_empty() && !sentence.text.is_empty()));
             assert!(runner.is_running());
+        }
+
+        #[test]
+        fn given_an_absence_sentence_with_a_quote_not_in_the_pages_when_summarized_then_it_is_dropped(
+        ) {
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            let before = plain.summarize(plain.ticket(), &request()).unwrap();
+
+            let runner = Runner::new(config(&["--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+
+            // The same sentences as without the absence sentence, in the same order.
+            let words = |s: &Summary| {
+                s.sentences
+                    .iter()
+                    .map(|x| x.text.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(words(&summary), words(&before));
+            assert_eq!(summary.unlocated, 0);
+            assert_eq!(summary.dropped.len(), 1);
+            let dropped = &summary.dropped[0];
+            assert_eq!(dropped.check, "absence");
+            assert_eq!(dropped.index, before.sentences.len());
+            assert_eq!(
+                dropped.before.as_deref(),
+                Some("The document does not give instructions for taking medicine.")
+            );
+            assert_eq!(dropped.after, "");
+            // The step runs after the model: its own figures (the answer hash among them) come
+            // back as the helper reported them.
+            assert_eq!(summary.stats, before.stats);
+        }
+
+        #[test]
+        fn given_unfound_quotes_and_an_absence_sentence_when_summarized_then_only_the_absence_sentence_goes(
+        ) {
+            let runner = Runner::new(config(&["--unlocated", "--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(summary.dropped.len(), 1);
+            assert_eq!(summary.unlocated, 3);
+            assert_eq!(summary.sentences.len(), 3);
+            assert!(summary.sentences.iter().all(|s| s.quote.is_empty()));
+            assert!(summary
+                .sentences
+                .iter()
+                .all(|s| !s.text.contains("does not give instructions")));
+        }
+
+        #[test]
+        fn given_a_negative_finding_with_an_unfound_quote_when_summarized_then_it_is_kept() {
+            // "does not show any sign of ..." is a real result the model misquoted, not an absence of saying.
+            let runner = Runner::new(config(&["--negative-finding"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert_eq!(summary.unlocated, 1);
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not show any sign") && s.quote.is_empty()));
+        }
+
+        #[test]
+        fn given_an_absence_sentence_in_another_language_when_summarized_then_it_is_kept() {
+            let runner = Runner::new(config(&["--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut french = request();
+            french.lang = "fr".to_owned();
+            let summary = runner.summarize(runner.ticket(), &french).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not give instructions") && s.quote.is_empty()));
         }
 
         #[test]

@@ -9,9 +9,9 @@ import {
   sidebar,
 } from "./support/vaultFake";
 
-// The app's own Text size, under Settings > Preferences (#40): the buttons
+// The app's own App zoom, under Settings > Preferences (#40): the buttons
 // step through the sizes there are, a typed size is read (nearest size,
-// ends, not a number), the keys work on any screen, Back to normal size
+// ends, not a number), the keys work on any screen, Back to 100%
 // returns, and the size is kept across a restart. The size is the webview's
 // zoom, asked of the platform; the fake records each ask. In the browser
 // preview this is the zoom emulated by the fake's "windows" platform.
@@ -24,7 +24,7 @@ const en = (
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
-    "a phone scales text by its own settings and has no Text size setting",
+    "a phone scales text by its own settings and has no App zoom setting",
   );
 });
 
@@ -56,7 +56,7 @@ const announced = (page: Page, percent: string) =>
     .getByRole("status")
     .filter({ hasText: en("textSize.announce", { percent }) });
 
-test("Text size: the buttons step through the sizes and ask the platform, a typed size is read, Back to normal size returns, and the size is kept across a restart", async ({
+test("App zoom: the buttons step through the sizes and ask the platform, a typed size is read, Back to 100% returns, and the size is kept across a restart", async ({
   page,
 }) => {
   await fakeVaultWith(page, { start: "unlocked" });
@@ -123,7 +123,7 @@ test("Text size: the buttons step through the sizes and ask the platform, a type
   ).toBeVisible();
   expect((await zoomsAsked(page)).at(-1)).toBe(4);
 
-  // Back to normal size: 100%, the button goes, nothing is kept as larger.
+  // Back to 100%: 100%, the button goes, nothing is kept as larger.
   await back.click();
   await expect(box).toHaveValue("100");
   await expect(back).toHaveCount(0);
@@ -152,7 +152,7 @@ test("Text size: the buttons step through the sizes and ask the platform, a type
   await expectOnlyFakedCommands(page);
 });
 
-test("the Text size keys work on any screen, and Ctrl+0 is Back to normal size", async ({
+test("the App zoom keys work on any screen, and Ctrl+0 is Back to 100%", async ({
   page,
 }) => {
   await fakeVaultWith(page, { start: "unlocked" });
