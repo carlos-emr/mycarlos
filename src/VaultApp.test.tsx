@@ -7503,6 +7503,10 @@ describe("durable vault UI", () => {
     platform: "allowed",
     snapshot: "allowed",
     history: "allowed",
+    // The New marker (#502): only the small local seen file is written, never the vault, so a
+    // read-only vault can still mark what the patient opened as seen.
+    markSeen: "allowed",
+    markAllSeen: "allowed",
     linkPortal: "write",
     connectPortal: "write",
     // Removes a link that has delivered nothing: a change to the vault (main's #476 added it).
