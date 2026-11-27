@@ -188,3 +188,57 @@ test("a late 'locked' answer, after leaving Security or after the vault locked b
   expect(await fakeCalls(page, "kdf_benchmark")).toHaveLength(2);
   await expectOnlyFakedCommands(page);
 });
+
+// #579: the app says whether its build has the speed test (`runtime_info.speedTest`: true in a
+// development or evaluation build, false in a release build, which has no such command). The browser
+// runs of this spec set VITE_SHOW_SPEED_TEST (playwright.config.ts), so the app's own answer is what
+// decides here: a release build hides the row even with that flag on.
+test("a release build (the app says no speed test) does not show the row, and nothing asks for it", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", speedTest: false });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  // Security is shown (another of its sections), and the app has been asked about its build.
+  await expect(
+    page.getByLabel(en("security.passphrase.current"), { exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => (await fakeCalls(page, "runtime_info")).length)
+    .toBeGreaterThanOrEqual(2);
+  await expect(
+    page.getByRole("heading", {
+      name: en("security.speed.title"),
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: en("security.speed.run"), exact: true }),
+  ).toHaveCount(0);
+  expect(await fakeCalls(page, "kdf_benchmark")).toEqual([]);
+  await expectOnlyFakedCommands(page);
+});
+
+test("a development or evaluation build (the app says speed test) shows the row", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", speedTest: true });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: en("security.speed.title"),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: en("security.speed.run"), exact: true }),
+  ).toBeEnabled();
+  await expectOnlyFakedCommands(page);
+});

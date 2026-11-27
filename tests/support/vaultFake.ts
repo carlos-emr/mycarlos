@@ -240,6 +240,10 @@ export interface FakeVaultSetup {
   /** What runtime_info reports: "windows" (default), "macos", "linux",
    * "android" or "ios". A computer has the app's own zoom; a phone has not. */
   platform?: string;
+  /** What `runtime_info` says about the passphrase speed test (#579): true in a development or
+   * evaluation build, false in a release build. Left out: the answer is not given, and the
+   * browser's build flags decide, as they do for a browser run. */
+  speedTest?: boolean;
   /** Pages drawn as a FAKE letter (#292), one entry per page: a letterhead
    * drawn as shapes, then `lines` from `top` (a fraction of the page's
    * height) down. A line ending in a space runs on into the next one in the
@@ -1121,7 +1125,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         const snapshot = state.snapshot;
         switch (command) {
           case "runtime_info":
-            return { platform: setup.platform };
+            // `speedTest` is what a real app says (#579): true in a development or evaluation build,
+            // false in a release build. Left out, the build flags of the browser decide.
+            return typeof setup.speedTest === "boolean"
+              ? { platform: setup.platform, speedTest: setup.speedTest }
+              : { platform: setup.platform };
           // Preferences on a computer asks whether an AI model is installed (#72).
           case "ai_model_status":
             return { state: "notInstalled" };
@@ -2279,6 +2287,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       damagedHistory: setup.damagedHistory ?? false,
       photos: setup.photos ?? [],
       platform: setup.platform ?? "windows",
+      speedTest: setup.speedTest ?? null,
       drawnPages: setup.drawnPages ?? null,
       boxesAbsent: setup.boxesAbsent ?? null,
       clinic: FAKE_CLINIC,

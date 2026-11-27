@@ -690,6 +690,10 @@ export interface VaultBridge {
   setAutoLock(minutes: number): Promise<void>;
   /** The operating system, such as "windows", "macos", "android" or "ios". */
   platform(): Promise<string>;
+  /** Whether this build of the app has the passphrase speed test (#579): only a development or
+   * evaluation build does, a release build has no such command. `null`: the app did not say. A
+   * bridge without this method is a browser run, which decides by its build flags instead. */
+  speedTestInBuild?(): Promise<boolean | null>;
   snapshot(): Promise<VaultSnapshot>;
   /** Reads the audit history as far as its encrypted chain checks out. */
   history(): Promise<AuditHistoryView>;
@@ -1402,6 +1406,10 @@ export function createVaultBridge(): VaultBridge {
     platform: () =>
       invoke<{ platform: string }>("runtime_info").then(
         (info) => info.platform,
+      ),
+    speedTestInBuild: () =>
+      invoke<{ speedTest?: unknown }>("runtime_info").then((info) =>
+        typeof info.speedTest === "boolean" ? info.speedTest : null,
       ),
     snapshot: () => invoke<VaultSnapshot>("vault_snapshot"),
     history: () => invoke<AuditHistoryView>("vault_history"),
