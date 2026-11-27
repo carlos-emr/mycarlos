@@ -483,8 +483,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = Este documento est
 
 interface-UnlockPdfDialog-unlocking = Desbloqueando…
 
-interface-VaultApp-chooseFilesToImport = Elegir archivos para importar
-
 interface-VaultLibrary-picturesNote = Se quitan el lugar, la hora y los datos de la cámara de las imágenes que añada.
 
 interface-VaultApp-finishingTheTransfer = Finalizando la transferencia
@@ -572,8 +570,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos no pudo guardar 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos cifrados de myCarlos
 
 interface-VaultLibrary-nameAZ = Nombre de A a Z
-
-interface-VaultLibrary-new = Nuevo
 
 interface-VaultLibrary-newestFirst = Más recientes primero
 

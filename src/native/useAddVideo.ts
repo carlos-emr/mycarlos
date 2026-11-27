@@ -27,7 +27,7 @@ export interface AddVideoApi {
   canAdd: boolean;
   /** Picks a video and adds it to the person's records, in these folders. */
   start(profileId: string, folderIds: string[]): Promise<void>;
-  /** Adds a video "+ New" already picked (it was the whole pick), with the same progress, Cancel
+  /** Adds a video the Add menu's "Import a file" already picked (it was the whole pick), with the same progress, Cancel
    * and answer as `start`. */
   addPicked(
     pickId: string,
@@ -99,7 +99,7 @@ export function useAddVideo({
     timer.current = null;
   };
 
-  // `chosen` is a pick "+ New" already made (a video in its combined picker); without it the video
+  // `chosen` is a pick the Add menu's "Import a file" already made (a video in its combined picker); without it the video
   // picker opens.
   const begin = useCallback(
     async (profileId: string, folderIds: string[], chosen?: string) => {

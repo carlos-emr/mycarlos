@@ -235,8 +235,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = 此文档使用密
 
 interface-UnlockPdfDialog-unlocking = 正在解锁…
 
-interface-VaultApp-chooseFilesToImport = 选择要导入的文件
-
 interface-VaultLibrary-picturesNote = 您添加的图片会去掉拍摄地点、时间和相机信息。
 
 interface-VaultApp-finishingTheTransfer = 正在完成传输
@@ -324,8 +322,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos 无法将变更�
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos 加密记录库
 
 interface-VaultLibrary-nameAZ = 名称 A–Z
-
-interface-VaultLibrary-new = 新建
 
 interface-VaultLibrary-newFolder = 新建文件夹
 
