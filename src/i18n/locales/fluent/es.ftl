@@ -2543,6 +2543,8 @@ reader-android-zoomOut = Alejar
 
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Grabar un video
+interface-RecordDialog-recordAVideoFor = Grabar un video para { $name }
+interface-RecordDialog-recordingSettings = Ajustes de grabación
 interface-RecordDialog-unavailable = La grabación de video no está disponible en este dispositivo.
 interface-RecordDialog-why = ¿Por qué?
 interface-RecordDialog-startingTheCameraAndMicrophone = Iniciando la cámara y el micrófono…
@@ -2558,6 +2560,9 @@ interface-RecordDialog-unnamedCamera = Cámara { $number }
 interface-RecordDialog-unnamedMicrophone = Micrófono { $number }
 interface-RecordDialog-systemDefaultDevice = Predeterminado del sistema
 interface-RecordDialog-deviceFellBack = La cámara o el micrófono que usó la última vez no está conectado, así que se usa el predeterminado del sistema.
+interface-RecordDialog-deviceNotSwitched = No se pudo abrir la cámara o el micrófono que elegiste, así que sigue activo el que estaba en uso.
+interface-RecordDialog-saySomething = Di algo: la barra debería moverse.
+interface-RecordDialog-settingsNote = El video se guarda cifrado. myCarlos recuerda estas opciones en este dispositivo.
 interface-RecordDialog-testMicrophone = Probar el micrófono
 interface-RecordDialog-stopTestingMicrophone = Dejar de probar
 interface-RecordDialog-microphoneLevel = Nivel del micrófono
@@ -2985,6 +2990,8 @@ notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
+
+native-backupExclusionFailed = Este teléfono no pudo mantener la bóveda fuera de las copias de seguridad del dispositivo. Inténtelo de nuevo.
 
 interface-AddVideo-add = Añadir un video
 

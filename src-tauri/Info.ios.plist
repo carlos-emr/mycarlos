@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Export compliance (#422). DRAFT FOR BEN: myCarlos uses standard encryption of its own
+	  (XChaCha20-Poly1305, Argon2id, X25519) beyond what iOS provides, so this says it is NOT
+	  exempt; App Store Connect then asks for the classification. If counsel decides an
+	  exemption applies, change this and add ITSEncryptionExportComplianceCode.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
+</dict>
+</plist>
