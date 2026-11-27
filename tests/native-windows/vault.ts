@@ -3,8 +3,10 @@
 //
 //   const session = await openInstalledApp(playwright, testInfo);   // appSession.ts
 //   const vault = await createFakeVault(session);                    // absent -> unlocked, one person
-//   ... vault.person, vault.passphrase, importSample(session, vault, "FAKE_...pdf") ...
-//   await eraseFakeVault(session);                                   // always, in afterAll
+//   ... vault.passphrase, createPerson(session, ...), importSample(session, personId, "FAKE_...pdf") ...
+//   // in afterAll, ONLY if createFakeVault returned (a `made` flag): it proves the vault is the
+//   // helper's before erasing (see safety.ts), and refuses otherwise.
+//   await eraseFakeVault(session, vault.firstPersonName);
 //   await session.stop();
 //
 // Everything is FAKE. The account must have no vault (vault_status "absent"): the helper refuses
@@ -12,6 +14,10 @@
 import { expect } from "@playwright/test";
 import { join, resolve } from "node:path";
 import type { AppSession } from "./appSession";
+import { provesFakeVault } from "./safety";
+
+/** The FAKE first person `createFakeVault` makes unless told another name. */
+export const DEFAULT_FIRST_PERSON = "FAKE Playtest Start";
 
 /** The folder of FAKE samples (the PDFs, pictures and the clip). */
 export const SAMPLES = resolve(
@@ -44,7 +50,7 @@ export const snapshot = (session: AppSession) =>
 /** Makes a vault in an empty account: passphrase, the first person, left UNLOCKED. */
 export async function createFakeVault(
   session: AppSession,
-  firstPersonName = "FAKE Playtest Start",
+  firstPersonName = DEFAULT_FIRST_PERSON,
 ): Promise<FakeVault> {
   expect(
     await session.call("vault_status"),
@@ -108,9 +114,43 @@ export async function importSample(
   });
 }
 
-/** Leaves the account empty again (the native "set it aside" confirmation). Safe to call twice. */
-export async function eraseFakeVault(session: AppSession) {
-  if ((await session.call("vault_status")) === "absent") return;
+/**
+ * Leaves the account empty again (the native "set it aside" confirmation). Safe to call twice.
+ *
+ * It erases ONLY a vault it can prove is this run's own (`provesFakeVault`): a locked vault must
+ * open with FAKE_PASSPHRASE (no real vault does), and the library must hold the FAKE first person.
+ * Anything else throws and erases nothing. Call it only after `createFakeVault` returned.
+ */
+export async function eraseFakeVault(
+  session: AppSession,
+  firstPersonName = DEFAULT_FIRST_PERSON,
+) {
+  const status = await session.call<string>("vault_status");
+  if (status === "absent") return;
+  let opened = status === "unlocked";
+  if (status === "locked") {
+    opened = await session
+      .call("vault_unlock", { request: { passphrase: FAKE_PASSPHRASE } })
+      .then(
+        () => true,
+        () => false,
+      );
+  }
+  const personNames = opened
+    ? (await snapshot(session)).profiles.map((p) => p.displayName)
+    : [];
+  if (
+    !provesFakeVault({
+      openedWithFakePassphrase: opened,
+      personNames,
+      firstPersonName,
+    })
+  )
+    throw new Error(
+      "Refusing to erase: the vault in this account is not the one this run created " +
+        "(it did not open with the FAKE passphrase, or lacks the FAKE first person). " +
+        "Nothing was erased.",
+    );
   await session.call("vault_lock").catch(() => {});
   await session.withDialog(
     "vault_reset",

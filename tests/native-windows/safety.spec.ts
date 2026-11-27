@@ -1,45 +1,99 @@
 // Guard test for safety.ts: pure, so it runs anywhere (also on Linux), unlike the journeys.
 import { expect, test } from "@playwright/test";
-import { removableOwnDirectory, requireDisposableAccount } from "./safety";
+import {
+  provesFakeVault,
+  removableOwnDirectory,
+  requireDisposableAccount,
+} from "./safety";
+
+const LOCAL = "C:\\Users\\runner\\AppData\\Local";
+const hosted = {
+  GITHUB_ACTIONS: "true",
+  RUNNER_ENVIRONMENT: "github-hosted",
+  LOCALAPPDATA: LOCAL,
+};
+const declared = {
+  MYCARLOS_PLAYTEST_DISPOSABLE_ACCOUNT: "1",
+  LOCALAPPDATA: LOCAL,
+};
+const run = (env: Record<string, string | undefined>, platform = "win32") =>
+  requireDisposableAccount({ platform, env });
 
 test.describe("the native-windows journeys never touch a real account", () => {
   test("refuse on a Windows PC that is not disposable", () => {
+    expect(() => run({ LOCALAPPDATA: LOCAL })).toThrow(/Refusing to run/);
     expect(() =>
-      requireDisposableAccount({ platform: "win32", env: {} }),
-    ).toThrow(/Refusing to run/);
-    expect(() =>
-      requireDisposableAccount({
-        platform: "win32",
-        env: { MYCARLOS_PLAYTEST_DISPOSABLE_ACCOUNT: "yes" },
-      }),
+      run({ MYCARLOS_PLAYTEST_DISPOSABLE_ACCOUNT: "yes", LOCALAPPDATA: LOCAL }),
     ).toThrow(/Refusing to run/);
   });
 
   test("refuse off Windows even when marked disposable", () => {
-    expect(() =>
-      requireDisposableAccount({
-        platform: "linux",
-        env: { GITHUB_ACTIONS: "true" },
-      }),
-    ).toThrow(/Windows only/);
+    expect(() => run(hosted, "linux")).toThrow(/Windows only/);
   });
 
-  test("run on a GitHub Actions runner or a marked throw-away account", () => {
+  test("a SELF-HOSTED runner is not disposable: GITHUB_ACTIONS alone is not enough", () => {
+    expect(() => run({ GITHUB_ACTIONS: "true", LOCALAPPDATA: LOCAL })).toThrow(
+      /Refusing to run/,
+    );
     expect(() =>
-      requireDisposableAccount({
-        platform: "win32",
-        env: { GITHUB_ACTIONS: "true" },
+      run({
+        GITHUB_ACTIONS: "true",
+        RUNNER_ENVIRONMENT: "self-hosted",
+        LOCALAPPDATA: LOCAL,
       }),
-    ).not.toThrow();
+    ).toThrow(/Refusing to run/);
+  });
+
+  test("run on a GitHub-hosted runner or a marked throw-away account", () => {
+    expect(() => run(hosted)).not.toThrow();
+    expect(() => run(declared)).not.toThrow();
+  });
+
+  test("refuse when LOCALAPPDATA is unset or relative, or the WebView profile is relative", () => {
+    expect(() => run({ ...hosted, LOCALAPPDATA: undefined })).toThrow(
+      /LOCALAPPDATA is not set/,
+    );
+    expect(() => run({ ...hosted, LOCALAPPDATA: "AppData\\Local" })).toThrow(
+      /LOCALAPPDATA is not an absolute path/,
+    );
     expect(() =>
-      requireDisposableAccount({
-        platform: "win32",
-        env: { MYCARLOS_PLAYTEST_DISPOSABLE_ACCOUNT: "1" },
+      run({ ...hosted, MYCARLOS_WINDOWS_WEBVIEW_PROFILE: "webview-profile" }),
+    ).toThrow(/must be an absolute path/);
+    expect(() =>
+      run({
+        ...hosted,
+        MYCARLOS_WINDOWS_WEBVIEW_PROFILE: "D:\\a\\_temp\\mycarlos-webview-1",
       }),
     ).not.toThrow();
   });
 
-  test("cleanup may remove only the exact directory it created", () => {
+  test("a vault is erased only when it opened with the FAKE passphrase and holds the FAKE first person", () => {
+    const fake = {
+      openedWithFakePassphrase: true,
+      personNames: ["FAKE Playtest Start", "FAKE Playtest Person"],
+      firstPersonName: "FAKE Playtest Start",
+    };
+    expect(provesFakeVault(fake)).toBe(true);
+    // A real vault does not open with the FAKE passphrase.
+    expect(provesFakeVault({ ...fake, openedWithFakePassphrase: false })).toBe(
+      false,
+    );
+    // A vault that opened but does not hold the FAKE first person is not ours.
+    expect(provesFakeVault({ ...fake, personNames: ["Alex Realperson"] })).toBe(
+      false,
+    );
+    expect(provesFakeVault({ ...fake, personNames: [] })).toBe(false);
+    // The first person must itself be a FAKE name.
+    expect(
+      provesFakeVault({
+        openedWithFakePassphrase: true,
+        personNames: ["Alex Realperson"],
+        firstPersonName: "Alex Realperson",
+      }),
+    ).toBe(false);
+  });
+
+  test("the last look before a delete accepts only the exact directory this run made", () => {
     const made = "/tmp/mycarlos-playtest-abc";
     expect(removableOwnDirectory(made, made)).toBe(true);
     expect(removableOwnDirectory(made, `${made}/`)).toBe(true);

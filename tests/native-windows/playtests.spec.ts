@@ -40,17 +40,22 @@ let session: AppSession;
 let work: string;
 let vault: FakeVault;
 let personId: string;
+/** True only once createFakeVault RETURNED: until then the vault in the account is not ours. */
+let made = false;
 
 test.beforeAll(async ({ playwright }, testInfo) => {
   expect(process.platform, "Run this suite on Windows").toBe("win32");
   work = await mkdtemp(join(tmpdir(), "mycarlos-playtest-out-"));
   session = await openInstalledApp(playwright, testInfo);
   vault = await createFakeVault(session);
+  made = true;
 });
 
 test.afterAll(async () => {
   try {
-    if (session) await eraseFakeVault(session);
+    // Never erase a vault this run did not make (createFakeVault refused or threw), and even then
+    // only after eraseFakeVault has proved it is the FAKE one.
+    if (made) await eraseFakeVault(session, vault.firstPersonName);
   } finally {
     await session?.stop();
     if (work) await rm(work, { recursive: true, force: true });
@@ -165,16 +170,17 @@ for (const kind of ["generated key", "passphrase"] as const) {
 
 test("a short or reused passphrase for the file is refused, the key is never accepted as one", async () => {
   for (const passphrase of ["short one", PASSPHRASE]) {
-    const answer = await session
+    const failure = await session
       .call("vault_profile_export_prepare", {
         request: { profileId: personId, includeHistory: false, passphrase },
       })
       .then(
-        () => "accepted",
-        () => "refused",
+        () => undefined,
+        (error) => error as { code?: string },
       );
-    expect(answer, `passphrase of ${passphrase.length} characters`).toBe(
-      "refused",
+    // Both are the weak-passphrase refusal (native.error.20), not accepted and not another error.
+    expect(failure, `passphrase of ${passphrase.length} characters`).toEqual(
+      expect.objectContaining({ code: "weak_passphrase" }),
     );
   }
 });
@@ -267,7 +273,9 @@ test("backup to a real folder and restore it: the contents come back", async () 
     },
   );
   expect(saved.bytes).toBeGreaterThan(1000);
-  const documents = (await snapshot(session)).records.length;
+  const saved_state = await snapshot(session);
+  const documents = saved_state.records.length;
+  const sorted = (names: string[]) => [...names].sort();
   await session.call("vault_create_profile", {
     request: {
       displayName: "FAKE Added after backup",
@@ -299,6 +307,13 @@ test("backup to a real folder and restore it: the contents come back", async () 
   await session.call("vault_unlock", { request: { passphrase: PASSPHRASE } });
   const back = await snapshot(session);
   expect(back.records).toHaveLength(documents);
+  // The same people and the same document names, not only the same counts.
+  expect(sorted(back.profiles.map((p) => p.displayName))).toEqual(
+    sorted(saved_state.profiles.map((p) => p.displayName)),
+  );
+  expect(sorted(back.records.map((r) => r.name))).toEqual(
+    sorted(saved_state.records.map((r) => r.name)),
+  );
   expect(
     back.profiles.some((p) => p.displayName === "FAKE Added after backup"),
   ).toBe(false);
@@ -332,15 +347,18 @@ test.describe("a camera and a microphone", () => {
   });
 });
 
-test.describe("not yet runnable: waiting for the features", () => {
+test.describe("a second vault from the lock screen", () => {
   test.fixme(
     true,
-    "A second vault from the lock screen: needs #562 (Set up a new vault on the lock screen) to be merged",
+    "Needs #562 (Set up a new vault on the lock screen) to be merged; its journey is in that PR",
   );
-  test("a second vault from the lock screen", () => {});
+  test("a second vault is made from the lock screen", () => {});
+});
+
+test.describe("a file shared while locked", () => {
   test.fixme(
     true,
-    "A file shared while locked is sealed, and offered by name after unlock: needs #420 (the sealed inbox) to be wired",
+    "Needs #420 (the sealed inbox) to be wired: the file is sealed, then offered by name after unlock",
   );
-  test("a file shared while locked", () => {});
+  test("a file shared while locked is offered by name after unlock", () => {});
 });
