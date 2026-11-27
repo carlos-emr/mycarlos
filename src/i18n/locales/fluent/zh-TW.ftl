@@ -950,6 +950,8 @@ recoveryKey-reason-legend = 為什麼要更換？
 
 recoveryKey-reason-routine = 我只是想換新金鑰；目前的套件仍安全
 
+recoveryKey-kitCloudWarning = 此檔案未加密。同步到雲端的資料夾（OneDrive、iCloud Drive、Dropbox、Google Drive）會將其上傳，請儲存到不會同步的位置。
+
 recoveryKey-saveKit = 儲存復原套件…
 
 recoveryKey-threeMisses = 連續三次輸入不相符。請再次查看復原金鑰，然後重新檢查。
@@ -1065,6 +1067,8 @@ security-autoLock-shorter = 縮短延遲時間
 security-autoLock-title = 自動鎖定
 
 security-backup-body = 一個檔案即可保存整個保險庫，且內容仍會加密。請將備份存放在此裝置以外的位置，例如 USB 隨身碟。備份使用儲存當下的密語或復原金鑰開啟，即使您之後變更金鑰，它們仍可開啟此備份。若要還原備份，請先鎖定保險庫，再選擇「從備份還原」。
+
+security-backup-cloudWarning = 此檔案已加密，但仍會顯示其中有多少份文件以及每份的大小。同步到雲端的資料夾（OneDrive、iCloud Drive、Dropbox、Google Drive）會將其上傳。
 
 security-backup-save = 儲存加密備份…
 
@@ -2486,7 +2490,7 @@ handover-import-opening = 正在開啟…
 
 handover-import-error-typo = 該金鑰看起來不對，請與您拿到的金鑰核對。
 
-handover-import-error-recovery = 這是復原金鑰，不是此檔案的金鑰。請索取為該檔案產生的金鑰。
+handover-import-error-recovery = 這看起來像復原金鑰，而不是此檔案的金鑰。請核對您拿到的該檔案金鑰，並檢查是否輸入錯誤。如果沒有拿到，請索取為該檔案產生的金鑰。
 
 handover-import-error-wrong = 這無法開啟此檔案。
 

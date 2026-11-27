@@ -1065,6 +1065,8 @@ recoveryKey-reason-legend = Por que você está substituindo a chave?
 
 recoveryKey-reason-routine = Só quero uma chave nova: o kit dela está seguro
 
+recoveryKey-kitCloudWarning = Este arquivo não é criptografado. Uma pasta sincronizada com a nuvem (OneDrive, iCloud Drive, Dropbox, Google Drive) o envia, então salve-o em um lugar que não seja sincronizado.
+
 recoveryKey-saveKit = Salvar o kit de recuperação…
 
 recoveryKey-threeMisses = Não coincidiu três vezes. Olhe de novo sua chave de recuperação e depois verifique-a.
@@ -1205,6 +1207,8 @@ security-autoLock-shorter = Tempo menor
 security-autoLock-title = Bloqueio automático
 
 security-backup-body = Um único arquivo com todo o seu cofre, ainda criptografado. Guarde-o em outro lugar que não este dispositivo, como um pen drive. Ele abre com a frase secreta ou a chave de recuperação que você tiver ao salvá-lo, e continua abrindo com elas mesmo depois que você as mudar aqui. Para restaurar uma cópia, bloqueie o cofre e escolha Restaurar a partir de uma cópia de segurança.
+
+security-backup-cloudWarning = Este arquivo é criptografado, mas mostra quantos documentos contém e o tamanho de cada um. Uma pasta sincronizada com a nuvem (OneDrive, iCloud Drive, Dropbox, Google Drive) o envia.
 
 security-backup-save = Salvar cópia de segurança criptografada…
 
@@ -2751,7 +2755,7 @@ handover-import-opening = Abrindo…
 
 handover-import-error-typo = Essa chave não parece correta. Compare-a com a que lhe deram.
 
-handover-import-error-recovery = Essa é uma chave de recuperação, não a chave deste arquivo. Peça a chave criada para o arquivo.
+handover-import-error-recovery = Isso parece uma chave de recuperação, não a chave deste arquivo. Confira a chave que lhe deram para o arquivo e veja se não há erro de digitação. Se não lhe deram nenhuma, peça a chave criada para o arquivo.
 
 handover-import-error-wrong = Isso não abre este arquivo.
 

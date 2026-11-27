@@ -1065,6 +1065,8 @@ recoveryKey-reason-legend = ¿Por qué la reemplaza?
 
 recoveryKey-reason-routine = Solo quiero una clave nueva: su kit está a salvo
 
+recoveryKey-kitCloudWarning = Este archivo no está cifrado. Una carpeta que se sincroniza con la nube (OneDrive, iCloud Drive, Dropbox, Google Drive) lo sube, así que guárdelo en un lugar que no se sincronice.
+
 recoveryKey-saveKit = Guardar el kit de recuperación…
 
 recoveryKey-threeMisses = No coincidió tres veces. Vuelva a mirar su clave de recuperación y luego compruébela.
@@ -1205,6 +1207,8 @@ security-autoLock-shorter = Tiempo más corto
 security-autoLock-title = Bloqueo automático
 
 security-backup-body = Un solo archivo con toda su bóveda, todavía cifrada. Guárdelo en un lugar distinto de este dispositivo, como una unidad USB. Se abre con la frase de contraseña o la clave de recuperación que tenga al guardarlo, y se sigue abriendo con ellas aunque después las cambie aquí. Para restaurar una copia, bloquee la bóveda y elija Restaurar desde una copia de seguridad.
+
+security-backup-cloudWarning = Este archivo está cifrado, pero muestra cuántos documentos contiene y cuánto pesa cada uno. Una carpeta que se sincroniza con la nube (OneDrive, iCloud Drive, Dropbox, Google Drive) lo sube.
 
 security-backup-save = Guardar copia de seguridad cifrada…
 
@@ -2751,7 +2755,7 @@ handover-import-opening = Abriendo…
 
 handover-import-error-typo = Esa clave no parece correcta. Compárela con la que le dieron.
 
-handover-import-error-recovery = Esa es una clave de recuperación, no la clave de este archivo. Pida la clave creada para el archivo.
+handover-import-error-recovery = Eso parece una clave de recuperación, no la clave de este archivo. Revise la clave que le dieron para el archivo y compruebe que no haya un error al escribirla. Si no le dieron ninguna, pida la clave creada para el archivo.
 
 handover-import-error-wrong = Eso no abre este archivo.
 

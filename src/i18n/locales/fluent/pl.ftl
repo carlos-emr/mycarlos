@@ -1088,6 +1088,8 @@ recoveryKey-reason-legend = Dlaczego klucz jest zastępowany?
 
 recoveryKey-reason-routine = Chcę po prostu nowy klucz: zestaw jest bezpieczny
 
+recoveryKey-kitCloudWarning = Ten plik nie jest zaszyfrowany. Folder synchronizowany z chmurą (OneDrive, iCloud Drive, Dropbox, Google Drive) go przesyła, dlatego proszę zapisać go w miejscu, które nie jest synchronizowane.
+
 recoveryKey-saveKit = Zapisz zestaw odzyskiwania…
 
 recoveryKey-threeMisses = Trzy razy z rzędu klucz się nie zgadzał. Proszę ponownie spojrzeć na klucz odzyskiwania, a potem go sprawdzić.
@@ -1233,6 +1235,8 @@ security-autoLock-shorter = Krótszy czas
 security-autoLock-title = Automatyczna blokada
 
 security-backup-body = Jeden plik z całym sejfem, nadal zaszyfrowanym. Proszę przechowywać go poza tym urządzeniem, na przykład na dysku USB. Otwiera go hasło główne lub klucz odzyskiwania obowiązujące w chwili zapisania i nadal go otwierają, nawet po ich zmianie tutaj. Aby przywrócić kopię, należy zablokować sejf i wybrać Przywróć z kopii zapasowej.
+
+security-backup-cloudWarning = Ten plik jest zaszyfrowany, ale widać w nim, ile dokumentów zawiera i jak duży jest każdy z nich. Folder synchronizowany z chmurą (OneDrive, iCloud Drive, Dropbox, Google Drive) go przesyła.
 
 security-backup-save = Zapisz zaszyfrowaną kopię zapasową…
 
@@ -2834,7 +2838,7 @@ handover-import-opening = Otwieranie…
 
 handover-import-error-typo = Ten klucz wygląda niepoprawnie. Porównaj go z tym, który otrzymałeś(-aś).
 
-handover-import-error-recovery = To jest klucz odzyskiwania, a nie klucz do tego pliku. Poproś o klucz utworzony dla pliku.
+handover-import-error-recovery = To wygląda na klucz odzyskiwania, a nie klucz do tego pliku. Sprawdź klucz, który otrzymałeś(-aś) dla pliku, i czy nie ma w nim literówki. Jeśli go nie otrzymałeś(-aś), poproś o klucz utworzony dla pliku.
 
 handover-import-error-wrong = To nie otwiera tego pliku.
 
