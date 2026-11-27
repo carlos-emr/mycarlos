@@ -30,6 +30,8 @@ interface RecordDetailsProps {
   /** People and their folders that this document can move to. */
   moveTargets?: MoveTarget[];
   onMoveTo?: (profileId: string, folderId: string | null) => void;
+  /** File a clinic document under a person, with the clinic's words in view (#340). */
+  onFileUnder?: () => void;
   /** Takes the document out of view (#71); it is never deleted. */
   onHide: () => void;
   onExport: () => void;
@@ -43,6 +45,8 @@ interface RecordDetailsProps {
   onAnonymize?: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
+  /** Plays the document as a video; given only when its file is an MP4. */
+  onPlayVideo?: () => void;
   /** The document is a PDF that may be locked with a password (#54). */
   locked?: boolean;
   /** Asks for its password; given only where myCarlos can unlock it. */
@@ -61,12 +65,14 @@ export function RecordDetails({
   onMove,
   moveTargets,
   onMoveTo,
+  onFileUnder,
   onHide,
   onExport,
   onRead,
   onReadAid,
   onAnonymize,
   onViewPhoto,
+  onPlayVideo,
   locked = false,
   onUnlock,
 }: RecordDetailsProps) {
@@ -202,6 +208,17 @@ export function RecordDetails({
               <RecordSource record={record} />
             </dd>
           </div>
+          {record.clinicPatient && (
+            <div>
+              <dt>{translateNow("fileUnder.fromClinic")}</dt>
+              <dd>
+                {translateNow("fileUnder.words", {
+                  name: record.clinicPatient.name,
+                  date: record.clinicPatient.birthDate,
+                })}
+              </dd>
+            </div>
+          )}
           <div>
             <dt>{translateNow("library.column.added")}</dt>
             <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
@@ -258,6 +275,17 @@ export function RecordDetails({
             >
               <Icon name="lock-open" />
               <span>{translateNow("interface.RecordDetails.unlock")}</span>
+            </button>
+          )}
+          {onPlayVideo && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onPlayVideo}
+            >
+              <Icon name="play" />
+              <span>{translateNow("interface.VideoViewer.playVideo")}</span>
             </button>
           )}
           {onViewPhoto && (
@@ -328,6 +356,17 @@ export function RecordDetails({
               {translateNow("interface.RecordDetails.move")}
             </button>
           </div>
+          {onFileUnder && (
+            <button
+              className="button"
+              type="button"
+              aria-haspopup="dialog"
+              disabled={busy || readOnly}
+              onClick={onFileUnder}
+            >
+              {translateNow("fileUnder.button")}
+            </button>
+          )}
           <button
             className="button"
             type="button"

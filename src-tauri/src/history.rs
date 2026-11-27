@@ -75,6 +75,10 @@ pub enum HistoryEvent {
     SetAside,
     PortalLinkStarted,
     PortalLinked,
+    /// The patient removed a clinic link that never delivered a document (#160). Its private
+    /// keys, remembered refusals, waiting reading aids and push registration went with it. No
+    /// clinic is told: the clinic may still list the device.
+    PortalLinkRemoved,
     DeviceApprovalRequested,
     DeviceApprovalVerified,
     DeviceApprovalStatusChanged,
@@ -91,6 +95,16 @@ pub enum HistoryEvent {
     /// The AI helper's answer was kept with the document (#72): `how` is
     /// the tool, "summary" or "explain". No text is recorded.
     AiResultSaved,
+    /// A person's documents were written to a handover file (#360). The profile id
+    /// and the name the history keeps for profiles; no document names, no place.
+    ProfileExported,
+    /// A whole person was hidden (#360): one entry, whatever their documents are.
+    ProfileHidden,
+    /// A hidden person was restored (#360).
+    ProfileRestored,
+    /// A person was made from a handover file (#360). The file's id is on the
+    /// profile, not here.
+    ProfileImported,
     /// The patient's own cloud AI key was added (#72): `how` is the provider. Never the key.
     CloudKeyAdded,
     /// A cloud AI key was removed from the vault; `how` is the provider. Older backups still

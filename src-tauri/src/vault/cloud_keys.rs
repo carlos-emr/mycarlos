@@ -2,7 +2,7 @@
 //! key; threat model AI-11 and NET-05, proposed). Nothing here sends anything: this is only where
 //! the key lives.
 //!
-//! - **Stored encrypted in the manifest** (format 14, provisional until merge), like the portal
+//! - **Stored encrypted in the manifest** (format 17, taken at merge), like the portal
 //!   links' private keys, so it is in the vault's backups. After a key is removed, older backups
 //!   still hold it: the vault never rewrites a backup.
 //! - **Never leaves Rust.** The page can be given only `CloudKeyInfo`: an id, the provider, the

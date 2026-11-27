@@ -193,7 +193,9 @@ test("leaving the reader while its Summary reads the text stops the read", async
   ]);
   // No model was asked for a text that was never read.
   expect(await aiCalls(page, AI_COMMANDS.summarize)).toEqual([]);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(
+    0,
+  );
   await expectOnlyFakedCommands(page);
 });
 
@@ -277,7 +279,7 @@ test.describe("with a model on this device", () => {
     await expectOnlyFakedCommands(page);
   });
 
-  test("after Show in document, Tab goes on from the marked words, not back to Close", async ({
+  test("after Show me in the document, Tab goes on from the marked words, not back to Close", async ({
     page,
   }) => {
     const reader = await openReader(page, { model: INSTALLED });
@@ -290,8 +292,24 @@ test.describe("with a model on this device", () => {
     const marked = reader.locator(".native-reader-text mark");
     await expect(marked).toHaveText(fakePageText(LETTER, 2));
     await expect(marked).toBeFocused();
-    // Tab: the next control after the marked words, the summary's first
-    // Show in document; never the reader's Close at the top.
+    // Tab: the next control after the marked words: the Summary's "About the
+    // AI helper" button (#355), then the warning's "Don't show this again"
+    // (#351), then the summary's first Show in document; never the
+    // reader's Close at the top.
+    await page.keyboard.press("Tab");
+    await expect(
+      summaryPanel.getByRole("button", {
+        name: en("aiHelper.notice.title"),
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      summaryPanel.getByRole("button", {
+        name: en("aiHelper.resultLabelHide"),
+        exact: true,
+      }),
+    ).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(show.first()).toBeFocused();
     await expect(
@@ -371,7 +389,9 @@ test.describe("with a model on this device", () => {
     expect(await aiCancelled(page)).toEqual([
       { command: AI_COMMANDS.summarize, by: AI_COMMANDS.cancel },
     ]);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(
+      0,
+    );
     await expectOnlyFakedCommands(page);
   });
 
