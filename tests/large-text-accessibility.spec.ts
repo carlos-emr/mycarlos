@@ -110,7 +110,7 @@ interface LargeText {
 }
 
 /**
- * The app's Text size (Settings > Preferences) zooms the whole webview, which a browser shows as page
+ * The app's App zoom (Settings > Preferences) zooms the whole webview, which a browser shows as page
  * zoom: at 200% the page lays out in half the CSS width and height, drawn with twice the pixels. Only
  * desktops have it: a phone scales text by its own settings (nativeZoom.ts), which the reader's default
  * text tests cover.
@@ -271,6 +271,17 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
+        // The tray's waiting sentence is asked for at unlock (#230): none here.
+        if (command === "tray_waiting_status") return false;
+        // No background mode in these journeys.
+        if (command === "background_status")
+          return {
+            supported: false,
+            keepRunning: false,
+            startAtLogin: false,
+            trayReady: false,
+            pausedWhileLocked: false,
+          };
         if (command === "vault_notification_status")
           return {
             supported: false,
@@ -327,6 +338,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "ai_model_check") return "skipped";
         // No add or download running when the row opens (#275).
         if (command === "ai_model_add_active") return null;
+        if (command === "ai_model_speed") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };
@@ -334,6 +346,20 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
+        // Video (#359): nothing waiting to be finished, and no document
+        // starts as an MP4 does.
+        if (command === "vault_video_pending")
+          return { recordings: [], unreadable: 0 };
+        if (command === "vault_is_video") return false;
+        // The backup's size, with and without videos (#359): no video here.
+        if (command === "vault_backup_size")
+          return {
+            totalBytes: 4096,
+            withoutVideosBytes: 4096,
+            videoBytes: 0,
+            videoCount: 0,
+          };
+        if (command === "vault_left_out_records") return [];
         // A PDF's details ask whether it is locked with a password (#54).
         if (command === "vault_is_locked_pdf") return false;
         // These FAKE PDFs carry no patient identity hint.
@@ -365,9 +391,10 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
             imported: ["shared-record"],
             skippedDuplicates: [],
             notPdf: [],
+            unreadable: [],
           };
         }
-        // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
+        // The App zoom setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
         // Kept as well as thrown: a screen showing an error notice could still pass axe.
         (Reflect.get(window, "__unexpectedIpc") as string[]).push(command);
@@ -475,7 +502,7 @@ async function walkTheVault(large: LargeText) {
   await expectOnlyMockedCommands(page);
 }
 
-test("has no automatically detectable WCAG violations with the app's text size at 200%", async ({
+test("has no automatically detectable WCAG violations with the app's zoom at 200%", async ({
   browser,
 }, testInfo) => {
   await withAppTextSize200(browser, testInfo, walkThePreview);
@@ -487,7 +514,7 @@ test("has no automatically detectable WCAG violations with the reader's default 
   await withReaderText200(page, walkThePreview);
 });
 
-test("has no automatically detectable WCAG violations on the vault screens with the app's text size at 200%", async ({
+test("has no automatically detectable WCAG violations on the vault screens with the app's zoom at 200%", async ({
   browser,
 }, testInfo) => {
   await withAppTextSize200(browser, testInfo, walkTheVault);

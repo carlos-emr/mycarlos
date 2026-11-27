@@ -5,6 +5,7 @@ import {
   FAKE_IDS,
   FAKE_CLINIC,
   FAKE_CLINIC_DOCUMENT,
+  FAKE_APPROVAL_FAILS_CODE,
   FAKE_DEVICE_CODE,
   escapeRegExp,
   fakeCalls,
@@ -15,7 +16,7 @@ import {
   sidebar,
 } from "./support/vaultFake";
 
-// Clinic documents, myCarlos's anchor workflow: linking this device to a
+// Connected clinics, myCarlos's anchor workflow: linking this device to a
 // clinic's patient portal in Security (a refused code is not kept, the link,
 // asking the clinic to approve the device, copying its device code), then
 // checking for new documents from the library, which arrive in Shared with
@@ -187,6 +188,64 @@ test("links this device to a clinic and asks for approval in one action: a refus
   await expect(
     page.getByRole("button", { name: en("portal.check"), exact: true }),
   ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("links the device but the approval request fails (#136): the clinic is saved, the reason is said once with where to look, and Request clinic approval asks again", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", portal: "unlinked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  await page.getByLabel(en("portal.address"), { exact: true }).fill(PORTAL);
+  await page
+    .getByLabel(en("portal.code"), { exact: true })
+    .fill(FAKE_APPROVAL_FAILS_CODE);
+  await page
+    .getByRole("button", { name: en("portal.link"), exact: true })
+    .click();
+
+  // The link was made, so the clinic is shown and the one-use code is gone.
+  await expect(
+    page.getByRole("heading", { name: FAKE_CLINIC, exact: true, level: 3 }),
+  ).toBeVisible();
+  await expect(page.getByLabel(en("portal.code"), { exact: true })).toHaveCount(
+    0,
+  );
+  // The reason first, then where to look: not "Device linked" alone.
+  await expect(
+    page.getByText(
+      `${en("portal.approvalContact")} ${en("portal.linkedApprovalIssue")}`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(en("portal.connected"), { exact: true }),
+  ).toHaveCount(0);
+  // The request was not made: the card says so and offers it, and no
+  // approval check runs for a request that does not exist.
+  await expect(
+    page.getByText(en("portal.notRequested"), { exact: true }),
+  ).toBeVisible();
+  expect(await fakeCalls(page, "vault_refresh_device_approval")).toEqual([]);
+  expect(await fakeCalls(page, "vault_request_device_approval")).toEqual([]);
+
+  // Asking again goes through the same request command, not a new link.
+  await page
+    .getByRole("button", { name: en("portal.requestApproval"), exact: true })
+    .click();
+  await expect
+    .poll(() => fakeCalls(page, "vault_request_device_approval"))
+    .toEqual([{ linkId: FAKE_IDS.link }]);
+  await expect(awaiting(page)).toBeVisible();
+  await expect(
+    page.getByText(en("portal.notRequested"), { exact: true }),
+  ).toHaveCount(0);
+  expect(await fakeCalls(page, "vault_portal_connect")).toHaveLength(1);
+  expect(await fakeCalls(page, "vault_portal_link")).toEqual([]);
   await expectOnlyFakedCommands(page);
 });
 

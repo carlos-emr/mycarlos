@@ -17,6 +17,7 @@
         "title": "myCarlos Evaluation — sample data only",
         "width": 1100,
         "height": 760,
+        "maximized": true,
         "minWidth": 360,
         "minHeight": 620,
         "resizable": true,
@@ -25,8 +26,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'",
-      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://*:1421; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'",
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; media-src 'self' mycarlos-video: http://mycarlos-video.localhost; style-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'",
+      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://*:1421; img-src 'self' data:; media-src 'self' mycarlos-video: http://mycarlos-video.localhost; style-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'",
       "freezePrototype": true
     }
   },
@@ -42,6 +43,9 @@
         "type": "embedBootstrapper",
         "silent": true
       }
+    },
+    "iOS": {
+      "minimumSystemVersion": "14.5"
     },
     "icon": [
       "icons/32x32.png",

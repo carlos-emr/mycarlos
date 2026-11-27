@@ -24,7 +24,7 @@ export type FakePortal = "off" | "none" | "awaiting" | "approved";
 export interface FakeVaultOptions {
   /** The vault has a recovery key; without one, unlocking may offer one. */
   recoveryKey?: boolean;
-  /** Clinic documents in Security; "off" by default, as on a build without it. */
+  /** Connected clinics in Security; "off" by default, as on a build without it. */
   portal?: FakePortal;
   /** A third document, hidden by the patient, so Hidden has something to list. */
   hiddenDocument?: boolean;
@@ -181,8 +181,22 @@ export async function fakeVault(
             // No add or download running when the row opens (#275).
             case "ai_model_add_active":
               return null;
+            // Nothing measured yet (the speed check, #305).
+            case "ai_model_speed":
+              return null;
             case "vault_status":
               return status;
+            // No background mode in these journeys.
+            case "tray_waiting_status":
+              return false;
+            case "background_status":
+              return {
+                supported: false,
+                keepRunning: false,
+                startAtLogin: false,
+                trayReady: false,
+                pausedWhileLocked: false,
+              };
             case "vault_notification_status":
               return {
                 supported: false,
@@ -333,6 +347,27 @@ export async function fakeVault(
                 available: true,
               });
               return { imported: ["scan"], skippedDuplicates: [] };
+            // Video (#359): nothing is waiting to be finished, and no
+            // document starts as an MP4 does.
+            case "vault_backup_size":
+              return {
+                totalBytes: 4096,
+                withoutVideosBytes: 4096,
+                videoBytes: 0,
+                videoCount: 0,
+              };
+            case "vault_left_out_records":
+              return [];
+            case "vault_video_space":
+              return {
+                freeBytes: 50 * 1024 ** 3,
+                level: "ok",
+                canRecord: true,
+              };
+            case "vault_video_pending":
+              return { recordings: [], unreadable: 0 };
+            case "vault_is_video":
+              return false;
             case "vault_touch":
             case "vault_set_auto_lock":
             case "plugin:window|set_theme":
@@ -869,6 +904,33 @@ function stopHere(scope: string): StopResult {
   return { kind: "stop", label, problems };
 }
 
+/** What Chromium says when it is asked for a screenshot it cannot make just yet. */
+const CAPTURE_REFUSED = /Unable to capture screenshot/;
+
+/**
+ * A clip screenshot, asked again (twice at most, after a short real wait) when the browser
+ * answers that it cannot capture one: on a busy machine a page that has only just been set up
+ * sometimes has no frame yet (the 24 Nov run of main dd05036e). Any other error is the test's
+ * real answer and is thrown at once, as is the same refusal after the last try. The wait is
+ * real time, not animation frames, which page.clock fakes.
+ */
+export async function screenshotClip(
+  page: Pick<Page, "screenshot">,
+  clip: { x: number; y: number; width: number; height: number },
+  { tries = 3, waitMs = 200 }: { tries?: number; waitMs?: number } = {},
+): Promise<Buffer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await page.screenshot({ clip, animations: "disabled" });
+    } catch (error) {
+      const refused =
+        error instanceof Error && CAPTURE_REFUSED.test(error.message);
+      if (!refused || attempt >= tries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, waitMs * attempt));
+    }
+  }
+}
+
 /**
  * Whether the focused element shows its focus: the pixels in and around it
  * differ with and without focus. "Around it" takes in a wrapper that fits
@@ -904,13 +966,13 @@ async function focusShown(page: Page): Promise<boolean> {
   };
   if (clip.width <= 0 || clip.height <= 0) return false;
   const pair = async () => {
-    const focused = await page.screenshot({ clip, animations: "disabled" });
+    const focused = await screenshotClip(page, clip);
     await page.evaluate(() => {
       const element = document.activeElement as HTMLElement;
       Reflect.set(window, "__walkBlurred", element);
       element.blur();
     });
-    const plain = await page.screenshot({ clip, animations: "disabled" });
+    const plain = await screenshotClip(page, clip);
     await page.evaluate(() =>
       (Reflect.get(window, "__walkBlurred") as HTMLElement).focus(),
     );

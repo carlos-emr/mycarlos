@@ -150,7 +150,7 @@ export function useModalFocus(
       if (!controls.some((element) => element === current)) {
         event.preventDefault();
         // The focus is on something Tab does not stop at: put there by the
-        // app (a heading, the marked words of Show in document) or the dialog
+        // app (a heading, the marked words of Show me in the document) or the dialog
         // itself. Tab goes on from there in the page's order, as a browser
         // does, wrapping at either end; from outside the dialog it enters at
         // the first control, or the last.
