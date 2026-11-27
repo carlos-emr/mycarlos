@@ -1,4 +1,11 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
@@ -37,6 +44,22 @@ const offStatus: Status = {
   automaticChecksPaused: false,
 };
 let status: Status;
+// The background mode (tray icon, start at sign-in): off and unsupported by default, as on a phone.
+type Background = {
+  supported: boolean;
+  keepRunning: boolean;
+  startAtLogin: boolean;
+  trayReady: boolean;
+  pausedWhileLocked: boolean;
+};
+const noBackground: Background = {
+  supported: false,
+  keepRunning: false,
+  startAtLogin: false,
+  trayReady: false,
+  pausedWhileLocked: false,
+};
+let background: Background;
 
 const link: PortalLinkSummary = {
   id: "fake-link",
@@ -65,10 +88,24 @@ const snapshot = (links: PortalLinkSummary[] | undefined): VaultSnapshot => ({
 
 beforeEach(() => {
   status = { ...offStatus };
+  background = { ...noBackground };
   native.invoke.mockReset();
   native.invoke.mockImplementation(
     async (command: string, args?: { enabled?: boolean }) => {
       if (command === "vault_notification_status") return { ...status };
+      if (command === "background_status") return { ...background };
+      if (command === "background_set_keep_running") {
+        background = {
+          ...background,
+          keepRunning: args?.enabled === true,
+          trayReady: args?.enabled === true,
+        };
+        return { ...background };
+      }
+      if (command === "background_set_start_at_login") {
+        background = { ...background, startAtLogin: args?.enabled === true };
+        return { ...background };
+      }
       if (command === "vault_set_notifications")
         // The notices are an add-on: turning them on or off leaves the automatic check alone.
         status = { ...status, enabled: args?.enabled === true };
@@ -148,6 +185,20 @@ const settingCalls = () =>
   native.invoke.mock.calls.filter(([command]) =>
     String(command).startsWith("vault_set_"),
   );
+const backgroundCalls = () =>
+  native.invoke.mock.calls.filter(([command]) =>
+    String(command).startsWith("background_set_"),
+  );
+const keepRunning = () =>
+  screen.findByRole("checkbox", {
+    name: humanText(
+      "Keep myCarlos running in the background after I close its window",
+    ),
+  });
+const startAtSignIn = () =>
+  screen.findByRole("checkbox", {
+    name: humanText("Start myCarlos when I sign in to this computer"),
+  });
 
 describe("Notices after the first clinic link", () => {
   it("offers the existing Notices setting, unticked, in a dialog that takes the focus", async () => {
@@ -174,6 +225,23 @@ describe("Notices after the first clinic link", () => {
       "You can change these any time in Settings, under Preferences: Checking for documents.",
     );
     expect(settingCalls()).toEqual([]);
+    // This is a phone: native answers "no background mode" (the default here), so the dialog has
+    // no background section, no line about background choices, and sets nothing in the background.
+    // The line is gated by the step itself, not only by the section's own empty render.
+    expect(native.invoke).toHaveBeenCalledWith("background_status", {
+      locale: "en",
+    });
+    const text = visibleText(dialog.textContent ?? "");
+    expect(text).not.toContain("Running in the background");
+    expect(text).not.toContain("background choices");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: humanText(
+          "Keep myCarlos running in the background after I close its window",
+        ),
+      }),
+    ).toBeNull();
+    expect(backgroundCalls()).toEqual([]);
   });
 
   it("each box changes the same setting as Preferences, and Done keeps it", async () => {
@@ -452,5 +520,160 @@ describe("Notices after the first clinic link", () => {
       "vault_notification_status",
       expect.anything(),
     );
+  });
+
+  // A computer with a background mode: the two background choices join the notices (#235).
+  describe("on a computer with a background mode", () => {
+    beforeEach(() => {
+      background = { ...noBackground, supported: true };
+    });
+
+    it("offers keeping myCarlos running and starting at sign-in beside the notices, both unticked", async () => {
+      linkForm([], [link]);
+      await submitLink();
+      const dialog = await screen.findByRole("dialog", {
+        name: humanText("Documents from your clinic"),
+      });
+      expect(await keepRunning()).not.toBeChecked();
+      expect(await startAtSignIn()).not.toBeChecked();
+      expect(
+        screen.getByRole("checkbox", {
+          name: humanText("Show a notice when a document arrives"),
+        }),
+      ).not.toBeChecked();
+      // The background section sits under the dialog's title, as the notices do.
+      const headings = within(dialog)
+        .getAllByRole("heading")
+        .map((heading) => [heading.tagName, heading.textContent]);
+      expect(headings).toEqual([
+        ["H2", "Documents from your clinic"],
+        ["H3", "Checking for documents"],
+        ["H3", "Running in the background"],
+      ]);
+      expect(visibleText(dialog.textContent ?? "")).toContain(
+        "You can change the background choices any time in Settings, under Preferences: Running in the background.",
+      );
+      expect(settingCalls()).toEqual([]);
+      expect(backgroundCalls()).toEqual([]);
+    });
+
+    it("each background box changes the same setting as Preferences, and Done keeps it", async () => {
+      linkForm([], [link]);
+      const user = await submitLink();
+      await user.click(await keepRunning());
+      await waitFor(() => expect(background.keepRunning).toBe(true));
+      await user.click(await startAtSignIn());
+      await waitFor(() =>
+        expect(backgroundCalls()).toEqual([
+          ["background_set_keep_running", { enabled: true }],
+          ["background_set_start_at_login", { enabled: true }],
+        ]),
+      );
+      // A saved choice leaves only Done: Not now would read as undoing it.
+      expect(screen.queryByRole("button", { name: "Not now" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Done" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(background.keepRunning && background.startAtLogin).toBe(true);
+      // The notices were not touched by the background boxes.
+      expect(settingCalls()).toEqual([]);
+    });
+
+    it("Not now closes it and turns nothing on, notices or background", async () => {
+      linkForm([], [link]);
+      const user = await submitLink();
+      await keepRunning();
+      await user.click(screen.getByRole("button", { name: "Not now" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(settingCalls()).toEqual([]);
+      expect(backgroundCalls()).toEqual([]);
+      expect(background.keepRunning || background.startAtLogin).toBe(false);
+    });
+
+    it("offers only the background pair when the notices are already fully on", async () => {
+      status = { ...status, enabled: true, automaticChecksEnabled: true };
+      linkForm([], [link]);
+      await submitLink();
+      await keepRunning();
+      expect(
+        screen.queryByRole("checkbox", {
+          name: humanText("Show a notice when a document arrives"),
+        }),
+      ).toBeNull();
+      const dialog = screen.getByRole("dialog");
+      expect(visibleText(dialog.textContent ?? "")).toContain(
+        "background choices",
+      );
+      expect(visibleText(dialog.textContent ?? "")).not.toContain(
+        "Checking for documents",
+      );
+    });
+
+    it("offers only the notices when both background choices are already on", async () => {
+      background = { ...background, keepRunning: true, startAtLogin: true };
+      linkForm([], [link]);
+      await submitLink();
+      await screen.findByRole("checkbox", {
+        name: humanText("Show a notice when a document arrives"),
+      });
+      expect(
+        screen.queryByRole("checkbox", {
+          name: humanText(
+            "Keep myCarlos running in the background after I close its window",
+          ),
+        }),
+      ).toBeNull();
+    });
+
+    it("is not offered at all when everything it could offer is already on", async () => {
+      status = { ...status, enabled: true, automaticChecksEnabled: true };
+      background = { ...background, keepRunning: true, startAtLogin: true };
+      linkForm([], [link]);
+      await submitLink();
+      await waitFor(() =>
+        expect(native.invoke).toHaveBeenCalledWith("background_status", {
+          locale: "en",
+        }),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("says so, and leaves the box as it was, when native refuses to keep it running", async () => {
+      linkForm([], [link]);
+      const user = await submitLink();
+      native.invoke.mockImplementation(async (command: string) => {
+        if (command === "background_set_keep_running")
+          throw new Error("FAKE: no tray icon");
+        if (command === "background_status") return { ...background };
+        if (command === "vault_notification_status") return { ...status };
+        return { ...status };
+      });
+      await user.click(await keepRunning());
+      expect(
+        await screen.findByText(
+          humanText(
+            "A background icon is not available on this computer. myCarlos closes completely when you close its window.",
+          ),
+        ),
+      ).toBeVisible();
+      expect(await keepRunning()).not.toBeChecked();
+      // Nothing was saved, so Not now is still the honest button.
+      expect(screen.getByRole("button", { name: "Not now" })).toBeVisible();
+    });
+
+    it("offers the background pair on a computer that can show no notice", async () => {
+      status = {
+        ...status,
+        noticesSupported: false,
+        automaticChecksSupported: false,
+      };
+      linkForm([], [link]);
+      await submitLink();
+      expect(await keepRunning()).not.toBeChecked();
+      expect(
+        screen.queryByRole("checkbox", {
+          name: humanText("Show a notice when a document arrives"),
+        }),
+      ).toBeNull();
+    });
   });
 });

@@ -26,6 +26,8 @@ pub mod document_notifications;
 // Its tests need the Linux memfd and /proc, so they run on the Linux host only.
 #[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 mod android_pdf;
+#[cfg(target_os = "android")]
+mod android_trust;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -982,6 +984,10 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`, for the name the save dialog
+    /// suggests. Optional: an older caller that sends none gets the UTC date.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2079,7 +2085,12 @@ fn now_ms() -> u64 {
 /// The name given to a picked document whose Android id holds no file name.
 const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
 
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+/// What a picked file is called before any stand-in is chosen: a desktop path as it is, a file
+/// URL's decoded final segment, and for an Android document the tail of its id
+/// ("primary:Movies/clip.mp4" gives "clip.mp4"; an opaque id such as "msf:31" gives "31").
+/// Only the first colon of a document id separates the root from the path; a later one belongs
+/// to the file name ("primary:Documents/Scan 10:30.pdf").
+fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
     };
@@ -2093,13 +2104,19 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
+    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
+    path.rsplit('/').next().unwrap_or_default().to_owned()
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let name = picked_name_tail(path);
+    if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
+        return name;
+    }
     // The picker offers only PDFs and pictures, so a tail that does not end in
     // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
     // so that an export still suggests a file the platform can open.
-    // A document id is "<root>:<path>". Only the first colon separates them; a
-    // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
-    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
-    let name = path.rsplit('/').next().unwrap_or_default();
+    let name = name.as_str();
     let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
         !stem.is_empty()
             && ["pdf", "jpg", "jpeg", "png"]
@@ -2110,6 +2127,22 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         name.to_owned()
     } else {
         IMPORTED_DOCUMENT_NAME.to_owned()
+    }
+}
+
+/// The name given to a picked video whose Android id holds no file name.
+const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
+
+/// Name recorded for an imported video: the name it came with, or for an Android document id that
+/// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
+/// "Imported document.pdf", which a video must never be named.
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let name = picked_name_tail(path);
+    let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
+    if content && !is_video_name(&name) {
+        IMPORTED_VIDEO_NAME.to_owned()
+    } else {
+        name
     }
 }
 
@@ -4476,6 +4509,32 @@ fn is_plain_date(text: &str) -> bool {
         })
 }
 
+/// The name a single-document export suggests in the save dialog: "Document <date>" plus the
+/// document's own extension, never the document's name, which can be a person's, a clinic's or a
+/// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
+/// so a patient who wants the original name can type it. The date is the patient's own day where
+/// the renderer gives one that reads as a date, else the UTC date. The suffix is kept, with its
+/// own case, only when it is a kind the vault stores (`EXPORT_NAME_KINDS`): any other dotted end
+/// of a name is part of the name ("Dr.Smith", "J.Lopez", "Lab results 14.30"), not a kind, and
+/// would put it back in the file name.
+fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    /// The kinds of document the vault stores, as file name suffixes (case does not matter).
+    const EXPORT_NAME_KINDS: [&str; 5] = ["pdf", "jpg", "jpeg", "png", "mp4"];
+    let date = local_date
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
+    match display_name.rsplit_once('.') {
+        Some((_, extension))
+            if EXPORT_NAME_KINDS
+                .iter()
+                .any(|kind| extension.eq_ignore_ascii_case(kind)) =>
+        {
+            format!("Document {date}.{extension}")
+        }
+        _ => format!("Document {date}"),
+    }
+}
+
 /// What a saved backup was: the name of the file written, where the
 /// platform says it, and how many bytes it holds, which tells a complete
 /// file from an empty or partial one.
@@ -5682,12 +5741,14 @@ async fn vault_import_pick(
     let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
     let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        // PDF documents stay first (what the dialog shows by default); the others are one choice
-        // away. JPEG and PNG pictures only: HEIC is not accepted.
+        // The combined filter is first because the first filter is what the dialog shows by default
+        // (on Windows it is the one selected, and pictures stayed hidden behind a PDF-only list until
+        // the patient switched it by hand); PDF documents and pictures alone are one choice away,
+        // PDF first. JPEG and PNG pictures only: HEIC is not accepted.
         file_dialog(&app)
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .add_filter(&pdf_filter, &["pdf"])
             .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
-            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -5728,6 +5789,107 @@ async fn vault_import_picked(
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
     })
     .await
+}
+
+/// What "+ New" picked: documents and pictures (added by `vault_import_picked`), one video (added
+/// by `vault_import_video_picked`), or a choice no import takes. A refusal is an answer, not an
+/// error, and nothing is kept for it: the page says why in a fixed sentence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum AnyPick {
+    Documents {
+        pick_id: Uuid,
+    },
+    Video {
+        pick_id: Uuid,
+    },
+    /// A video is added on its own, with its own progress and Cancel: it was chosen with other
+    /// files, or with another video.
+    VideoAlone,
+}
+
+/// Whether a picked file's name says it is a video (the import checks the bytes, as ever).
+fn is_video_name(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        ["mp4", "m4v", "mov"]
+            .iter()
+            .any(|video| extension.eq_ignore_ascii_case(video))
+    })
+}
+
+/// How a pick is routed: no video is documents and pictures; exactly one file that is a video is
+/// that video; a video among others, or two videos, is refused (`None`).
+fn route_pick(names: &[String]) -> Option<bool> {
+    let videos = names.iter().filter(|name| is_video_name(name)).count();
+    match (videos, names.len()) {
+        (0, _) => Some(false),
+        (1, 1) => Some(true),
+        _ => None,
+    }
+}
+
+/// Opens the one picker "+ New" uses: PDF documents, pictures and videos (one combined choice
+/// first, then each kind alone). Returns what was picked, or `None` when it was cancelled.
+#[tauri::command]
+async fn vault_import_any_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<AnyPick>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let all_filter = locale.text(MessageId::NativeFilterPdfPicturesAndVideos)?;
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
+        // PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(
+                &all_filter,
+                &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"],
+            )
+            .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&video_filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(paths) = picked else {
+        return Ok(None);
+    };
+    vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
+    // The name the provider gave, not the display name: an Android document id that does not end in
+    // a known extension is shown as "Imported document.pdf", which would send a video down the
+    // document path.
+    let names: Vec<String> = paths.iter().map(picked_name_tail).collect();
+    Ok(Some(match route_pick(&names) {
+        None => AnyPick::VideoAlone,
+        Some(video) => {
+            let pick_id = picks.store_import(session, request, paths);
+            if video {
+                AnyPick::Video { pick_id }
+            } else {
+                AnyPick::Documents { pick_id }
+            }
+        }
+    }))
 }
 
 /// Opens the picker for one video. Returns the id of the chosen file, or `None` when the picker
@@ -5789,7 +5951,7 @@ async fn vault_import_video_picked(
     let job = picks.start_video_import()?;
     let running = Arc::clone(&job);
     let result = run_blocking(store.arc(), move |store| {
-        let name = import_display_name(&path);
+        let name = video_import_display_name(&path);
         let idle = Arc::clone(store.idle());
         // Opening a source can block (a network path, or a provider that fetches the file first).
         let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
@@ -7114,8 +7276,8 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
     received.receive(urls.len(), sources);
 }
 
-/// Opens the save picker with the record's name. Returns the id of the chosen
-/// destination, or `None` when the picker was cancelled. The copy itself is
+/// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
+/// id of the chosen destination, or `None` when the picker was cancelled. The copy itself is
 /// written by `vault_export_picked`.
 #[tauri::command]
 async fn vault_export_pick(
@@ -7126,9 +7288,15 @@ async fn vault_export_pick(
 ) -> CommandResult<Option<Uuid>> {
     let store = store.pin();
     let record_id = request.record_id;
+    let local_date = request.local_date;
     let session = picks.session();
-    let suggested_name =
-        run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
+    // `export_name` still refuses a lost or hidden record before a picker opens; only its answer
+    // (the document's own name) is not what the dialog is given.
+    let suggested_name = export_suggested_name(
+        &run_blocking(store.arc(), move |store| store.export_name(record_id)).await?,
+        local_date.as_deref(),
+        now_ms(),
+    );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         file_dialog(&app)
@@ -8101,6 +8269,8 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_trust::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -8379,6 +8549,7 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            vault_import_any_pick,
             vault_import_video_pick,
             vault_import_video_picked,
             vault_video_import_progress,
@@ -8465,6 +8636,63 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_name_is_a_video_by_its_extension_in_any_case() {
+        for name in ["a.mp4", "A.MP4", "clip.M4V", "x.y.mov", "Scan 10:30.MoV"] {
+            assert!(is_video_name(name), "{name}");
+        }
+        for name in [
+            "a.pdf",
+            "mp4",
+            ".mp4x",
+            "a.mp4.pdf",
+            "movie",
+            "a.jpeg",
+            "",
+            "a.",
+        ] {
+            // ".mp4x" and "mp4" are not videos; "a.mp4.pdf" ends in pdf
+            assert!(!is_video_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pick_goes_to_documents_to_one_video_or_is_refused() {
+        // No video: documents and pictures, as before.
+        assert_eq!(
+            route_pick(&names(&["a.pdf", "b.png", "c.jpg"])),
+            Some(false)
+        );
+        assert_eq!(route_pick(&names(&[])), Some(false));
+        // Exactly one file, and it is a video.
+        assert_eq!(route_pick(&names(&["Clip.MP4"])), Some(true));
+        // A video among others, or two videos, is one the video import does not take.
+        assert_eq!(route_pick(&names(&["a.pdf", "b.mp4"])), None);
+        assert_eq!(route_pick(&names(&["b.mov", "a.png"])), None);
+        assert_eq!(route_pick(&names(&["a.mp4", "b.m4v"])), None);
+    }
+
+    #[test]
+    fn a_pick_answer_names_its_kind_and_carries_no_path() {
+        let pick_id = Uuid::nil();
+        let documents = serde_json::to_value(AnyPick::Documents { pick_id }).unwrap();
+        assert_eq!(
+            documents,
+            serde_json::json!({"kind": "documents", "pickId": pick_id})
+        );
+        let video = serde_json::to_value(AnyPick::Video { pick_id }).unwrap();
+        assert_eq!(
+            video,
+            serde_json::json!({"kind": "video", "pickId": pick_id})
+        );
+        let refused = serde_json::to_value(AnyPick::VideoAlone).unwrap();
+        assert_eq!(refused, serde_json::json!({"kind": "videoAlone"}));
+    }
 
     #[test]
     fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
@@ -8880,6 +9108,71 @@ mod tests {
         ] {
             assert!(!is_plain_date(text), "{text}");
         }
+    }
+
+    #[test]
+    fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+                                     // The document's name never reaches the dialog, whoever it names.
+        for (own, expected) in [
+            ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
+            ("Photo.jpg", "Document 2026-11-26.jpg"),
+            ("Holiday.JPEG", "Document 2026-11-26.JPEG"),
+            ("scan.final.png", "Document 2026-11-26.png"),
+            (".jpg", "Document 2026-11-26.jpg"),
+            ("no extension at all", "Document 2026-11-26"),
+            ("ends with a dot.", "Document 2026-11-26"),
+            ("odd.é", "Document 2026-11-26"),
+            ("long.extensions9", "Document 2026-11-26"),
+            ("slash.p/f", "Document 2026-11-26"),
+            ("clip.MP4", "Document 2026-11-26.MP4"),
+            ("Letter.Pdf", "Document 2026-11-26.Pdf"),
+            // A dotted end that is part of a name is not a kind of file: nothing of it is kept.
+            ("dots.p.d.f", "Document 2026-11-26"),
+            ("Dr.Smith", "Document 2026-11-26"),
+            ("J.Lopez", "Document 2026-11-26"),
+            ("Lab results 14.30", "Document 2026-11-26"),
+            ("Dr.Smith referral.pdf", "Document 2026-11-26.pdf"),
+        ] {
+            let name = export_suggested_name(own, Some("2026-11-26"), utc);
+            assert_eq!(name, expected, "{own}");
+            assert!(!name.to_lowercase().contains("ana"), "{own}");
+            assert!(!name.contains("Smith") && !name.contains("Lopez"), "{own}");
+        }
+    }
+
+    #[test]
+    fn a_single_document_export_names_the_patients_own_day_or_else_the_utc_day() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        assert_eq!(
+            export_suggested_name("a.pdf", Some("2026-09-27"), utc),
+            "Document 2026-09-27.pdf"
+        );
+        // A date that does not read as a date is never put in a file name.
+        for text in ["../2026-09-27", "2026-9-27", "2026-09-27\\x", ""] {
+            assert_eq!(
+                export_suggested_name("a.pdf", Some(text), utc),
+                "Document 2026-09-28.pdf",
+                "{text}"
+            );
+        }
+        assert_eq!(
+            export_suggested_name("a.pdf", None, utc),
+            "Document 2026-09-28.pdf"
+        );
+    }
+
+    #[test]
+    fn an_export_request_without_a_date_still_reads() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let without: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
+        assert!(without.local_date.is_none());
+        let with: ExportRequest = serde_json::from_str(&format!(
+            r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#
+        ))
+        .unwrap();
+        assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
     }
 
     #[test]
@@ -10222,7 +10515,7 @@ mod tests {
     ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
     ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
     ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
-    ///   - `file_dialog(&` is called at exactly the ten sites there are today (an eleventh must be added
+    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
     ///     here on purpose, and a lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
@@ -10284,8 +10577,8 @@ mod tests {
         assert_eq!(file_calls, 1, "only the helper builds a file dialog");
         assert_eq!(builders, 0, "a file dialog builder is made directly");
         assert_eq!(
-            sites, 10,
-            "the ten file dialog sites go through file_dialog"
+            sites, 11,
+            "the eleven file dialog sites go through file_dialog"
         );
         // The helper keeps its owner.
         let source = include_str!("lib.rs");
@@ -11589,6 +11882,60 @@ mod tests {
                 "/home/jamie/FAKE.pdf".into()
             )),
             "/home/jamie/FAKE.pdf"
+        );
+    }
+
+    #[test]
+    fn a_picked_video_is_recognised_from_the_name_the_provider_gave_not_the_display_name() {
+        let tail =
+            |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
+        // An Android document id that ends in a video extension is a video, though the document
+        // import would call it "Imported document.pdf".
+        let clip =
+            "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
+        assert_eq!(tail(clip), "clip.mp4");
+        assert_eq!(
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap())),
+            "Imported document.pdf"
+        );
+        assert!(is_video_name(&tail(clip)));
+        // A video among documents is therefore refused, not sent down the document path.
+        let pdf = "content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf";
+        assert_eq!(route_pick(&[tail(clip), tail(pdf)]), None);
+        assert_eq!(route_pick(&[tail(clip)]), Some(true));
+        // An opaque id says nothing: it is not a video, so it stays on the document path as before.
+        let opaque = "content://com.android.providers.downloads.documents/document/msf%3A31";
+        assert_eq!(tail(opaque), "31");
+        assert_eq!(route_pick(&[tail(opaque)]), Some(false));
+        // Desktop paths and file URLs are their own names.
+        assert!(is_video_name(&picked_name_tail(
+            &tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into())
+        )));
+        assert!(is_video_name(&tail(
+            "file:///private/var/mobile/Inbox/My%20Clip.m4v"
+        )));
+    }
+
+    #[test]
+    fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
+        let named = |value: &str| {
+            video_import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+        };
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
+            "clip.mp4"
+        );
+        assert_eq!(
+            named("content://com.android.providers.downloads.documents/document/msf%3A31"),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/My%20Clip.mov"),
+            "My Clip.mov"
+        );
+        assert_eq!(
+            video_import_display_name(&tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into())),
+            "/home/x/clip.mp4"
         );
     }
 
