@@ -11549,28 +11549,23 @@ describe("durable vault UI", () => {
       await screen.findByRole("button", { name: humanText("Security") }),
     );
 
-    await user.type(
-      screen.getByLabelText(humanText("Current passphrase")),
-      "river-azimuth-cobalt-sparrow-934",
-    );
-    await user.type(
-      screen.getByLabelText(humanText("New passphrase")),
-      "lantern-orbit-willow-cascade-572",
-    );
-    await user.type(
-      screen.getByLabelText(humanText("Confirm new passphrase")),
-      "different replacement",
-    );
+    // Pasted, not typed key by key: what the test is about is the two replacements matching, and a
+    // typed 32-character passphrase is a re-render of the whole app per key, about 120 of them here,
+    // which took longer than the 15 s ceiling on a loaded machine.
+    const fill = async (label: string, value: string) => {
+      await user.click(screen.getByLabelText(humanText(label)));
+      await user.paste(value);
+    };
+    await fill("Current passphrase", "river-azimuth-cobalt-sparrow-934");
+    await fill("New passphrase", "lantern-orbit-willow-cascade-572");
+    await fill("Confirm new passphrase", "different replacement");
     expect(
       screen.getByRole("button", { name: humanText("Change passphrase") }),
     ).toBeDisabled();
     await user.clear(
       screen.getByLabelText(humanText("Confirm new passphrase")),
     );
-    await user.type(
-      screen.getByLabelText(humanText("Confirm new passphrase")),
-      "lantern-orbit-willow-cascade-572",
-    );
+    await user.paste("lantern-orbit-willow-cascade-572");
     await user.click(
       screen.getByRole("button", { name: humanText("Change passphrase") }),
     );
