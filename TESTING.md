@@ -927,6 +927,40 @@ its own tests are `npm run test:android-portal-fixture`. It uses throwaway test 
 added to a trust store. The emulator test that drives the app against it is a proposed workflow
 change (not applied; see `for-ben/android-portal-trust-emulator-README-20261126.md`).
 
+## Linking a clinic on Android (portal connection, piece 3)
+
+myCarlos on Android can now link a clinic's portal. It uses the same HTTPS client as the computer
+builds, with Android's own certificate trust (the system's trust manager through the platform
+verifier), so a certificate the phone does not trust is refused, and a release build trusts the
+system's authorities only.
+
+1. On an Android phone or the emulator, open **Security**, under **Connected clinics**. Enter a FAKE
+   test portal's address and link code and choose **Connect and request approval**. The device is
+   linked and its approval status is shown there. (Before this piece Android showed "Portal linking
+   is not available on this device yet.")
+2. **Which certificates are trusted.** *Requires #478 (merged before this piece).* Without #478,
+   Android's own default for an app that targets API 24 or later (this one does: its target SDK
+   is 36, pinned by #423, and its minimum is 24) already ignores certificate authorities a person installed in the phone's settings; what only
+   #478 adds is the written configuration, the gate that refuses a release build that weakens it,
+   and the debug FAKE test root. A **release** build trusts only the phone's system
+   certificate store, and no certificate authority a person installed in the phone's own settings
+   (the network security configuration of #478 refuses user-installed authorities, and the release
+   safety gate refuses a build that allows them). A **debug** build trusts the system store plus
+   one extra authority, the bundled FAKE test root (`src/debug/res/raw`, #478's `debug-overrides`,
+   which exists only in the debug source set), and still no user-installed one. So with a test
+   portal whose certificate comes from a user-installed or any other unknown authority, linking
+   fails on both builds, and only the FAKE test portal works in a debug build. The patient sees
+   the sentence **"The portal request could not be completed. Check your connection and device
+   clock, then try again."** (`LinkError::Network`, code `portal_link_incomplete`, message
+   `portal.errorIncomplete`), the same sentence as on a computer, and nothing is saved.
+3. With the phone offline, the same sentence appears and the attempt can be tried again. Nothing
+   retries by itself: Android has no background checker, a check runs when the patient asks (or
+   once after unlocking when a notice is owed), and one check stops after three download failures
+   in a row.
+4. If the app was just started, the Connected clinics section can be missing for a moment: linking
+   is offered only once the platform certificate check has been set up, and not at all if that
+   failed (the old "not available on this device yet" message), never as a choice that then fails.
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS

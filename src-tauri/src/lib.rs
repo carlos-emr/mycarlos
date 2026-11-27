@@ -26,6 +26,8 @@ pub mod document_notifications;
 // Its tests need the Linux memfd and /proc, so they run on the Linux host only.
 #[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 mod android_pdf;
+#[cfg(target_os = "android")]
+mod android_trust;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -8220,6 +8222,8 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_trust::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
