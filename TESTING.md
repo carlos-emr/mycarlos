@@ -292,7 +292,7 @@ On every platform:
    they give the time it was saved instead). Replace the key once more with "I just want a new
    key": the app says to keep the old kit safe, and says nothing about deleting backups. The vault
    does not lock by itself while that dialog is open.
-4. Press **New** and select all five sample PDFs together (on Windows or macOS, select them all in
+4. Press **Add document**, choose **Import a file**, and select all five sample PDFs together (on Windows or macOS, select them all in
    the folder; on Android, press and hold the first file, then tap the others; on iOS, tap
    **Select**). The app should say `4 file(s) encrypted and imported. 1 duplicate(s) skipped.`:
    the two Bloodwork files are identical.
@@ -323,9 +323,14 @@ On every platform:
 10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
-    it is locked when you come back.
-12. On a computer with a camera (Windows, macOS or Linux), choose **Take a photo** next to
-    **New**. The first time, the window explains why myCarlos uses the camera; choose **Use the
+    it is locked when you come back. On the unlock, set-up and restore screens, press **Show
+    passphrase** (or **Show recovery key**) first: the text must be back to dots when you return,
+    and what you typed must still be there. On a computer the text also goes back to dots whenever
+    the window loses the focus: copying a shown key to or from a password manager, or a native
+    dialog over the app, hides it again. That is by design (a phone takes the app switcher's
+    picture before the page is reported hidden); press **Show** again to see it.
+12. On a computer with a camera (Windows, macOS or Linux), choose **Add document**, then **Take a photo**.
+    The first time, the window explains why myCarlos uses the camera; choose **Use the
     camera**. On a Mac, macOS then asks whether myCarlos may use the camera, with the same reason;
     Windows and Linux ask nothing more. The camera's light comes on. Point it at a FAKE document,
     choose **Take photo**: the light goes off and the photo shows. Try **Retake**, then **Use
@@ -338,7 +343,8 @@ On every platform:
     light goes off when you choose **Cancel**, press Escape, minimize the window while the camera
     is on, or let the vault lock.
     **On a phone** (Android, or a real iPhone: the iOS Simulator has no camera), **Take a photo**
-    is next to **New** too. The first time, the window says the phone asks once; choose **Use the
+    is in the **Add document** menu too (beside the heading, because a phone's width hides the
+    sidebar). The first time, the window says the phone asks once; choose **Use the
     camera**, and the phone asks whether myCarlos may use the camera (an iPhone with the reason
     "myCarlos uses the camera to save photos of your health documents…"). Allow it. The vault
     stays unlocked while the phone asks, the back camera's view shows, and the steps above work
@@ -445,7 +451,8 @@ unchanged default PDF handling and Windows 11 Share remain separate acceptance w
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 
-- Press **New**, then press Home while the picker is open, and return: the vault should be locked.
+- Press **Add document**, choose **Import a file**, then press Home while the picker is open, and
+  return: the vault should be locked.
 - With the lock delay at 1 minute, browse in the picker for more than a minute, then choose a
   file: it should still import.
 - Import a PDF from Downloads or Google Drive and note the name it is given.

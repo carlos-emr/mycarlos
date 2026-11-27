@@ -156,6 +156,7 @@
   "interface.VaultLibrary.listView",
   "interface.VaultLibrary.moveAFolderWithTheKeyboard",
   "interface.VaultLibrary.moveFolder",
+  "interface.VaultLibrary.moveFolderItem",
   "interface.VaultLibrary.moveSelectedTo",
   "interface.VaultLibrary.moveTheSelectedDocuments",
   "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou",

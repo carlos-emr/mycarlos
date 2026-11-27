@@ -157,6 +157,7 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.listView",
   "interface.VaultLibrary.moveAFolderWithTheKeyboard",
   "interface.VaultLibrary.moveFolder",
+  "interface.VaultLibrary.moveFolderItem",
   "interface.VaultLibrary.moveSelectedTo",
   "interface.VaultLibrary.moveTheSelectedDocuments",
   "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou",
@@ -1661,6 +1662,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.moveAFolderWithTheKeyboard":
     "interface-VaultLibrary-moveAFolderWithTheKeyboard",
   "interface.VaultLibrary.moveFolder": "interface-VaultLibrary-moveFolder",
+  "interface.VaultLibrary.moveFolderItem":
+    "interface-VaultLibrary-moveFolderItem",
   "interface.VaultLibrary.moveSelectedTo":
     "interface-VaultLibrary-moveSelectedTo",
   "interface.VaultLibrary.moveTheSelectedDocuments":
@@ -3333,6 +3336,7 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.listView": undefined;
   "interface.VaultLibrary.moveAFolderWithTheKeyboard": undefined;
   "interface.VaultLibrary.moveFolder": undefined;
+  "interface.VaultLibrary.moveFolderItem": undefined;
   "interface.VaultLibrary.moveSelectedTo": undefined;
   "interface.VaultLibrary.moveTheSelectedDocuments": undefined;
   "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou": undefined;

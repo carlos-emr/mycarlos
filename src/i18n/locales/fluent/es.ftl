@@ -559,6 +559,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Mover una carpeta con el tec
 
 interface-VaultLibrary-moveFolder = Mover carpeta
 
+interface-VaultLibrary-moveFolderItem = Mover carpeta…
+
 interface-VaultLibrary-moveSelectedTo = Mover seleccionados a
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Muévalos a sus carpetas cuando quiera.

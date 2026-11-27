@@ -8,6 +8,7 @@ import {
   MessageKey,
 } from "../i18n";
 import { SecretInput } from "./SecretInput";
+import { useHideWhenAway } from "./useHideWhenAway";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -66,6 +67,9 @@ export function RestoreBackup({
   const working = useRef(false);
   // A pending inspection loses ownership when its credential or visibility changes.
   const inspectionRef = useRef<symbol | null>(null);
+  // The secret shown as text goes back to dots as soon as the app may leave the screen, before
+  // an app switcher's picture is taken (which is before the page is reported hidden).
+  useHideWhenAway(() => setShown(false));
   // Nothing locks this screen, so a secret typed here is cleared when the app
   // is hidden.
   useEffect(() => {

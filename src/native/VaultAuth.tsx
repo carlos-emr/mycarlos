@@ -7,6 +7,7 @@ import {
 } from "./PersonDetails";
 import { useI18n, MessageKey } from "../i18n";
 import { SecretInput } from "./SecretInput";
+import { useHideWhenAway } from "./useHideWhenAway";
 import {
   useEffect,
   useRef,
@@ -203,16 +204,10 @@ export function CreateVault({
   const [shown, setShown] = useState(false);
   const [confirmationShown, setConfirmationShown] = useState(false);
   // Shown text must not wait on screen, or in an app switcher's picture.
-  useEffect(() => {
-    const hideWhenHidden = () => {
-      if (document.visibilityState !== "hidden") return;
-      setShown(false);
-      setConfirmationShown(false);
-    };
-    document.addEventListener("visibilitychange", hideWhenHidden);
-    return () =>
-      document.removeEventListener("visibilitychange", hideWhenHidden);
-  }, []);
+  useHideWhenAway(() => {
+    setShown(false);
+    setConfirmationShown(false);
+  });
   const { rules, forget } = useNewPassphraseRules(
     checkRules,
     passphrase,
@@ -402,14 +397,7 @@ export function UnlockVault({
   // it is sent.
   const [showPassphrase, setShowPassphrase] = useState(false);
   // Shown text must not wait on screen, or in an app switcher's picture.
-  useEffect(() => {
-    const hideWhenHidden = () => {
-      if (document.visibilityState === "hidden") setShowPassphrase(false);
-    };
-    document.addEventListener("visibilitychange", hideWhenHidden);
-    return () =>
-      document.removeEventListener("visibilitychange", hideWhenHidden);
-  }, []);
+  useHideWhenAway(() => setShowPassphrase(false));
   const unlockNotice = source === "unlock" ? notice : "";
   // No vault passphrase can be longer, so say so instead of sending it to a
   // native refusal that can only report invalid input.
@@ -547,6 +535,9 @@ function RecoverWithKey({
   const [shown, setShown] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  // The key shown as text goes back to dots as soon as the app may leave the screen (before an
+  // app switcher's picture is taken, which is before the page is reported hidden).
+  useHideWhenAway(() => setShown(false));
   // Nothing locks this screen, so what was typed here is cleared when the app
   // is hidden: it must not wait on screen, or in an app switcher's picture.
   useEffect(() => {

@@ -559,6 +559,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Mover uma pasta com o teclad
 
 interface-VaultLibrary-moveFolder = Mover pasta
 
+interface-VaultLibrary-moveFolderItem = Mover pasta…
+
 interface-VaultLibrary-moveSelectedTo = Mover selecionados para
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Mova-os para suas pastas quando quiser.

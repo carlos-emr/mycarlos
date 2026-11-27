@@ -576,6 +576,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Przenieś folder za pomocą 
 
 interface-VaultLibrary-moveFolder = Przenieś folder
 
+interface-VaultLibrary-moveFolderItem = Przenieś folder…
+
 interface-VaultLibrary-moveSelectedTo = Przenieś wybrane do
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Można je przenieść do swoich folderów w dowolnym momencie.

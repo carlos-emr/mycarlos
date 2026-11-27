@@ -636,6 +636,7 @@ pub enum MessageId {
     InterfaceVaultLibraryMoreFor,
     InterfaceVaultLibraryMoveAFolderWithTheKeyboard,
     InterfaceVaultLibraryMoveFolder,
+    InterfaceVaultLibraryMoveFolderItem,
     InterfaceVaultLibraryMoveSelectedTo,
     InterfaceVaultLibraryMoveTheSelectedDocuments,
     InterfaceVaultLibraryMoveThemIntoYourFoldersWheneverYou,
@@ -2078,6 +2079,7 @@ impl MessageId {
         Self::InterfaceVaultLibraryMoreFor,
         Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard,
         Self::InterfaceVaultLibraryMoveFolder,
+        Self::InterfaceVaultLibraryMoveFolderItem,
         Self::InterfaceVaultLibraryMoveSelectedTo,
         Self::InterfaceVaultLibraryMoveTheSelectedDocuments,
         Self::InterfaceVaultLibraryMoveThemIntoYourFoldersWheneverYou,
@@ -3794,6 +3796,7 @@ impl MessageId {
                 "interface-VaultLibrary-moveAFolderWithTheKeyboard"
             }
             Self::InterfaceVaultLibraryMoveFolder => "interface-VaultLibrary-moveFolder",
+            Self::InterfaceVaultLibraryMoveFolderItem => "interface-VaultLibrary-moveFolderItem",
             Self::InterfaceVaultLibraryMoveSelectedTo => "interface-VaultLibrary-moveSelectedTo",
             Self::InterfaceVaultLibraryMoveTheSelectedDocuments => {
                 "interface-VaultLibrary-moveTheSelectedDocuments"
@@ -4995,6 +4998,9 @@ impl MessageId {
                 Some(Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard)
             }
             "interface.VaultLibrary.moveFolder" => Some(Self::InterfaceVaultLibraryMoveFolder),
+            "interface.VaultLibrary.moveFolderItem" => {
+                Some(Self::InterfaceVaultLibraryMoveFolderItem)
+            }
             "interface.VaultLibrary.moveSelectedTo" => {
                 Some(Self::InterfaceVaultLibraryMoveSelectedTo)
             }

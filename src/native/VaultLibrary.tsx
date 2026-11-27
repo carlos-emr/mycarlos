@@ -494,6 +494,15 @@ export function VaultLibrary({
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
   const [folderDestinationId, setFolderDestinationId] = useState("");
+  // "Move folder…" in the head's menu opens the help panel's keyboard move with this folder
+  // chosen, then puts the focus on its destination (the next decision).
+  const [focusFolderMove, setFocusFolderMove] = useState(false);
+  const folderDestinationRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (!focusFolderMove || !showHelp) return;
+    folderDestinationRef.current?.focus();
+    setFocusFolderMove(false);
+  }, [focusFolderMove, showHelp]);
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
@@ -2103,6 +2112,29 @@ export function VaultLibrary({
     : profile
       ? personFolderName(profile, people)
       : translateNow("sidebar.myRecords");
+  // An import of a video ends: its Cancel button, which held the focus, leaves the page, and the
+  // focus would drop to the page (WCAG 2.4.3). Give it to the visible Add document button (the
+  // sidebar's, or the one beside the heading on a phone), unless the person has already moved on.
+  const addingVideo = Boolean(addVideo?.working);
+  const wasAddingVideo = useRef(false);
+  useEffect(() => {
+    const ended = wasAddingVideo.current && !addingVideo;
+    wasAddingVideo.current = addingVideo;
+    if (!ended) return;
+    const active = document.activeElement;
+    const lost =
+      !active ||
+      active === document.body ||
+      Boolean(active.closest(".add-video-status"));
+    if (!lost) return;
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        ".menu-button-primary > .menu-button-trigger",
+      ),
+    )
+      .find((button) => !button.disabled && button.getClientRects().length > 0)
+      ?.focus();
+  }, [addingVideo]);
   // The Add document menu (sidebar): what can be put in here. It is always on the screen, so from
   // any other section a choice first shows the open person's top level, where the result lands.
   const addHere = (action: () => void) => () => {
@@ -2193,6 +2225,20 @@ export function VaultLibrary({
       label: translateNow("rename.title.folder"),
       disabled: busy || readOnly,
       onChoose: () => renameFolder(currentFolder),
+    });
+  // The labelled way into the keyboard folder move (WCAG 2.5.7's alternative to dragging a
+  // folder): it opens the same controls as the Help panel, with this folder already chosen.
+  if (!inShared && currentFolder)
+    headItems.push({
+      id: "moveFolder",
+      label: translateNow("interface.VaultLibrary.moveFolderItem"),
+      disabled: busy || readOnly,
+      onChoose: () => {
+        setFolderToMoveId(currentFolder.id);
+        setFolderDestinationId("");
+        setShowHelp(true);
+        setFocusFolderMove(true);
+      },
     });
   if (!inShared && !currentFolder && profile) {
     headItems.push({
@@ -2292,6 +2338,7 @@ export function VaultLibrary({
             <label>
               {translateNow("interface.VaultLibrary.destination")}
               <select
+                ref={folderDestinationRef}
                 value={folderDestinationId}
                 onChange={(event) => setFolderDestinationId(event.target.value)}
               >

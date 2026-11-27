@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
-import { AddDocumentMenu, type AddMenuItem } from "./AddDocumentMenu";
+import {
+  AddDocumentMenu,
+  MenuButton,
+  type AddMenuItem,
+} from "./AddDocumentMenu";
 import { setLocaleOverride } from "../i18n";
 import { humanText } from "../test/humanText";
 
@@ -151,5 +155,165 @@ describe("AddDocumentMenu", () => {
     fireEvent.click(trigger());
     fireEvent.click(menuItem("Record a video"));
     expect(list[2].onChoose).not.toHaveBeenCalled();
+  });
+
+  it("says Working… and cannot be opened while something is running", () => {
+    render(<AddDocumentMenu items={items()} working />);
+    const busy = screen.getByRole("button", { name: humanText("Working…") });
+    expect(busy).toBeDisabled();
+    fireEvent.click(busy);
+    expect(screen.queryByRole("menu")).toBeNull();
+    // Not "Add document" any more: the words it shows are the words it is named by.
+    expect(
+      screen.queryByRole("button", { name: humanText("Add document") }),
+    ).toBeNull();
+  });
+});
+
+// The one menu button of the decluttered screens, in the shapes the screens use it in. Edge cases
+// of the keyboard and of what the button is named by; FAKE labels only.
+describe("MenuButton", () => {
+  const choices = (): AddMenuItem[] => [
+    { id: "newest", label: "Newest first", checked: true, onChoose: vi.fn() },
+    { id: "name", label: "Name A–Z", checked: false, onChoose: vi.fn() },
+  ];
+
+  it("is named by its label when it shows no words, by its words when it shows them, and by buttonName when given", () => {
+    // Nothing shown: the label is the name.
+    const { rerender } = render(
+      <MenuButton label="More for FAKE Sam" items={choices()} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "More for FAKE Sam" }),
+    ).toBeVisible();
+    // A picture only (the icon variant): still the label, not the picture.
+    rerender(
+      <MenuButton label="More for FAKE Sam" items={choices()} variant="icon">
+        <span aria-hidden="true">…</span>
+      </MenuButton>,
+    );
+    expect(
+      screen.getByRole("button", { name: "More for FAKE Sam" }),
+    ).toBeVisible();
+    // Words shown: they name the button.
+    rerender(
+      <MenuButton label="Sort by" items={choices()}>
+        Sort by: Newest first
+      </MenuButton>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Sort by: Newest first" }),
+    ).toBeVisible();
+    // buttonName wins.
+    rerender(
+      <MenuButton
+        label="Sort by"
+        buttonName="Sort by: Name A–Z"
+        items={choices()}
+      >
+        Sort by: Name A–Z
+      </MenuButton>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Sort by: Name A–Z" }),
+    ).toBeVisible();
+  });
+
+  it("opens with the first USABLE item focused when the first one is disabled", () => {
+    const list = choices();
+    list[0].disabled = true;
+    render(
+      <MenuButton label="Sort by" items={list}>
+        Sort
+      </MenuButton>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
+    expect(
+      screen.getByRole("menuitemradio", { name: /Name A–Z/ }),
+    ).toHaveFocus();
+  });
+
+  it("opens with nothing to focus when no item can be used: the keys then move nothing, and Escape still closes it", () => {
+    const none = choices().map((item) => ({ ...item, disabled: true }));
+    render(
+      <MenuButton label="Sort by" items={none}>
+        Sort
+      </MenuButton>,
+    );
+    const button = screen.getByRole("button", { name: "Sort" });
+    fireEvent.click(button);
+    const menu = screen.getByRole("menu");
+    expect(menu.contains(document.activeElement)).toBe(false);
+    for (const key of ["ArrowDown", "ArrowUp", "Home", "End"]) {
+      fireEvent.keyDown(menu, { key });
+      expect(menu.contains(document.activeElement), key).toBe(false);
+    }
+    expect(screen.getByRole("menu")).toBeVisible();
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(button).toHaveFocus();
+  });
+
+  it("leaves an open menu as it is when Down is pressed on its button (it opens a closed one only)", () => {
+    render(
+      <MenuButton label="Sort by" items={choices()}>
+        Sort
+      </MenuButton>,
+    );
+    const button = screen.getByRole("button", { name: "Sort" });
+    fireEvent.click(button);
+    button.focus();
+    // `fireEvent` returns false when the handler called preventDefault: it did not.
+    expect(fireEvent.keyDown(button, { key: "ArrowDown" })).toBe(true);
+    expect(screen.getByRole("menu")).toBeVisible();
+    // A closed one is opened by the same key, and the key is taken.
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(fireEvent.keyDown(button, { key: "ArrowDown" })).toBe(false);
+    expect(screen.getByRole("menu")).toBeVisible();
+  });
+
+  it("marks the current choice by a tick, offers the choices as radios, and chooses one without touching the other", () => {
+    const list = choices();
+    render(
+      <MenuButton label="Sort by" items={list}>
+        Sort
+      </MenuButton>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
+    const [newest, byName] = screen.getAllByRole("menuitemradio");
+    expect(newest).toHaveAttribute("aria-checked", "true");
+    expect(byName).toHaveAttribute("aria-checked", "false");
+    expect(newest.textContent).toContain("✓");
+    expect(byName.textContent).not.toContain("✓");
+    // The tick is decoration: said by aria-checked, not read as text.
+    expect(newest.querySelector(".menu-button-tick")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    fireEvent.click(byName);
+    expect(list[1].onChoose).toHaveBeenCalledTimes(1);
+    expect(list[0].onChoose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("draws the variant and the side it was asked for, and opens again at the first item after it was closed", () => {
+    const { container } = render(
+      <MenuButton
+        label="More for FAKE Sam"
+        items={choices()}
+        variant="icon"
+        align="end"
+      />,
+    );
+    expect(container.querySelector(".menu-button-icon")).not.toBeNull();
+    const button = screen.getByRole("button", { name: "More for FAKE Sam" });
+    fireEvent.click(button);
+    expect(container.querySelector(".menu-button-list-end")).not.toBeNull();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "End" });
+    expect(screen.getAllByRole("menuitemradio")[1]).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.click(button);
+    expect(screen.getAllByRole("menuitemradio")[0]).toHaveFocus();
   });
 });

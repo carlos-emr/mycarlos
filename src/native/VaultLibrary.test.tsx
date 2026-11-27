@@ -1,6 +1,11 @@
 import { computeAccessibleName } from "dom-accessibility-api";
 import { humanText, humanValue, visibleText } from "../test/humanText";
-import { headMenuItemNow, toolbarMenuItemNow } from "../test/menus";
+import {
+  addMenuItemNow,
+  headMenuItemNow,
+  queryAddMenuItem,
+  toolbarMenuItemNow,
+} from "../test/menus";
 import { LOCALES, resolveText, setLocaleOverride, translate } from "../i18n";
 import {
   act,
@@ -11,7 +16,9 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { AddVideoApi } from "./AddVideo";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -78,6 +85,8 @@ function renderLibrary(
   bridgeExtras: Record<string, unknown> = {},
   computer = true,
   activity: { busy?: boolean; portalBusy?: boolean } = {},
+  /** Further props of the library (the camera platform, adding a video). */
+  extraProps: Partial<ComponentProps<typeof VaultLibrary>> = {},
 ) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
@@ -137,6 +146,7 @@ function renderLibrary(
       onAutoLockMinutes={onAutoLockMinutes}
       sharedNew={newInShared}
       computer={computer}
+      {...extraProps}
     />
   );
   const view = render(library(shown));
@@ -235,6 +245,49 @@ describe("VaultLibrary folders", () => {
     );
     await vi.waitFor(() =>
       expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        "letters",
+        "FAKE June Letters",
+      ),
+    );
+  });
+
+  it('moves the open folder by keyboard from its "…" menu: Move folder… opens the Help panel\'s controls with the folder chosen and the focus on the destination', async () => {
+    // The keyboard way to move a folder (WCAG 2.5.7's alternative to dragging) used to sit in
+    // an always-visible block; it is in the Help panel now, so the folder's own menu leads to it.
+    const { bridge } = renderLibrary();
+    // A person's own page, and Shared with me, have no folder to move: no item.
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(/^More for /) }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: humanText("Move folder…") }),
+    ).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    openFolder(/^FAKE June Letters/);
+    const help = screen.getByRole("button", {
+      name: humanText("Help: this screen"),
+    });
+    expect(help).toHaveAttribute("aria-expanded", "false");
+    expect(help).not.toHaveAttribute("aria-controls");
+    fireEvent.click(headMenuItemNow("Move folder…"));
+    // The panel is open, the help button says so and points at it, the folder is chosen,
+    // and the focus is on the next decision.
+    expect(help).toHaveAttribute("aria-expanded", "true");
+    const panel = screen.getByRole("region", {
+      name: humanText("Help with this screen"),
+    });
+    expect(help.getAttribute("aria-controls")).toBe(panel.id);
+    const folderSelect = within(panel).getByLabelText(humanText("Folder"));
+    expect(folderSelect).toHaveValue("letters-2025-june");
+    const destination = within(panel).getByLabelText(humanText("Destination"));
+    await vi.waitFor(() => expect(destination).toHaveFocus());
+    fireEvent.change(destination, { target: { value: "letters" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Move folder" }));
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledExactlyOnceWith(
         "letters-2025-june",
         "letters",
         "FAKE June Letters",
@@ -464,6 +517,44 @@ describe("VaultLibrary search", () => {
     ]);
     expect(bridge.updateFolder).not.toHaveBeenCalled();
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+  });
+
+  it("moves a shared document into another person's folder from its details, by keyboard: only the drag shortcut was lost with the sidebar's other-people folders", async () => {
+    // The sidebar lists only the open person's folders, so a shared document cannot be dropped
+    // on ANOTHER person's folder; the details' "Move to" still offers every person and every
+    // folder, as a native select (arrow keys), then the Move button.
+    const moveToPerson = vi
+      .fn()
+      .mockResolvedValue({ moved: ["shared-test"], alreadyThere: [] });
+    renderLibrary(separateScopes, 0, { moveToPerson });
+    const user = userEvent.setup();
+    openFolder(/^Shared with me/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("FAKE Blood shared.pdf") }),
+    );
+    const details = await screen.findByRole("dialog", {
+      name: humanText("FAKE Blood shared.pdf"),
+    });
+    const moveTo = within(details).getByRole("combobox", {
+      name: humanText("Move to"),
+    });
+    const options = within(moveTo)
+      .getAllByRole("option")
+      .map((option) => visibleText(option.textContent ?? ""));
+    expect(options.some((label) => label.includes("FAKE Blake"))).toBe(true);
+    expect(options.some((label) => label.includes("FAKE Lab results"))).toBe(
+      true,
+    );
+    // FAKE Avery has a "FAKE Lab results" folder too: choose Blake's by its value.
+    await user.selectOptions(moveTo, "profile-2|blake-lab");
+    await user.click(within(details).getByRole("button", { name: "Move" }));
+    await vi.waitFor(() =>
+      expect(moveToPerson).toHaveBeenCalledExactlyOnceWith(
+        ["shared-test"],
+        "profile-2",
+        ["blake-lab"],
+      ),
+    );
   });
 
   it("keeps hidden documents out of recursive search results and their paths", () => {
@@ -1300,9 +1391,25 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     ).toBeTruthy();
     expect(check.parentElement).toBe(search.parentElement);
     try {
-      await page.viewport(1100, 760);
+      // Beside the search box where the row has room for all five: the search box at its least
+      // (about 204px) + Sort 180 + View 108 + Help 59 + Check 215 + four 8px gaps = 798px of
+      // column. The sidebar takes about 205px, so a 1280px window gives about 980px.
+      await page.viewport(1280, 800);
       expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
       expect(box(check).top).toBeLessThan(box(search).bottom);
+      // At 1100px the column is right at that need (measured 798px here, about 756px in CI's
+      // browser, where a classic scrollbar and the frame take more): the button may sit beside
+      // the box or drop under it, and either way stays inside the row. Longer labels (French,
+      // Polish) and larger text wrap sooner. Whether to let the box shrink further is Ben's call.
+      await page.viewport(1100, 760);
+      const row = box(search.parentElement!);
+      const wrapped = box(check).top >= box(search).bottom;
+      expect(
+        wrapped || box(check).left >= box(search).right,
+        "beside the box, or under it",
+      ).toBe(true);
+      expect(box(check).left).toBeGreaterThanOrEqual(row.left - 0.5);
+      expect(box(check).right).toBeLessThanOrEqual(row.right + 0.5);
       // Narrow (a phone, or large text): the box keeps its width and the
       // button goes under it.
       await page.viewport(360, 800);
@@ -2731,5 +2838,89 @@ describe("VaultLibrary folder tools that are not a drag", () => {
       screen.getByRole("dialog", { name: humanText(/Rename/) }),
     ).toBeVisible();
     expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Letters");
+  });
+});
+
+describe("VaultLibrary Add a video, an item of the Add document menu (#490)", () => {
+  const addApi = (over: Partial<AddVideoApi> = {}): AddVideoApi => ({
+    canAdd: true,
+    start: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn(),
+    reset: vi.fn(),
+    working: false,
+    cancelling: false,
+    progress: null,
+    outcome: null,
+    ...over,
+  });
+  const library = (extra: Partial<ComponentProps<typeof VaultLibrary>>) =>
+    renderLibrary(snapshot, 0, {}, true, {}, extra);
+
+  it("is offered where a video can be added, and not where it cannot", () => {
+    library({
+      addVideo: addApi(),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).not.toBeNull();
+    cleanup();
+    // An iPhone cannot add a video this way, and a bridge that cannot gives no item.
+    library({
+      addVideo: addApi(),
+      cameraPlatform: "ios",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeNull();
+    cleanup();
+    library({
+      addVideo: addApi({ canAdd: false }),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeNull();
+  });
+
+  it("waits while a video is being added", () => {
+    library({
+      addVideo: addApi({ working: true }),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeDisabled();
+  });
+
+  it("starts in the person's top level, or in the open folder", () => {
+    const addVideo = addApi();
+    library({ addVideo, cameraPlatform: "windows" });
+    fireEvent.click(addMenuItemNow("Add a video"));
+    expect(addVideo.start).toHaveBeenLastCalledWith("profile-1", []);
+    openFolder(/^FAKE Letters/);
+    fireEvent.click(addMenuItemNow("Add a video"));
+    expect(addVideo.start).toHaveBeenLastCalledWith("profile-1", ["letters"]);
+  });
+
+  it("gives the focus to the Add document button when the import ends, and takes none from a person who moved on", () => {
+    const extra: Partial<ComponentProps<typeof VaultLibrary>> = {
+      addVideo: addApi({ working: true }),
+      cameraPlatform: "windows",
+    };
+    const { rerenderSnapshot } = library(extra);
+    const cancel = document.querySelector<HTMLButtonElement>(
+      ".add-video-status button",
+    );
+    expect(cancel).not.toBeNull();
+    cancel!.focus();
+    extra.addVideo = addApi({ working: false });
+    rerenderSnapshot(snapshot);
+    // Cancel left the page with the import: the focus did not drop to the page.
+    const adds = screen.getAllByRole("button", {
+      name: humanText("Add document"),
+    });
+    expect(adds).toContain(document.activeElement);
+
+    // The same end, with the person already in the search box: it keeps the focus.
+    extra.addVideo = addApi({ working: true });
+    rerenderSnapshot(snapshot);
+    const search = screen.getByRole("searchbox");
+    search.focus();
+    extra.addVideo = addApi({ working: false });
+    rerenderSnapshot(snapshot);
+    expect(search).toHaveFocus();
   });
 });

@@ -542,6 +542,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Move a folder with the keybo
 
 interface-VaultLibrary-moveFolder = Move folder
 
+interface-VaultLibrary-moveFolderItem = Move folder…
+
 interface-VaultLibrary-moveSelectedTo = Move selected to
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Move them into your folders whenever you like.
