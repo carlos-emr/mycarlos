@@ -1457,11 +1457,6 @@ export const MESSAGE_KEYS = [
   "cloudAi.err.generic",
   "cloudAi.send",
   "cloudAi.previewNote",
-  "cloudAi.sendTitle",
-  "cloudAi.sendBody",
-  "cloudAi.costEstimate",
-  "cloudAi.costUnknown",
-  "cloudAi.sendConfirm",
   "cloudAi.working",
   "cloudAi.cancelSend",
   "cloudAi.cancelled",
@@ -3215,11 +3210,6 @@ const FLUENT_IDS_BY_KEY = {
   "cloudAi.err.generic": "cloudAi-err-generic",
   "cloudAi.send": "cloudAi-send",
   "cloudAi.previewNote": "cloudAi-previewNote",
-  "cloudAi.sendTitle": "cloudAi-sendTitle",
-  "cloudAi.sendBody": "cloudAi-sendBody",
-  "cloudAi.costEstimate": "cloudAi-costEstimate",
-  "cloudAi.costUnknown": "cloudAi-costUnknown",
-  "cloudAi.sendConfirm": "cloudAi-sendConfirm",
   "cloudAi.working": "cloudAi-working",
   "cloudAi.cancelSend": "cloudAi-cancelSend",
   "cloudAi.cancelled": "cloudAi-cancelled",
@@ -4843,16 +4833,6 @@ export interface MessageArgsByKey {
   "cloudAi.err.generic": undefined;
   "cloudAi.send": undefined;
   "cloudAi.previewNote": undefined;
-  "cloudAi.sendTitle": undefined;
-  "cloudAi.sendBody": {
-    characters: FluentArgument;
-    cost: FluentArgument;
-    label: FluentArgument;
-    model: FluentArgument;
-  };
-  "cloudAi.costEstimate": { amount: FluentArgument };
-  "cloudAi.costUnknown": undefined;
-  "cloudAi.sendConfirm": undefined;
   "cloudAi.working": undefined;
   "cloudAi.cancelSend": undefined;
   "cloudAi.cancelled": undefined;

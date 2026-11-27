@@ -8,16 +8,15 @@ import {
   type CloudKeyInfo,
   type CloudPrepareRequest,
   type CloudSendAnswer,
-  type CloudSendPrepared,
 } from "../cloudAi";
-import { ConfirmDialog } from "./ConfirmDialog";
 
 /** "Send to my AI provider…" in the anonymizer preview (#72): the per-document step. It appears
  * only in a build with the cloud AI flag, when cloud AI is on and a key is saved. Pressing it asks
- * the native side to re-check the text and say the size and cost, then opens a native-style
- * confirmation that names the provider, the key, the model, the size and the cost. Only
- * "Send" sends; Cancel, Escape and a close send nothing. This page never makes the request and
- * never holds the key. */
+ * the native side to re-check the text, then to send it: the NATIVE confirmation (provider, host, key
+ * label, model, document, size and estimated cost, worked out from the vault and the re-checked
+ * text, never from this page) is the one and only confirmation; only its "Send" sends, and Cancel,
+ * Escape and a closed dialog send nothing. This page asks for none of its own, and never makes the
+ * request or holds the key. */
 export function CloudSendStep({
   bridge,
   recordId,
@@ -43,7 +42,6 @@ export function CloudSendStep({
 }) {
   const { t } = useI18n();
   const [ready, setReady] = useState<CloudKeyInfo | null>(null);
-  const [prepared, setPrepared] = useState<CloudSendPrepared | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [answer, setAnswer] = useState<CloudSendAnswer | null>(null);
   const [status, setStatus] = useTextState();
@@ -82,7 +80,8 @@ export function CloudSendStep({
         removed,
       });
       exchange.current = next.exchangeId;
-      setPrepared(next);
+      // The native side asks the patient (once) before anything leaves.
+      void send(next);
     } catch (failure) {
       if (cloudErrorCode(failure) === "recheck") {
         const hits = (failure as { hits?: { start: number; end: number }[] })
@@ -97,11 +96,9 @@ export function CloudSendStep({
   const drop = () => {
     const id = exchange.current;
     exchange.current = null;
-    setPrepared(null);
     if (id) void bridge.cancel(id);
   };
-  const send = async (next: CloudSendPrepared) => {
-    setPrepared(null);
+  const send = async (next: { exchangeId: string }) => {
     setWorking(next.exchangeId);
     try {
       const result = await bridge.send(next.exchangeId);
@@ -127,16 +124,6 @@ export function CloudSendStep({
     setWorking(null);
     setStatus(message("cloudAi.cancelled"));
   };
-  const money = (usd: number | null) =>
-    usd === null
-      ? t("cloudAi.costUnknown")
-      : t("cloudAi.costEstimate", {
-          amount: new Intl.NumberFormat(undefined, {
-            style: "currency",
-            currency: "USD",
-            maximumFractionDigits: usd < 0.1 ? 3 : 2,
-          }).format(usd),
-        });
   return (
     <>
       <button
@@ -180,23 +167,6 @@ export function CloudSendStep({
             </p>
           )}
         </section>
-      )}
-      {prepared && (
-        <ConfirmDialog
-          title={t("cloudAi.sendTitle")}
-          confirmLabel={t("cloudAi.sendConfirm")}
-          onCancel={drop}
-          onConfirm={() => void send(prepared)}
-        >
-          <p>
-            {t("cloudAi.sendBody", {
-              label: ready.label,
-              model: prepared.modelLabel,
-              characters: prepared.characters.toLocaleString(),
-              cost: money(prepared.estimatedCostUsd),
-            })}
-          </p>
-        </ConfirmDialog>
       )}
     </>
   );
