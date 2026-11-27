@@ -34,6 +34,8 @@ export function RecordSource({
   // "Verified", since anyone who holds the file's key can write it.
   const claim =
     !record.verifiedClinicName &&
+    // Not beside "Signature key revoked by the clinic": one status line, not two (#88).
+    record.signatureKeyRevoked !== true &&
     record.fileSaysCheckedAtMs !== undefined &&
     Number.isFinite(new Date(record.fileSaysCheckedAtMs).getTime())
       ? t("library.fileSaysChecked", {

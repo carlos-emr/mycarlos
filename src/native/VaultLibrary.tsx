@@ -291,8 +291,8 @@ export function VaultLibrary({
   const announcedSearchRef = useRef(searchRequest);
   const [view, setView] = useState<NativeView>("list");
   const [sort, setSort] = useState<NativeSort>("newest");
-  // The clinic filter (#88): the id of one clinic, or "" for all.
-  const [clinicFilterId, setClinicFilterId] = useState("");
+  // The clinic filter (#88): the id of one clinic ("" for all) and the place it was chosen in.
+  const [clinicFilter, setClinicFilter] = useState({ place: "", id: "" });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [moveFolderId, setMoveFolderId] = useState("");
   // Where the selected documents in Shared with me go: "<person>|<folder>".
@@ -644,19 +644,38 @@ export function VaultLibrary({
     [folders],
   );
   const normalizedQuery = searchKey(query.trim());
-  // A search covers the open folder and every folder beneath it; from the top
-  // level (null), the whole profile. Without one, only what is directly in
+  // The clinics the documents in view came from, one entry per clinic id (#88). Two clinics with
+  // the same name are told apart by a number, in id order.
+  const clinicChoices = useMemo(() => clinicsOf(records), [records]);
+  // The chosen clinic counts only where it was chosen (this person or Shared with me), and only
+  // while it still has a document there: otherwise the list is shown whole, and coming back to
+  // the place does not bring the choice back by itself.
+  const clinicPlace = `${inShared ? "shared" : "person"}:${locationProfileId ?? ""}`;
+  const activeClinicId =
+    clinicFilter.place === clinicPlace &&
+    clinicChoices.some((choice) => choice.id === clinicFilter.id)
+      ? clinicFilter.id
+      : "";
+  useEffect(() => {
+    setClinicFilter((current) =>
+      current.place === clinicPlace ? current : { place: clinicPlace, id: "" },
+    );
+  }, [clinicPlace]);
+  // A search, or a clinic chosen in the filter, covers the open folder and every folder beneath
+  // it; from the top level (null), the whole profile. Without either, only what is directly in
   // the open folder is shown.
   const searchScope = useMemo(
     () =>
-      !inShared && normalizedQuery && currentFolderId
+      !inShared && (normalizedQuery || activeClinicId) && currentFolderId
         ? folderSubtree(folders, currentFolderId)
         : null,
-    [currentFolderId, folders, inShared, normalizedQuery],
+    [activeClinicId, currentFolderId, folders, inShared, normalizedQuery],
   );
   const visibleFolders = useMemo(
     () =>
-      (inShared ? [] : folders)
+      // No folder rows while a clinic is chosen without a search: the list is that clinic's
+      // documents wherever they are filed.
+      (inShared || (activeClinicId && !normalizedQuery) ? [] : folders)
         .filter((folder) =>
           normalizedQuery
             ? folder.id !== currentFolderId &&
@@ -672,6 +691,7 @@ export function VaultLibrary({
             ),
         ),
     [
+      activeClinicId,
       currentFolderId,
       folderById,
       folders,
@@ -680,27 +700,22 @@ export function VaultLibrary({
       searchScope,
     ],
   );
-  // The clinics the documents in view came from, one entry per clinic id (#88). Two clinics with
-  // the same name are told apart by a number, in id order.
-  const clinicChoices = useMemo(() => clinicsOf(records), [records]);
-  // A clinic that has no document any more is no filter: the list is shown whole.
-  const activeClinicId = clinicChoices.some(
-    (choice) => choice.id === clinicFilterId,
-  )
-    ? clinicFilterId
-    : "";
   // One entry per document, however many folders it is filed in.
   const visibleRecords = useMemo(() => {
     const matching = records.filter((record) => {
       if (activeClinicId && record.clinicId !== activeClinicId) return false;
+      const inScope =
+        !searchScope || record.folderIds.some((id) => searchScope.has(id));
       if (normalizedQuery)
         return (
-          (!searchScope ||
-            record.folderIds.some((id) => searchScope.has(id))) &&
+          inScope &&
           (searchKey(record.displayName).includes(normalizedQuery) ||
             (record.clinicName !== undefined &&
               searchKey(record.clinicName).includes(normalizedQuery)))
         );
+      // A clinic chosen without a search shows all of that clinic's documents in this place,
+      // whichever folder holds them.
+      if (activeClinicId) return inScope;
       return currentFolderId
         ? record.folderIds.includes(currentFolderId)
         : record.folderIds.length === 0;
@@ -2823,7 +2838,10 @@ export function VaultLibrary({
                           aria-labelledby={clinicLabelId}
                           value={activeClinicId}
                           onChange={(event) =>
-                            setClinicFilterId(event.target.value)
+                            setClinicFilter({
+                              place: clinicPlace,
+                              id: event.target.value,
+                            })
                           }
                         >
                           <option value="">

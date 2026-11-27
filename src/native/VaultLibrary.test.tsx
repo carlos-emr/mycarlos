@@ -430,6 +430,102 @@ describe("search and filter by the clinic a document came from (#88)", () => {
     expect(names()).toHaveLength(4);
   });
 
+  it("shows every document of the chosen clinic, filed in a folder or not, and no folder rows", () => {
+    renderLibrary({
+      ...clinics,
+      folders: [folder("letters", "FAKE Letters", null)],
+      records: [
+        ...clinics.records,
+        {
+          ...withClinic(
+            "a3",
+            "FAKE Filed letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+        {
+          ...withClinic(
+            "b3",
+            "FAKE Other filed letter.pdf",
+            "clinic-b",
+            "FAKE Lakeside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+      ],
+    });
+    // Before the choice, the top level shows the unfiled documents and the folder.
+    expect(names()).not.toContain("FAKE Filed letter.pdf");
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(1);
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-a" } });
+    expect(names().sort()).toEqual([
+      "FAKE Blood test.pdf",
+      "FAKE Filed letter.pdf",
+      "FAKE Letter.pdf",
+    ]);
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(0);
+    fireEvent.change(clinicSelect(), { target: { value: "" } });
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(1);
+  });
+
+  it("forgets the chosen clinic when the person changes, and does not bring it back", () => {
+    renderLibrary({
+      ...clinics,
+      profiles: [
+        ...clinics.profiles,
+        { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+      ],
+      records: [
+        ...clinics.records,
+        {
+          ...withClinic(
+            "k1",
+            "FAKE Blake letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          profileId: "profile-2",
+        },
+        {
+          ...withClinic(
+            "k2",
+            "FAKE Blake note.pdf",
+            "clinic-b",
+            "FAKE Lakeside Clinic",
+          ),
+          profileId: "profile-2",
+        },
+      ],
+    });
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-a" } });
+    expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Blake/) }),
+    );
+    // The other person, both clinics have a document there: the choice did not follow.
+    expect(clinicSelect()).toHaveValue("");
+    expect(names().sort()).toEqual([
+      "FAKE Blake letter.pdf",
+      "FAKE Blake note.pdf",
+    ]);
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Avery/) }),
+    );
+    expect(clinicSelect()).toHaveValue("");
+    expect(names()).toHaveLength(4);
+  });
+
   it("offers no clinic filter when no document has a clinic", () => {
     renderLibrary({ ...clinics, records: [clinics.records[2]] });
     expect(

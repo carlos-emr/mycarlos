@@ -354,7 +354,10 @@ pub(super) struct ClinicView {
 /// The status the link's own key list gives the key with this id, `None` when the list does not
 /// hold it. Only the signing key's own entry counts: a replacement edge (key refresh, not built
 /// yet) never deactivates a predecessor or a successor, and each key is revoked on its own.
-pub(super) fn key_status(clinic: &crate::portal_link::LinkedClinic, kid: &str) -> Option<KeyStatus> {
+pub(super) fn key_status(
+    clinic: &crate::portal_link::LinkedClinic,
+    kid: &str,
+) -> Option<KeyStatus> {
     clinic
         .clinic_keys
         .iter()
@@ -9016,7 +9019,12 @@ mod approval_recovery_tests {
             .manifest
             .kid
             .clone();
-        for key in &mut manifest.portal_links[0].clinic.as_mut().unwrap().clinic_keys {
+        for key in &mut manifest.portal_links[0]
+            .clinic
+            .as_mut()
+            .unwrap()
+            .clinic_keys
+        {
             if key.kid == kid {
                 key.status = status;
             }
@@ -9137,7 +9145,10 @@ mod approval_recovery_tests {
             view(std::slice::from_ref(&revoked)),
             Some((clinic.clinic_id.clone(), clinic.clinic_name.clone(), true))
         );
-        assert_eq!(verified_clinic(record, std::slice::from_ref(&revoked)), None);
+        assert_eq!(
+            verified_clinic(record, std::slice::from_ref(&revoked)),
+            None
+        );
         // Two links to the same clinic that disagree: revoked wins, in either order.
         for links in [
             vec![link.clone(), revoked.clone()],

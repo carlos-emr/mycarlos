@@ -2638,7 +2638,9 @@ impl VaultStore {
                         verified_clinic_name: verified,
                         clinic_id: clinic.as_ref().map(|view| view.id.clone()),
                         clinic_name: clinic.as_ref().map(|view| view.name.clone()),
-                        signature_key_revoked: clinic.as_ref().and_then(|view| view.key_revoked.then_some(true)),
+                        signature_key_revoked: clinic
+                            .as_ref()
+                            .and_then(|view| view.key_revoked.then_some(true)),
                         // A carried aid and service date are shown only once a link of this vault
                         // to the same clinic holds the signing key (design section 7, level 2):
                         // whoever wrote a handover file could have made a consistent aid, and
