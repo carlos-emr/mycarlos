@@ -28,12 +28,14 @@ const MAX_POINTS: usize = 50;
 const MAX_EVIDENCE: usize = 5;
 pub const SKEW_SECONDS: u64 = 86_400;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Patient {
     pub name: String,
     pub birth_date: String,
 }
+redact_debug!(Patient);
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pair {
@@ -61,7 +63,8 @@ pub struct Approval {
     pub reviewed_at: u64,
 }
 /// The aid's signed manifest: exactly the contract's fifteen claims.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AidManifest {
     pub v: u8,
@@ -80,6 +83,7 @@ pub struct AidManifest {
     pub expires_at: u64,
     pub kid: String,
 }
+redact_debug!(AidManifest);
 
 /// What the device already holds for this link, by delivery ID.
 #[derive(Default)]

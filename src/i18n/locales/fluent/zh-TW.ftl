@@ -2289,6 +2289,8 @@ reader-android-zoomOut = 縮小
 
 interface-video-name = 影片，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 錄製影片
+interface-RecordDialog-recordAVideoFor = 為 { $name } 錄製影片
+interface-RecordDialog-recordingSettings = 錄製設定
 interface-RecordDialog-unavailable = 此裝置無法錄製影片。
 interface-RecordDialog-why = 為什麼？
 interface-RecordDialog-startingTheCameraAndMicrophone = 正在啟動相機和麥克風…
@@ -2304,6 +2306,9 @@ interface-RecordDialog-unnamedCamera = 攝影機 { $number }
 interface-RecordDialog-unnamedMicrophone = 麥克風 { $number }
 interface-RecordDialog-systemDefaultDevice = 系統預設
 interface-RecordDialog-deviceFellBack = 上次使用的攝影機或麥克風未連接，因此正在使用系統預設裝置。
+interface-RecordDialog-deviceNotSwitched = 無法開啟您選擇的攝影機或麥克風，因此仍在使用原來的裝置。
+interface-RecordDialog-saySomething = 說點什麼：指示條應該會動。
+interface-RecordDialog-settingsNote = 影片會加密儲存。myCarlos 會在這部裝置上記住這些選擇。
 interface-RecordDialog-testMicrophone = 測試麥克風
 interface-RecordDialog-stopTestingMicrophone = 停止測試
 interface-RecordDialog-microphoneLevel = 麥克風音量
@@ -2675,6 +2680,8 @@ notifications-testWait = 請等候幾秒鐘後再試一次。
 
 notifications-testFailed = 無法顯示測試通知。
 notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。
+
+native-backupExclusionFailed = 這支手機無法讓保險庫不被裝置備份。請再試一次。
 
 interface-AddVideo-add = 新增影片
 

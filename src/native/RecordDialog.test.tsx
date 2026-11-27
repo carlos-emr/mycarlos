@@ -623,7 +623,7 @@ describe("RecordDialog", () => {
     );
     const { onClose } = open();
     fireEvent.click(button("Use the camera and microphone"));
-    const cancel = await screen.findByRole("button", { name: "Cancel" });
+    const cancel = await screen.findByRole("button", { name: "Close" });
     expect(cancel).toBeEnabled();
     fireEvent.click(cancel);
     expect(onClose).toHaveBeenCalled();
@@ -676,7 +676,7 @@ describe("RecordDialog", () => {
     await readyToRecord();
     fireEvent.click(button("Start recording"));
     await waitFor(() => expect(bridge.videoStart).toHaveBeenCalledTimes(1));
-    fireEvent.click(button("Cancel"));
+    fireEvent.click(button("Close"));
     expect(onClose).toHaveBeenCalled();
     // The vault answers after the dialog has gone.
     await act(async () => began({ recordingId: "recording-1" }));
@@ -886,7 +886,7 @@ describe("RecordDialog", () => {
   it("turns the camera and microphone off when it closes without recording", async () => {
     const { onClose } = open();
     await readyToRecord();
-    fireEvent.click(button("Cancel"));
+    fireEvent.click(button("Close"));
     expect(onClose).toHaveBeenCalled();
     expect(
       streams.every((s) =>
@@ -1033,7 +1033,7 @@ describe("RecordDialog", () => {
     });
     const { onClose } = open({}, bridge);
     fireEvent.click(button("Use the camera and microphone"));
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     await act(async () =>
       looked({ freeBytes: 50 * 1024 ** 3, level: "ok", canRecord: true }),
@@ -1050,7 +1050,7 @@ describe("RecordDialog", () => {
     cleanup();
     const second = open();
     fireEvent.click(button("Use the camera and microphone"));
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
     await act(async () =>
       refuse(new DOMException("FAKE denied", "NotAllowedError")),
     );
@@ -1272,7 +1272,7 @@ describe("RecordDialog", () => {
     await readyToRecord();
     fireEvent.click(button("Start recording"));
     await waitFor(() => expect(first.videoStart).toHaveBeenCalledTimes(1));
-    fireEvent.click(button("Cancel"));
+    fireEvent.click(button("Close"));
     await act(async () => began({ recordingId: "recording-1" }));
     await waitFor(() => expect(stopFails).toHaveBeenCalledTimes(1));
     cleanup();

@@ -3,7 +3,7 @@ import type { DeviceInfo } from "./mediaDevices";
 
 /** One of the device lists of the video recording dialog and of the photo dialog: the same chooser
  * in both, so the camera is picked the same way wherever it is used (#359). With more than one
- * device it is a list to choose from (the one in use is selected); with one, plain text, so the
+ * device it is a list to choose from (the one in use is selected); with one, a disabled list, so the
  * patient still sees which one is in use. With none, nothing. */
 export function DevicePick({
   kind,
@@ -30,21 +30,17 @@ export function DevicePick({
   // The one in use, if the browser says which it is. When it cannot be matched to a listed device
   // (the system's default, which a stream reports under an alias id), "System default" is shown:
   // never the first device of the list, which would be a guess shown as a fact.
-  const selected = devices.find((device) => device.id === current) ?? null;
-  if (devices.length === 1)
-    return (
-      <p className="record-device">
-        <span>{label}: </span>
-        <strong>{nameOf(devices[0], 0)}</strong>
-      </p>
-    );
+  const selected =
+    devices.length === 1
+      ? devices[0]
+      : devices.find((device) => device.id === current);
   return (
     <label className="record-device">
       <span>{label}</span>
       <select
         id={`record-device-${kind}`}
         value={selected ? selected.id : ""}
-        disabled={disabled}
+        disabled={disabled || devices.length === 1}
         onChange={(event) => onChange(kind, event.currentTarget.value)}
       >
         {!selected && (

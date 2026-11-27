@@ -95,6 +95,7 @@ export function RecordDialog({
   platform,
   bridge,
   profileId,
+  profileName,
   folderIds,
   whileAsking = asked,
   holdLock,
@@ -106,6 +107,8 @@ export function RecordDialog({
   platform: string;
   bridge: RecordBridge;
   profileId: string;
+  /** Whose video this is, for the title ("Record a video for Sam"). Without it the title has no name. */
+  profileName?: string;
   folderIds: string[];
   /** On a phone the system asks whether myCarlos may use the camera and the
    * microphone, and Android hides the app while it does: the caller holds the
@@ -146,8 +149,11 @@ export function RecordDialog({
   const [fellBack, setFellBack] = useState(false);
   const [testing, setTesting] = useState(false);
   const [level, setLevel] = useState(0);
-  const refocusRef = useRef<"camera" | "microphone" | null>(null);
-  const restartedRef = useRef(false);
+  // One camera or microphone is being swapped for another on the open stream: Start waits for it.
+  // The ref is the flag the handlers read (set at once, so two change events in the same instant
+  // cannot both pass); the state only draws it.
+  const switchingRef = useRef(false);
+  const [switching, setSwitching] = useState(false);
   const previousStageRef = useRef<Stage | null>(null);
   const [status, setStatus] = useTextState();
   const [, setTick] = useState(0);
@@ -185,6 +191,26 @@ export function RecordDialog({
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
   }, []);
+
+  // A track that ends on its own (a camera unplugged, a permission taken back) ends the recording
+  // with what there is; before one, the dialog says the camera stopped. Only for the stream that is
+  // open: a track stopped here when its device is swapped is not that.
+  const watchTrack = useCallback(
+    (stream: MediaStream, track: MediaStreamTrack) => {
+      track.addEventListener("ended", () => {
+        if (streamRef.current !== stream || !stream.getTracks().includes(track))
+          return;
+        if (recorderRef.current) void finishRef.current("stopped");
+        else {
+          stopCamera();
+          setFailure("stopped");
+          setStage("failed");
+          setStatus("");
+        }
+      });
+    },
+    [setStatus, stopCamera],
+  );
 
   const start = useCallback(
     // `choice` is what to open (the devices in use, with the one chosen from a list replaced);
@@ -263,19 +289,7 @@ export function RecordDialog({
           return;
         }
         streamRef.current = stream;
-        for (const track of stream.getTracks())
-          track.addEventListener("ended", () => {
-            if (streamRef.current !== stream) return;
-            // A track that ends while recording ends the recording, keeping what
-            // there is; before it, the dialog says the camera stopped.
-            if (recorderRef.current) void finishRef.current("stopped");
-            else {
-              stopCamera();
-              setFailure("stopped");
-              setStage("failed");
-              setStatus("");
-            }
-          });
+        for (const track of stream.getTracks()) watchTrack(stream, track);
         setHighOk(highQualityAvailable(stream.getVideoTracks()[0]));
         // Names come only now that the devices have been allowed.
         const connected = await listDevices(navigator.mediaDevices);
@@ -302,7 +316,7 @@ export function RecordDialog({
         setStatus("");
       }
     },
-    [bridge, phone, stopCamera, whileAsking],
+    [bridge, phone, stopCamera, watchTrack, whileAsking],
   );
 
   // The preview, once there is a stream and a place for it.
@@ -318,10 +332,10 @@ export function RecordDialog({
 
   // High is a request on the camera already open: if the webview refuses it,
   // Standard stays.
-  const chooseQuality = (next: VideoQuality) => {
-    setQuality(next);
-    rememberVideoQuality(next);
-    const track = streamRef.current?.getVideoTracks()[0];
+  const applyQuality = (
+    track: MediaStreamTrack | undefined,
+    next: VideoQuality,
+  ) => {
     const spec = QUALITIES[next];
     void track
       ?.applyConstraints({
@@ -329,6 +343,11 @@ export function RecordDialog({
         height: { ideal: spec.height },
       })
       .catch(() => undefined);
+  };
+  const chooseQuality = (next: VideoQuality) => {
+    setQuality(next);
+    rememberVideoQuality(next);
+    applyQuality(streamRef.current?.getVideoTracks()[0], next);
   };
 
   // ---- sending pieces ---------------------------------------------------
@@ -470,7 +489,7 @@ export function RecordDialog({
 
   const record = async () => {
     const stream = streamRef.current;
-    if (!stream || stage !== "ready") return;
+    if (!stream || stage !== "ready" || switchingRef.current) return;
     const mimeType = pickMp4Type();
     if (!mimeType) {
       setProblem(
@@ -700,15 +719,9 @@ export function RecordDialog({
   useEffect(() => {
     const was = previousStageRef.current;
     previousStageRef.current = stage;
-    if (stage === "starting") restartedRef.current = true;
-    if (stage === "ready" && refocusRef.current && restartedRef.current) {
-      // A device was just switched from its list and the preview has restarted on it: the
-      // focus returns to that list, not to Start.
-      document.getElementById(`record-device-${refocusRef.current}`)?.focus();
-      refocusRef.current = null;
-      restartedRef.current = false;
-    } else if (stage === "ready" && !refocusRef.current && was !== "ready")
-      startRef.current?.focus();
+    // A device switched from its list no longer restarts the preview, so the focus never leaves
+    // that list; Start takes it only when the preview first comes up.
+    if (stage === "ready" && was !== "ready") startRef.current?.focus();
     if (stage === "failed") retryRef.current?.focus();
     if (stage === "recording" || stage === "paused") stopRef.current?.focus();
   }, [stage]);
@@ -758,15 +771,89 @@ export function RecordDialog({
     };
   }, [testing, stage, using]);
 
-  // Switching restarts the preview on the other device (never while recording or starting a
-  // recording: a recording keeps the camera and microphone it began with).
-  const switchDevice = (kind: "camera" | "microphone", id: string) => {
-    if (stage !== "ready" || using[kind] === id) return;
-    const next = { ...using, [kind]: id };
-    refocusRef.current = kind;
-    restartedRef.current = false;
-    setTesting(false);
-    void start(next, kind);
+  // Switching changes only the device that was chosen: the other keeps running, so the picture does
+  // not blink when the microphone is changed and the sound does not drop when the camera is. The new
+  // device is opened alone, and its track takes the old one's place in the open stream (the preview
+  // follows the stream). Never while recording or starting a recording: a recording keeps the camera
+  // and microphone it began with. A device that will not open leaves everything as it was.
+  const switchDevice = async (kind: "camera" | "microphone", id: string) => {
+    const stream = streamRef.current;
+    if (
+      stage !== "ready" ||
+      switchingRef.current ||
+      !stream ||
+      using[kind] === id
+    )
+      return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    const attempt = attemptRef.current;
+    switchingRef.current = true;
+    setSwitching(true);
+    // The microphone test listens to the microphone track being replaced, so it is let go of for
+    // the switch and takes up again after it, on the new microphone or, if that did not open, the
+    // old one (a camera switch does not touch it).
+    const resumeTest = kind === "microphone" && testing;
+    if (resumeTest) setTesting(false);
+    setProblem(null);
+    try {
+      const opened = await whileAsking(
+        navigator.mediaDevices.getUserMedia(
+          kind === "camera"
+            ? {
+                video: cameraConstraints(
+                  videoConstraints("standard", phone),
+                  id,
+                ),
+              }
+            : { audio: microphoneConstraints(id) },
+        ),
+      );
+      // The dialog moved on while the device was opening (closed, locked, hidden, the camera
+      // stopped): what was just opened is not wanted.
+      if (attempt !== attemptRef.current || streamRef.current !== stream) {
+        for (const track of opened.getTracks()) track.stop();
+        return;
+      }
+      const fresh =
+        kind === "camera"
+          ? opened.getVideoTracks()[0]
+          : opened.getAudioTracks()[0];
+      // Only the track asked for is kept: anything else the answer carries (a stub that hands back
+      // both) is let go of at once, never left on.
+      for (const track of opened.getTracks()) if (track !== fresh) track.stop();
+      if (!fresh) throw new DOMException("No track", "NotFoundError");
+      const old =
+        kind === "camera" ? stream.getVideoTracks() : stream.getAudioTracks();
+      for (const track of old) {
+        stream.removeTrack(track);
+        track.stop();
+      }
+      stream.addTrack(fresh);
+      watchTrack(stream, fresh);
+      if (kind === "camera") {
+        setHighOk(highQualityAvailable(fresh));
+        if (quality === "high") applyQuality(fresh, "high");
+      }
+      const used = devicesInUse(stream, devices);
+      setUsing(used);
+      setFellBack(false);
+      // Only the one chosen is remembered, and only now that it is open (as for a restart).
+      rememberDeviceChoice({
+        ...readDeviceChoice(),
+        [kind]: used[kind] ?? id,
+      });
+    } catch {
+      if (attempt !== attemptRef.current) return;
+      // The preview and the lists stay as they were (the list shows the device still in use); the
+      // dialog says the other one did not open.
+      setProblem(translateNow("interface.RecordDialog.deviceNotSwitched"));
+    } finally {
+      switchingRef.current = false;
+      setSwitching(false);
+      // Only if the dialog is still the one the switch began in: after a camera that stopped, a
+      // close or a retry the test is not switched on again behind the patient's back.
+      if (resumeTest && attempt === attemptRef.current) setTesting(true);
+    }
   };
 
   const pausedNow = stage === "paused";
@@ -774,6 +861,16 @@ export function RecordDialog({
   const elapsed = formatClock(clock.elapsed());
   const standard = translateNow("interface.RecordDialog.standard");
   const high = translateNow("interface.RecordDialog.high");
+  // The settings (the two lists, the microphone test, the picture quality) sit in a column beside
+  // the preview on a wide window and below it on a narrow one; they are there once the devices
+  // have been allowed. While recording the column stays for the lists (shown, not changeable); the
+  // picture quality is there from the start, whether or not the devices could be listed.
+  const hasDevices =
+    devices.cameras.length > 0 || devices.microphones.length > 0;
+  // The column also stays while Start is being answered ("starting" with the devices already
+  // listed), so it does not blink out and back.
+  const hasSettings =
+    stage === "ready" || ((recordingNow || stage === "starting") && hasDevices);
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={close}>
@@ -786,349 +883,378 @@ export function RecordDialog({
         aria-describedby={stage === "explain" ? "record-about" : undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="dialog-head">
+        <header className="dialog-head record-head">
           <h2 id="record-title">
-            {translateNow("interface.RecordDialog.recordAVideo")}
+            {profileName
+              ? translateNow("interface.RecordDialog.recordAVideoFor", {
+                  name: profileName,
+                })
+              : translateNow("interface.RecordDialog.recordAVideo")}
           </h2>
+          <button className="button record-close" type="button" onClick={close}>
+            {translateNow("photo.close")}
+          </button>
         </header>
-        <div className="camera-body">
-          {stage === "explain" && (
-            <div id="record-about" className="camera-about">
-              <p>
-                {translateNow(
-                  "interface.RecordDialog.theVideoIsRecordedWithSound",
-                )}
-              </p>
-              <p>
-                {phone
-                  ? translateNow("interface.RecordDialog.yourPhoneAsksOnce")
-                  : translateNow(
-                      "interface.RecordDialog.theCameraAndMicrophoneAreOn",
-                    )}
-              </p>
-            </div>
-          )}
-          {stage === "starting" && (
-            <p>
-              {translateNow(
-                "interface.RecordDialog.startingTheCameraAndMicrophone",
-              )}
-            </p>
-          )}
-          <video
-            ref={videoRef}
-            className="camera-view"
-            hidden={
-              stage !== "ready" && stage !== "recording" && stage !== "paused"
-            }
-            aria-label={translateNow("interface.CameraDialog.cameraView")}
-            autoPlay
-            muted
-            playsInline
-          />
-          {/* Always present, empty until there is something to say: a live region that is inserted
-              together with its text is not announced by every screen reader. A live region and not
-              role="status", which the dialog's own status line already is (one per dialog). */}
-          <p aria-live="polite" className="record-device-note">
-            {fellBack && (stage === "ready" || recordingNow)
-              ? translateNow("interface.RecordDialog.deviceFellBack")
-              : ""}
-          </p>
-          {(stage === "ready" || recordingNow) &&
-            (devices.cameras.length > 0 || devices.microphones.length > 0) && (
-              <fieldset className="record-devices appearance-choice">
-                <legend>
-                  {translateNow("interface.RecordDialog.cameraAndMicrophone")}
-                </legend>
-                <DevicePick
-                  kind="camera"
-                  label={translateNow("interface.RecordDialog.camera")}
-                  unnamed="interface.RecordDialog.unnamedCamera"
-                  devices={devices.cameras}
-                  current={using.camera}
-                  disabled={stage !== "ready"}
-                  onChange={switchDevice}
-                />
-                <DevicePick
-                  kind="microphone"
-                  label={translateNow("interface.RecordDialog.microphone")}
-                  unnamed="interface.RecordDialog.unnamedMicrophone"
-                  devices={devices.microphones}
-                  current={using.microphone}
-                  disabled={stage !== "ready"}
-                  onChange={switchDevice}
-                />
-                {stage === "ready" && typeof AudioContext !== "undefined" && (
-                  <div className="record-mic-test">
-                    <button
-                      className="button"
-                      type="button"
-                      aria-pressed={testing}
-                      onClick={() => setTesting((on) => !on)}
-                    >
-                      {translateNow(
-                        testing
-                          ? "interface.RecordDialog.stopTestingMicrophone"
-                          : "interface.RecordDialog.testMicrophone",
-                      )}
-                    </button>
-                    {testing && (
-                      <meter
-                        min={0}
-                        max={1}
-                        value={level}
-                        aria-label={translateNow(
-                          "interface.RecordDialog.microphoneLevel",
-                        )}
-                      />
-                    )}
-                  </div>
-                )}
-              </fieldset>
-            )}
-          {stage === "ready" && (
-            <fieldset className="record-quality appearance-choice">
-              <legend>
-                {translateNow("interface.RecordDialog.pictureQuality")}
-              </legend>
-              <label className="appearance-option">
-                <input
-                  type="radio"
-                  name="video-quality"
-                  checked={quality === "standard"}
-                  onChange={() => chooseQuality("standard")}
-                />
-                <span>
-                  {standard}
-                  <span className="record-quality-size">
-                    {translateNow(
-                      "interface.RecordDialog.aboutStandardPerHour",
-                    )}
-                  </span>
-                </span>
-              </label>
-              {highOk && (
-                <label className="appearance-option">
-                  <input
-                    type="radio"
-                    name="video-quality"
-                    checked={quality === "high"}
-                    onChange={() => chooseQuality("high")}
-                  />
-                  <span>
-                    {high}
-                    <span className="record-quality-size">
-                      {translateNow("interface.RecordDialog.aboutHighPerHour")}
-                    </span>
-                  </span>
-                </label>
-              )}
-              <p>
-                {translateNow(
-                  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
-                )}
-              </p>
-            </fieldset>
-          )}
-          {recordingNow && (
-            <div className="record-state">
-              <p
-                className={
-                  pausedNow
-                    ? "record-badge record-badge-paused"
-                    : "record-badge"
-                }
-              >
-                <Icon name={pausedNow ? "pause" : "camera"} />
-                <span>
-                  {pausedNow
-                    ? translateNow("interface.RecordDialog.paused")
-                    : translateNow("interface.RecordDialog.recording")}
-                </span>
-              </p>
-              {pausedNow && (
-                <p className="record-paused-note">
+        <div
+          className={
+            hasSettings ? "record-layout has-settings" : "record-layout"
+          }
+        >
+          <div className="record-main camera-body">
+            {stage === "explain" && (
+              <div id="record-about" className="camera-about">
+                <p>
                   {translateNow(
-                    "interface.RecordDialog.pausedCameraAndMicrophoneStillOn",
+                    "interface.RecordDialog.theVideoIsRecordedWithSound",
                   )}
                 </p>
-              )}
-              {/* Not a live region: it would speak every second. Read on focus. */}
-              <p className="record-clock" tabIndex={0}>
-                {translateNow("interface.RecordDialog.recorded", {
-                  time: elapsed,
-                })}
+                <p>
+                  {phone
+                    ? translateNow("interface.RecordDialog.yourPhoneAsksOnce")
+                    : translateNow(
+                        "interface.RecordDialog.theCameraAndMicrophoneAreOn",
+                      )}
+                </p>
+              </div>
+            )}
+            {stage === "starting" && (
+              <p>
+                {translateNow(
+                  "interface.RecordDialog.startingTheCameraAndMicrophone",
+                )}
               </p>
-              {delivered && (
-                <p className="record-delivered">
-                  {translateNow("interface.RecordDialog.recordingAt", {
-                    height: String(delivered),
+            )}
+            <div className="record-preview">
+              <video
+                ref={videoRef}
+                className="camera-view"
+                hidden={
+                  stage !== "ready" &&
+                  stage !== "recording" &&
+                  stage !== "paused"
+                }
+                aria-label={translateNow("interface.CameraDialog.cameraView")}
+                autoPlay
+                muted
+                playsInline
+              />
+              {recordingNow && (
+                /* The elapsed time sits on the picture, top left. Not a live region: it would speak
+                 every second. Read on focus. */
+                <p className="record-clock" tabIndex={0}>
+                  {translateNow("interface.RecordDialog.recorded", {
+                    time: elapsed,
                   })}
                 </p>
               )}
             </div>
-          )}
-          {recordingNow && room?.space === "low" && (
-            <p className="camera-failure" role="alert">
-              {(() => {
-                const minutes = minutesLeft(
-                  room.freeBytes,
-                  room.storedBytes,
-                  clock.elapsed(),
-                );
-                return minutes === null
-                  ? translateNow("interface.RecordDialog.lowOnRoom")
-                  : translateNow("interface.RecordDialog.lowOnRoomMinutes", {
-                      minutes,
-                    });
-              })()}
-            </p>
-          )}
-          {confirmStop && (
-            <div
-              className="record-confirm"
-              role="alertdialog"
-              aria-labelledby="record-stop-title"
-            >
-              <p id="record-stop-title">
-                {translateNow("interface.RecordDialog.stopAndSaveTheVideo")}
-              </p>
-              <div className="dialog-actions">
-                <button
-                  ref={keepRef}
-                  className="button"
-                  type="button"
-                  onClick={() => setConfirmStop(false)}
+            {recordingNow && (
+              <div className="record-state">
+                <p
+                  className={
+                    pausedNow
+                      ? "record-badge record-badge-paused"
+                      : "record-badge"
+                  }
                 >
-                  {translateNow("interface.RecordDialog.keepRecording")}
-                </button>
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={() => void finish("asked")}
-                >
-                  {translateNow("interface.RecordDialog.stopAndSave")}
-                </button>
+                  <Icon name={pausedNow ? "pause" : "camera"} />
+                  <span>
+                    {pausedNow
+                      ? translateNow("interface.RecordDialog.paused")
+                      : translateNow("interface.RecordDialog.recording")}
+                  </span>
+                </p>
+                {pausedNow && (
+                  <p className="record-paused-note">
+                    {translateNow(
+                      "interface.RecordDialog.pausedCameraAndMicrophoneStillOn",
+                    )}
+                  </p>
+                )}
+                {delivered && (
+                  <p className="record-delivered">
+                    {translateNow("interface.RecordDialog.recordingAt", {
+                      height: String(delivered),
+                    })}
+                  </p>
+                )}
               </div>
-            </div>
-          )}
-          {stage === "failed" && (
-            <p className="camera-failure" role="alert">
-              {needsRoom
-                ? translateNow("interface.RecordDialog.notEnoughRoom")
-                : failure
-                  ? `${cameraFailureMessage(failure, platform)} ${translateNow("interface.RecordDialog.videoNeedsBoth")}`
-                  : problem}
+            )}
+            {/* The record controls are one row under the picture, centred in its column. */}
+            {stage !== "starting" && (
+              <div className="record-controls">
+                {stage === "explain" && (
+                  <button
+                    ref={firstRef}
+                    className="button primary"
+                    type="button"
+                    onClick={() => void start()}
+                  >
+                    <Icon name="camera" />
+                    <span>
+                      {translateNow(
+                        "interface.RecordDialog.useTheCameraAndMicrophone",
+                      )}
+                    </span>
+                  </button>
+                )}
+                {stage === "ready" && (
+                  <button
+                    ref={startRef}
+                    className="button record-start"
+                    type="button"
+                    aria-disabled={switching}
+                    onClick={() => void record()}
+                  >
+                    <span className="record-start-dot" aria-hidden="true" />
+                    <span>
+                      {translateNow("interface.RecordDialog.startRecording")}
+                    </span>
+                  </button>
+                )}
+                {recordingNow && (
+                  <>
+                    {typeof MediaRecorder !== "undefined" &&
+                      typeof MediaRecorder.prototype.pause === "function" && (
+                        <button
+                          className="button"
+                          type="button"
+                          aria-disabled={changing}
+                          onClick={() => void (pausedNow ? resume() : pause())}
+                        >
+                          <Icon name={pausedNow ? "camera" : "pause"} />
+                          <span>
+                            {pausedNow
+                              ? translateNow(
+                                  "interface.RecordDialog.resumeRecording",
+                                )
+                              : translateNow(
+                                  "interface.RecordDialog.pauseRecording",
+                                )}
+                          </span>
+                        </button>
+                      )}
+                    <button
+                      ref={stopRef}
+                      className="button primary"
+                      type="button"
+                      onClick={() => void finish("asked")}
+                    >
+                      {translateNow("interface.RecordDialog.stopAndSave")}
+                    </button>
+                  </>
+                )}
+                {stage === "stopping" && (
+                  <button
+                    className="button primary"
+                    type="button"
+                    aria-disabled="true"
+                  >
+                    {translateNow("rename.saving")}
+                  </button>
+                )}
+                {stage === "failed" && (failure || needsRoom) && (
+                  <button
+                    ref={retryRef}
+                    className="button primary"
+                    type="button"
+                    onClick={() => void start()}
+                  >
+                    {translateNow("interface.CameraDialog.tryAgain")}
+                  </button>
+                )}
+              </div>
+            )}
+            {/* Always present, empty until there is something to say: a live region that is inserted
+              together with its text is not announced by every screen reader. A live region and not
+              role="status", which the dialog's own status line already is (one per dialog). */}
+            <p aria-live="polite" className="record-device-note">
+              {fellBack && (stage === "ready" || recordingNow)
+                ? translateNow("interface.RecordDialog.deviceFellBack")
+                : ""}
             </p>
-          )}
-          {stage !== "failed" && problem && (
-            <p className="camera-failure" role="alert">
-              {problem}
-            </p>
+            {recordingNow && room?.space === "low" && (
+              <p className="camera-failure" role="alert">
+                {(() => {
+                  const minutes = minutesLeft(
+                    room.freeBytes,
+                    room.storedBytes,
+                    clock.elapsed(),
+                  );
+                  return minutes === null
+                    ? translateNow("interface.RecordDialog.lowOnRoom")
+                    : translateNow("interface.RecordDialog.lowOnRoomMinutes", {
+                        minutes,
+                      });
+                })()}
+              </p>
+            )}
+            {confirmStop && (
+              <div
+                className="record-confirm"
+                role="alertdialog"
+                aria-labelledby="record-stop-title"
+              >
+                <p id="record-stop-title">
+                  {translateNow("interface.RecordDialog.stopAndSaveTheVideo")}
+                </p>
+                <div className="dialog-actions">
+                  <button
+                    ref={keepRef}
+                    className="button"
+                    type="button"
+                    onClick={() => setConfirmStop(false)}
+                  >
+                    {translateNow("interface.RecordDialog.keepRecording")}
+                  </button>
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={() => void finish("asked")}
+                  >
+                    {translateNow("interface.RecordDialog.stopAndSave")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {stage === "failed" && (
+              <p className="camera-failure" role="alert">
+                {needsRoom
+                  ? translateNow("interface.RecordDialog.notEnoughRoom")
+                  : failure
+                    ? `${cameraFailureMessage(failure, platform)} ${translateNow("interface.RecordDialog.videoNeedsBoth")}`
+                    : problem}
+              </p>
+            )}
+            {stage !== "failed" && problem && (
+              <p className="camera-failure" role="alert">
+                {problem}
+              </p>
+            )}
+          </div>
+          {hasSettings && (
+            <aside
+              className="record-settings"
+              aria-label={translateNow(
+                "interface.RecordDialog.recordingSettings",
+              )}
+            >
+              {hasDevices && (
+                <fieldset className="record-devices">
+                  <legend className="sr-only">
+                    {translateNow("interface.RecordDialog.cameraAndMicrophone")}
+                  </legend>
+                  <DevicePick
+                    kind="camera"
+                    label={translateNow("interface.RecordDialog.camera")}
+                    unnamed="interface.RecordDialog.unnamedCamera"
+                    devices={devices.cameras}
+                    current={using.camera}
+                    disabled={stage !== "ready"}
+                    onChange={(kind, id) => void switchDevice(kind, id)}
+                  />
+                  <DevicePick
+                    kind="microphone"
+                    label={translateNow("interface.RecordDialog.microphone")}
+                    unnamed="interface.RecordDialog.unnamedMicrophone"
+                    devices={devices.microphones}
+                    current={using.microphone}
+                    // Not disabled while a switch is under way: a disabled list loses the keyboard's
+                    // place. A change made meanwhile is ignored (see `switchDevice`) and the list
+                    // shows the device in use again.
+                    disabled={stage !== "ready"}
+                    onChange={(kind, id) => void switchDevice(kind, id)}
+                  />
+                  {stage === "ready" && typeof AudioContext !== "undefined" && (
+                    <div className="record-mic-test">
+                      <button
+                        className="button"
+                        type="button"
+                        aria-pressed={testing}
+                        onClick={() => setTesting((on) => !on)}
+                      >
+                        {translateNow(
+                          testing
+                            ? "interface.RecordDialog.stopTestingMicrophone"
+                            : "interface.RecordDialog.testMicrophone",
+                        )}
+                      </button>
+                      {testing && (
+                        <>
+                          <meter
+                            min={0}
+                            max={1}
+                            value={level}
+                            aria-label={translateNow(
+                              "interface.RecordDialog.microphoneLevel",
+                            )}
+                          />
+                          <p className="record-mic-hint">
+                            {translateNow(
+                              "interface.RecordDialog.saySomething",
+                            )}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </fieldset>
+              )}
+              {stage === "ready" && (
+                <fieldset className="record-quality appearance-choice">
+                  <legend>
+                    {translateNow("interface.RecordDialog.pictureQuality")}
+                  </legend>
+                  <label className="appearance-option">
+                    <input
+                      type="radio"
+                      name="video-quality"
+                      checked={quality === "standard"}
+                      onChange={() => chooseQuality("standard")}
+                    />
+                    <span>
+                      {standard}
+                      <span className="record-quality-size">
+                        {translateNow(
+                          "interface.RecordDialog.aboutStandardPerHour",
+                        )}
+                      </span>
+                    </span>
+                  </label>
+                  {highOk && (
+                    <label className="appearance-option">
+                      <input
+                        type="radio"
+                        name="video-quality"
+                        checked={quality === "high"}
+                        onChange={() => chooseQuality("high")}
+                      />
+                      <span>
+                        {high}
+                        <span className="record-quality-size">
+                          {translateNow(
+                            "interface.RecordDialog.aboutHighPerHour",
+                          )}
+                        </span>
+                      </span>
+                    </label>
+                  )}
+                  <p>
+                    {translateNow(
+                      "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
+                    )}
+                  </p>
+                </fieldset>
+              )}
+              <p className="record-settings-note">
+                {translateNow("interface.RecordDialog.settingsNote")}
+              </p>
+            </aside>
           )}
         </div>
         <p className="native-dialog-status" role="status">
           {[status, notice].filter(Boolean).join(" ")}
         </p>
-        <footer className="dialog-actions camera-actions">
-          {stage === "explain" && (
-            <>
-              <button className="button" type="button" onClick={close}>
-                {translateNow("common.cancel")}
-              </button>
-              <button
-                ref={firstRef}
-                className="button primary"
-                type="button"
-                onClick={() => void start()}
-              >
-                <Icon name="camera" />
-                <span>
-                  {translateNow(
-                    "interface.RecordDialog.useTheCameraAndMicrophone",
-                  )}
-                </span>
-              </button>
-            </>
-          )}
-          {stage === "starting" && (
-            <button className="button" type="button" onClick={close}>
-              {translateNow("common.cancel")}
-            </button>
-          )}
-          {stage === "ready" && (
-            <>
-              <button className="button" type="button" onClick={close}>
-                {translateNow("common.cancel")}
-              </button>
-              <button
-                ref={startRef}
-                className="button primary"
-                type="button"
-                onClick={() => void record()}
-              >
-                <Icon name="camera" />
-                <span>
-                  {translateNow("interface.RecordDialog.startRecording")}
-                </span>
-              </button>
-            </>
-          )}
-          {recordingNow && (
-            <>
-              {typeof MediaRecorder !== "undefined" &&
-                typeof MediaRecorder.prototype.pause === "function" && (
-                  <button
-                    className="button"
-                    type="button"
-                    aria-disabled={changing}
-                    onClick={() => void (pausedNow ? resume() : pause())}
-                  >
-                    <Icon name={pausedNow ? "camera" : "pause"} />
-                    <span>
-                      {pausedNow
-                        ? translateNow("interface.RecordDialog.resumeRecording")
-                        : translateNow("interface.RecordDialog.pauseRecording")}
-                    </span>
-                  </button>
-                )}
-              <button
-                ref={stopRef}
-                className="button primary"
-                type="button"
-                onClick={() => void finish("asked")}
-              >
-                {translateNow("interface.RecordDialog.stopAndSave")}
-              </button>
-            </>
-          )}
-          {stage === "stopping" && (
-            <button
-              className="button primary"
-              type="button"
-              aria-disabled="true"
-            >
-              {translateNow("rename.saving")}
-            </button>
-          )}
-          {stage === "failed" && (
-            <>
-              <button className="button" type="button" onClick={close}>
-                {translateNow("photo.close")}
-              </button>
-              {(failure || needsRoom) && (
-                <button
-                  ref={retryRef}
-                  className="button primary"
-                  type="button"
-                  onClick={() => void start()}
-                >
-                  {translateNow("interface.CameraDialog.tryAgain")}
-                </button>
-              )}
-            </>
-          )}
-        </footer>
       </section>
     </div>
   );

@@ -187,8 +187,9 @@ describe("CameraDialog: choosing the camera", () => {
     connected = [LAPTOP, MICROPHONE];
     open();
     await startCamera();
-    await screen.findByText("FAKE Laptop camera");
-    expect(cameraList()).toBeNull();
+    await screen.findByRole("option", { name: "FAKE Laptop camera" });
+    expect(cameraList()).toBeDisabled();
+    expect(cameraList()).toHaveValue(LAPTOP.deviceId);
   });
 
   it("names an unnamed camera by its place in the list", async () => {
