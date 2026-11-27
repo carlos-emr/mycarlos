@@ -2104,6 +2104,8 @@ ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así q
 
 ai-summary-noSource = No se encontró la fuente
 
+ai-summary-generalPoints = Puntos generales (no vinculados a una línea concreta)
+
 ai-summary-englishOnly = Por ahora, los resúmenes se escriben en inglés. myCarlos solo comprueba los números y las indicaciones de «cuándo pedir ayuda» en inglés, así que compruébelos en el propio documento.
 
 ## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).

@@ -1906,6 +1906,8 @@ ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能
 
 ai-summary-noSource = 未找到来源
 
+ai-summary-generalPoints = 一般要点（未对应到具体某一行）
+
 ai-summary-englishOnly = 目前摘要以英文撰写。myCarlos 只对英文摘要核对数字和“何时就医”的提示，请在文档本身中核对这些内容。
 
 ## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).

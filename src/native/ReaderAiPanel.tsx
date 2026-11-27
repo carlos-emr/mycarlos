@@ -726,11 +726,19 @@ export function ReaderAiPanel({
         {summary && (
           <div className="native-reader-ai-result">
             <AiResultLabel tool={summary.tool} model={summary.model} />
-            <ol lang={summary.lang}>
-              {summary.sentences.map(({ text, source }, index) => (
+            {(() => {
+              // Keep the model's order within each list. The labelled group also covers a
+              // summary where every point lacks a source line (#581, threat model AI-05).
+              const items = summary.sentences.map((sentence, index) => ({
+                ...sentence,
+                index,
+              }));
+              const sourced = items.filter((item) => item.source);
+              const general = items.filter((item) => !item.source);
+              const row = ({ text, source, index }: (typeof items)[number]) => (
                 <li key={index}>
                   <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}
-                  {source ? (
+                  {source && (
                     <button
                       id={`reader-ai-show-${index}`}
                       className="button"
@@ -744,16 +752,32 @@ export function ReaderAiPanel({
                     >
                       {t("ai.summary.showInDocument")}
                     </button>
-                  ) : (
-                    // Never a guessed place: a sentence whose words were not
-                    // found in the document says so (threat model AI-05).
-                    <span className="ai-no-source">
-                      {t("ai.summary.noSource")}
-                    </span>
                   )}
                 </li>
-              ))}
-            </ol>
+              );
+              return (
+                <>
+                  {sourced.length > 0 && (
+                    <ol lang={summary.lang}>{sourced.map(row)}</ol>
+                  )}
+                  {general.length > 0 && (
+                    <div
+                      className="ai-general"
+                      role="group"
+                      aria-labelledby="reader-ai-general-heading"
+                    >
+                      <p
+                        id="reader-ai-general-heading"
+                        className="ai-general-heading"
+                      >
+                        {t("ai.summary.generalPoints")}
+                      </p>
+                      <ul lang={summary.lang}>{general.map(row)}</ul>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {/* Pages with no text, cut short or not read at all are never
               left out silently, for a kept summary as for a new one. */}
             {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}

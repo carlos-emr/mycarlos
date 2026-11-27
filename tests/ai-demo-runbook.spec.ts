@@ -301,7 +301,15 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
     await expect
       .soft(show.first(), "runbook, step 8: Show me in the document")
       .toBeVisible();
-    if (first) await says(panel, "No source found", "step 8");
+    if (first)
+      await expect
+        .soft(
+          panel.getByRole("group", {
+            name: "General points (not tied to one line)",
+          }),
+          "runbook, step 8: General points",
+        )
+        .toBeVisible();
     // Show me in the document → the page, with the quoted words marked.
     await show.first().click();
     await expect(reader.locator(".native-reader-text mark")).toHaveText(

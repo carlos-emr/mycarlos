@@ -242,15 +242,62 @@ describe("the reader's AI helper", () => {
     expect(links[1]).toHaveAccessibleDescription(
       "FAKE: repeat the test in two weeks.",
     );
-    const unsourced = within(panel).getAllByRole("listitem")[2];
-    expect(within(unsourced).getByText("No source found")).toBeVisible();
+    // A point with no source is never dropped (it may be a real finding the model misquoted) and
+    // never shown as if it had one: it follows the sourced points, under a heading that says it
+    // is not tied to one line (#581). Its own words are all there, with no link.
+    const group = within(panel).getByRole("group", {
+      name: "General points (not tied to one line)",
+    });
+    expect(group).toBeVisible();
+    const unsourced = within(group).getByRole("listitem");
+    expect(
+      within(unsourced).getByText(/something the document never says/),
+    ).toBeVisible();
     expect(within(unsourced).queryByRole("button")).toBeNull();
+    expect(within(panel).queryByText("No source found")).toBeNull();
+    // The sourced points stay first, in the model's order.
+    const items = within(panel).getAllByRole("listitem");
+    expect(items[2]).toBe(unsourced);
     expect(
       within(panel).getByText(
         humanText(/^Summary in plain words · FAKE test model · /),
       ),
     ).toBeVisible();
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("labels every point as general when none has a source", async () => {
+    const model = fakeLocalModel({
+      sentences: () => [
+        {
+          text: "FAKE: the letter is about a recent visit.",
+          quote: "No evidence of malignancy",
+        },
+        {
+          text: "FAKE: the doctor was thorough.",
+          quote: "Something else the document never says",
+        },
+      ],
+    });
+    renderReader(model);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const panel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    const group = await within(panel).findByRole("group", {
+      name: "General points (not tied to one line)",
+    });
+    expect(within(group).getAllByRole("listitem")).toHaveLength(2);
+    expect(
+      within(group).getByText(/the letter is about a recent visit/),
+    ).toBeVisible();
+    expect(within(group).getByText(/the doctor was thorough/)).toBeVisible();
+    expect(
+      within(panel).queryByRole("button", { name: "Show me in the document" }),
+    ).toBeNull();
   });
 
   it("shortens the warning to an AI draft tag after Don't show this again, never removes the tag, and brings the sentence back from the info button", async () => {

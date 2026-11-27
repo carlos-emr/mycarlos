@@ -899,6 +899,7 @@ export const MESSAGE_KEYS = [
   "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "ai.summary.generalPoints",
   "ai.summary.englishOnly",
   "ai.summary.progress.before",
   "ai.summary.progress.reading",
@@ -2466,6 +2467,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
+  "ai.summary.generalPoints": "ai-summary-generalPoints",
   "ai.summary.englishOnly": "ai-summary-englishOnly",
   "ai.summary.progress.before": "ai-summary-progress-before",
   "ai.summary.progress.reading": "ai-summary-progress-reading",
@@ -4136,6 +4138,7 @@ export interface MessageArgsByKey {
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
+  "ai.summary.generalPoints": undefined;
   "ai.summary.englishOnly": undefined;
   "ai.summary.progress.before": undefined;
   "ai.summary.progress.reading": undefined;

@@ -122,6 +122,9 @@ export interface FakeAiSetup {
   };
   /** What the model says it explains a term as. */
   explanation?: string;
+  /** A general point a summary adds after the page sentences, with a quote the document never
+   * says: it has no source (#581). Default: none. */
+  generalPoint?: string;
   /** The last page a summary reads, by its index, as the helper's own fit
    * would (#301). Default: every page. */
   readUpTo?: number;
@@ -633,6 +636,11 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                   quote: line,
                 };
               });
+            if (setup.generalPoint)
+              sentences.push({
+                text: setup.generalPoint,
+                quote: "FAKE words the document never says",
+              });
             const last = pages.at(-1)?.index ?? 0;
             return {
               sentences,
@@ -875,6 +883,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       ),
       knownDetails: setup.knownDetails ?? {},
       explanation: setup.explanation ?? null,
+      generalPoint: setup.generalPoint ?? null,
       readUpTo: setup.readUpTo ?? null,
       limitsConfirmed: setup.limitsConfirmed ?? false,
       loadCheck: setup.loadCheck ?? "ready",
