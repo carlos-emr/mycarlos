@@ -1148,7 +1148,10 @@ describe("durable vault UI", () => {
     }
 
     it("adds documents and pictures through the document import, as before", async () => {
-      const bridge = await openWithPick({ kind: "documents", pickId: "pick-d" });
+      const bridge = await openWithPick({
+        kind: "documents",
+        pickId: "pick-d",
+      });
 
       await waitFor(() =>
         expect(bridge.importPickedFiles).toHaveBeenCalledWith(
