@@ -366,9 +366,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         if record.hidden.is_some() {
             return Err(VaultError::Invalid);
@@ -483,9 +481,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         let mut results: Vec<AiResultInfo> = record
             .ai_results
@@ -506,9 +502,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         let stored = record
             .ai_results
