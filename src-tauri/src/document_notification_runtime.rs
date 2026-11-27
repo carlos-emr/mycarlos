@@ -1030,6 +1030,162 @@ pub(crate) mod active {
             assert_eq!(fs::read(&path).unwrap(), original);
         }
 
+        /// A saved file of the current shape with the given entries, as JSON text.
+        fn saved_with(events: &str) -> String {
+            format!(
+                r#"{{"version":2,"enabled":true,"events":[{events}],"automatic_checks_enabled":false,"automatic_consent_version":0}}"#
+            )
+        }
+
+        fn saved_entry(key: &str, outcome: &str) -> String {
+            format!(r#"{{"key":"{key}","outcome":"{outcome}"}}"#)
+        }
+
+        #[test]
+        fn a_saved_file_this_build_cannot_trust_is_refused_whole_and_left_as_it_was() {
+            let temp = tempfile::tempdir().unwrap();
+            let key = "ab".repeat(32);
+            let too_many = (0..=MAX_EVENTS)
+                .map(|n| saved_entry(&format!("{n:064x}"), "os_accepted"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let cases: Vec<(&str, String)> = vec![
+                ("a key that is too short", saved_with(&saved_entry("abcd", "failed"))),
+                (
+                    "a key with an upper-case digit",
+                    saved_with(&saved_entry(&"A".repeat(64), "failed")),
+                ),
+                (
+                    "a key that is not hexadecimal",
+                    saved_with(&saved_entry(&"g".repeat(64), "failed")),
+                ),
+                (
+                    "the same key twice",
+                    saved_with(&format!(
+                        "{0},{0}",
+                        saved_entry(&key, "os_accepted")
+                    )),
+                ),
+                ("more entries than the ledger keeps", saved_with(&too_many)),
+                (
+                    "an outcome this build does not know",
+                    saved_with(&saved_entry(&key, "seen")),
+                ),
+                (
+                    "an entry with a field this build does not know",
+                    saved_with(&format!(
+                        r#"{{"key":"{key}","outcome":"failed","extra":1}}"#
+                    )),
+                ),
+                (
+                    "a version that is neither 1 nor 2",
+                    r#"{"version":3,"enabled":true,"events":[],"automatic_checks_enabled":false,"automatic_consent_version":0}"#
+                        .to_owned(),
+                ),
+                (
+                    "a current-shaped file that says it is version 1",
+                    r#"{"version":1,"enabled":true,"events":[],"automatic_checks_enabled":false,"automatic_consent_version":0}"#
+                        .to_owned(),
+                ),
+                (
+                    "an old-shaped file that says it is version 5",
+                    r#"{"version":5,"enabled":true,"events":[]}"#.to_owned(),
+                ),
+            ];
+            for (name, content) in cases {
+                let path = temp.path().join(format!("{}.json", name.replace(' ', "-")));
+                fs::write(&path, &content).unwrap();
+                let (runtime, calls) = mock_runtime(path.clone());
+                assert!(!runtime.status().available, "{name}");
+                assert!(
+                    matches!(runtime.set_enabled(true), Err(Error::Unavailable)),
+                    "{name}"
+                );
+                arrival(&runtime);
+                assert_eq!(calls.load(Ordering::SeqCst), 0, "{name}");
+                assert_eq!(fs::read(&path).unwrap(), content.as_bytes(), "{name}");
+            }
+        }
+
+        #[test]
+        fn the_most_a_saved_file_may_hold_still_loads_and_one_more_does_not() {
+            let temp = tempfile::tempdir().unwrap();
+            // Exactly the ledger's entry limit loads; the previous test has one more refused.
+            let full = (0..MAX_EVENTS)
+                .map(|n| saved_entry(&format!("{n:064x}"), "os_accepted"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let path = temp.path().join("full.json");
+            fs::write(&path, saved_with(&full)).unwrap();
+            let (runtime, _) = mock_runtime(path);
+            assert!(runtime.status().available);
+            // A file of exactly the size limit loads, and one byte more does not: blank space
+            // around a valid file counts.
+            let valid = saved_with("");
+            let at_limit = format!("{}{valid}", " ".repeat(MAX_BYTES - valid.len()));
+            assert_eq!(at_limit.len(), MAX_BYTES);
+            let path = temp.path().join("at-limit.json");
+            fs::write(&path, &at_limit).unwrap();
+            let (runtime, _) = mock_runtime(path);
+            assert!(runtime.status().available);
+            let over = format!(" {at_limit}");
+            let path = temp.path().join("over.json");
+            fs::write(&path, &over).unwrap();
+            let (runtime, _) = mock_runtime(path.clone());
+            assert!(!runtime.status().available);
+            assert_eq!(fs::read(&path).unwrap(), over.as_bytes());
+        }
+
+        #[test]
+        fn a_state_path_that_is_not_a_plain_file_is_never_read_or_written() {
+            let temp = tempfile::tempdir().unwrap();
+            // A folder where the file should be.
+            let folder = temp.path().join("folder.json");
+            fs::create_dir(&folder).unwrap();
+            let (runtime, calls) = mock_runtime(folder.clone());
+            assert!(!runtime.status().available);
+            assert!(matches!(runtime.set_enabled(true), Err(Error::Unavailable)));
+            arrival(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert!(folder.is_dir());
+            // A link to a valid file: followed by no one.
+            #[cfg(unix)]
+            {
+                let real = temp.path().join("real.json");
+                fs::write(&real, saved_with("")).unwrap();
+                let link = temp.path().join("link.json");
+                std::os::unix::fs::symlink(&real, &link).unwrap();
+                let (runtime, _) = mock_runtime(link.clone());
+                assert!(!runtime.status().available);
+                assert!(matches!(runtime.set_enabled(true), Err(Error::Unavailable)));
+                assert!(fs::symlink_metadata(&link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+                assert_eq!(fs::read(&real).unwrap(), saved_with("").as_bytes());
+            }
+            // No file at all is a fresh start: available, and nothing on.
+            let (runtime, _) = mock_runtime(temp.path().join("absent.json"));
+            let status = runtime.status();
+            assert!(status.available);
+            assert!(!status.enabled);
+        }
+
+        #[test]
+        fn a_notice_still_waiting_when_the_file_was_saved_is_unknown_not_retried() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let queued = saved_with(&saved_entry(&"cd".repeat(32), "queued"));
+            fs::write(&path, &queued).unwrap();
+            let (runtime, calls) = mock_runtime(path.clone());
+            assert!(runtime.status().available);
+            // The ambiguous crash window: its outcome reads back as unknown, and loading shows
+            // nothing and rewrites nothing.
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::Unknown));
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert_eq!(fs::read(&path).unwrap(), queued.as_bytes());
+        }
+
         #[cfg(not(windows))]
         #[test]
         fn where_no_notice_can_be_shown_the_automatic_checks_still_work() {
