@@ -172,10 +172,12 @@ export function CreateVault({
     details?: PersonDetails,
     vaultName?: string,
   ) => Promise<void>;
-  /** Setting up ANOTHER vault on this device (#357), from Security in an unlocked vault: the
-   * screen also asks for the new vault's name, says the others are not touched, and can be
-   * cancelled. It is never offered from the unlock screen. */
-  newVault?: { onCancel: () => void };
+  /** Setting up ANOTHER vault on this device (#357), from Security in an unlocked vault or from
+   * the unlock screen (`fromLockScreen`): the screen also asks for the new vault's name, says the
+   * others are not touched, says that the device asks for a confirmation first, in a window this
+   * app cannot click (#562), and can be cancelled. From the lock screen no vault is open, so it
+   * does not say that one is locked first. */
+  newVault?: { onCancel: () => void; fromLockScreen?: boolean };
   /** Whether the vault can keep a person's details: then they are asked for
    * here, after whose records these are, or left for later. */
   askDetails?: boolean;
@@ -269,7 +271,15 @@ export function CreateVault({
         <h1 id="create-title">
           {t(newVault ? "newVault.title" : "create.title")}
         </h1>
-        <p>{t(newVault ? "newVault.intro" : "create.intro")}</p>
+        <p>
+          {t(
+            newVault
+              ? newVault.fromLockScreen
+                ? "newVault.introLocked"
+                : "newVault.intro"
+              : "create.intro",
+          )}
+        </p>
         {!newVault && <p>{t("create.stays")}</p>}
         {newVault && <p>{t("newVault.others")}</p>}
         <form onSubmit={submit}>
@@ -388,7 +398,10 @@ export function CreateVault({
           {confirmation && passphrase !== confirmation && (
             <p role="alert">{t("passphrase.mismatch")}</p>
           )}
-          {newVault && <p>{t("newVault.lockNote")}</p>}
+          {newVault && !newVault.fromLockScreen && (
+            <p>{t("newVault.lockNote")}</p>
+          )}
+          {newVault && <p>{t("newVault.confirmNote")}</p>}
           <AuthNotice notice={notice} />
           <button className="button primary" disabled={busy || invalid}>
             {t(newVault ? "newVault.submit" : "create.submit")}
@@ -436,6 +449,10 @@ export function UnlockVault({
   severalVaults?: {
     onFind: (passphrase: string) => Promise<FoundVaults | null>;
     onNameFound: (vaults: { id: string; name: string }[]) => Promise<boolean>;
+    /** "Set up a new vault…" (#562): a new person can set a vault up from the lock screen. The
+     * device asks for a confirmation of its own, which this page cannot click, before anything
+     * is created. Given wherever the native side can add a vault. */
+    onSetUp?: () => void;
   };
   /** How many shared files wait for an unlock. Their names are not shown. */
   waiting?: number;
@@ -530,6 +547,16 @@ export function UnlockVault({
               onFind={severalVaults.onFind}
               onNameFound={severalVaults.onNameFound}
             />
+          )}
+          {severalVaults?.onSetUp && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={severalVaults.onSetUp}
+            >
+              {t("security.newVault.button")}
+            </button>
           )}
         </form>
         <details className="vault-reset">

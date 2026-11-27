@@ -17299,10 +17299,120 @@ describe("several vaults on one device", () => {
     expect(bridge.unlockNamed).not.toHaveBeenCalled();
   });
 
-  it("never offers to set up a vault on the unlock screen", async () => {
+  // A new person sets a vault up from the lock screen (#562): the native add asks the device for a
+  // confirmation the page cannot click, and an existing vault is never opened or locked by it.
+  it("offers to set up a new vault on the unlock screen when the native side can add one", async () => {
     render(<VaultApp bridge={severalVaultBridge()} />);
     await screen.findByText(humanText("Use a different vault"));
+    expect(
+      screen.getByRole("button", { name: humanText("Set up a new vault…") }),
+    ).toBeVisible();
+  });
+
+  it("does not offer it where the native side cannot add a vault", async () => {
+    render(<VaultApp bridge={severalVaultBridge({ addVault: undefined })} />);
+    await screen.findByText(humanText("Use a different vault"));
     expect(screen.queryByText(humanText(/Set up a new vault/))).toBeNull();
+  });
+
+  // The lock screen's own set-up: opens the form, fills it in and submits it.
+  const submitSetUpFromLockScreen = async (
+    user: ReturnType<typeof userEvent.setup>,
+  ) => {
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    await user.type(
+      await screen.findByLabelText(humanText("Name for this vault")),
+      "FAKE Garden",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
+      "FAKE Robin",
+    );
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
+      await user.type(field, PASS);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Set up vault") }),
+    );
+  };
+
+  it("sets a vault up from the lock screen: it says the device asks first, locks nothing, and opens the new vault", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    // No vault is open, so it does not claim that one is locked first; it does say that the device
+    // asks for a confirmation in a window of its own.
+    expect(
+      screen.queryByText(humanText(/This vault is locked first/)),
+    ).toBeNull();
+    expect(
+      screen.queryByText(humanText(/Choosing Set up vault locks this vault/)),
+    ).toBeNull();
+    expect(
+      screen.getByText(humanText(/asks this device to confirm/)),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
+    await submitSetUpFromLockScreen(user);
+    expect(
+      await screen.findByText(
+        humanText(
+          "The new vault is ready. Lock it when you are done, and unlock it again with its name and passphrase.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(bridge.addVault).toHaveBeenCalledExactlyOnceWith(
+      "FAKE Garden",
+      PASS,
+      "FAKE Robin",
+    );
+    // Nothing was unlocked, and nothing locked: there was nothing open.
+    expect(bridge.unlock).not.toHaveBeenCalled();
+    expect(bridge.unlockNamed).not.toHaveBeenCalled();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("stays on the form when the device's confirmation is refused, and nothing was made", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge({
+      addVault: vi
+        .fn()
+        .mockRejectedValue({ code: "cancelled", message: "FAKE cancelled" }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await submitSetUpFromLockScreen(user);
+    await waitFor(() => expect(bridge.addVault).toHaveBeenCalledTimes(1));
+    // Still the set-up form, not a library; the vault name field is still there.
+    expect(
+      await screen.findByLabelText(humanText("Name for this vault")),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: humanText(/Security/) }),
+    ).toBeNull();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the unlock screen when the lock screen's set-up is cancelled", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
+    expect(
+      await screen.findByText(humanText("Use a different vault")),
+    ).toBeVisible();
+    expect(bridge.addVault).not.toHaveBeenCalled();
   });
 
   // Opens Security, then the setup screen, and fills it in and submits it.

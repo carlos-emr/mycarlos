@@ -618,6 +618,14 @@ lockWarning-left = 還剩 { $count } 秒。
 
 lockWarning-title = myCarlos 將在 { $count } 秒後鎖定，以保護您的紀錄隱私。
 
+native-addVault-confirm = 建立新保險庫
+
+native-addVault-decline = 不建立
+
+native-addVault-message = myCarlos 在鎖定狀態下收到了在此裝置上建立一個空保險庫的要求。您現有的保險庫仍保持鎖定：不會被開啟或變更。如果這不是您的要求，請選擇「不建立」。
+
+native-addVault-title = 要在此裝置上建立新保險庫嗎？
+
 native-backup-noteEmptied = 您選擇的檔案可能為空或不完整；如果您選擇覆寫較舊的備份，該備份已被清空。請刪除該檔案，不要刪除其他備份。
 
 native-backup-noteUntouched = 您選擇的儲存位置可能留下空檔案（0 位元組）；您可以刪除該檔案。請保留所有非空的備份。
@@ -1269,6 +1277,10 @@ newVault-name-hint = 您在解鎖畫面輸入此名稱來開啟這個保險庫�
 newVault-name-invalid = 請選擇 1 至 64 個字元的名稱。
 
 newVault-lockNote = 選擇「設定保險庫」會先鎖定此保險庫，然後開啟新的保險庫。
+
+newVault-introLocked = 此裝置上的新保險庫有自己的密語、復原金鑰和人員。
+
+newVault-confirmNote = 選擇「設定保險庫」後，此裝置會先在獨立的視窗中要求確認，本應用程式無法點擊該視窗。除非您在那裡同意，否則不會建立任何內容。
 
 newVault-submit = 設定保險庫
 

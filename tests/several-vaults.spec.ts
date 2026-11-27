@@ -153,7 +153,8 @@ test("another vault is set up from Security, asked of the open vault, and the pa
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
-  // The unlock screen never offers it: this is the only way in.
+  // From an open vault it is in Security (the lock screen's own button is covered by the
+  // component tests, as the confirmation is the device's and the fake agrees to it).
   await page
     .getByRole("button", { name: en("security.title") })
     .first()
@@ -186,6 +187,7 @@ test("another vault is set up from Security, asked of the open vault, and the pa
   const added = await fakeCalls(page, "vault_add_vault");
   expect(added).toEqual([
     {
+      locale: "en",
       request: {
         name: "FAKE Garden",
         passphrase: "FAKE garden passphrase 934",

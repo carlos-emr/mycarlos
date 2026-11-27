@@ -55,6 +55,7 @@ const BLIND_SPOT_COMMANDS = [
   "ai_summarize",
   "background_report_locale",
   "background_status",
+  "vault_add_vault",
   "vault_ai_result_save",
   "vault_export_text_copy",
   "vault_export_text_pick",

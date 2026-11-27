@@ -618,6 +618,14 @@ lockWarning-left = 还剩 { $count } 秒。
 
 lockWarning-title = myCarlos 将在 { $count } 秒后锁定，以保护您的记录隐私。
 
+native-addVault-confirm = 新建保险库
+
+native-addVault-decline = 不新建
+
+native-addVault-message = myCarlos 在锁定状态下收到了在此设备上新建一个空保险库的请求。您现有的保险库保持锁定：不会被打开或更改。如果这不是您的请求，请选择“不新建”。
+
+native-addVault-title = 要在此设备上新建保险库吗？
+
 native-backup-noteEmptied = 您选择的文件可能为空或不完整；如果您选择覆写较旧的备份，该备份已被清空。请删除该文件，不要删除其他备份。
 
 native-backup-noteUntouched = 您选择的保存位置可能留下空文件（0 字节）；您可以删除该文件。请保留所有非空的备份。
@@ -1269,6 +1277,10 @@ newVault-name-hint = 您在解锁屏幕输入此名称来打开这个保险库�
 newVault-name-invalid = 请选择 1 至 64 个字符的名称。
 
 newVault-lockNote = 选择「设置保险库」会先锁定此保险库，然后打开新的保险库。
+
+newVault-introLocked = 此设备上的新保险库有自己的密码短语、恢复密钥和人员。
+
+newVault-confirmNote = 选择「设置保险库」后，此设备会先在单独的窗口中请求确认，本应用无法点击该窗口。除非您在那里同意，否则不会创建任何内容。
 
 newVault-submit = 设置保险库
 

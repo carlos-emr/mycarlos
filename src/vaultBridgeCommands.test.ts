@@ -80,6 +80,7 @@ describe("each bridge method invokes its native command with its arguments", () 
       (b) => b.addVault("FAKE vault", "FAKE phrase", "FAKE Person"),
       "vault_add_vault",
       {
+        locale: locale(),
         request: {
           name: "FAKE vault",
           passphrase: "FAKE phrase",

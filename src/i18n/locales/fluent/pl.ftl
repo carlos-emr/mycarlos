@@ -744,7 +744,15 @@ lockWarning-title =
     *[other] myCarlos zablokuje się za { $count } sekundy, aby chronić prywatność dokumentów.
     }
 
-native-backup-noteEmptied = Plik w wybranym miejscu zapisu może być pusty lub niekompletny; jeśli zapis miał zastąpić starszą kopię zapasową, została ona opróżniona. Proszę usunąć ten plik, a zachować pozostałe kopie zapasowe.
+native-addVault-confirm = Utwórz nowy sejf
+
+native-addVault-decline = Nie twórz
+
+native-addVault-message = Poproszono myCarlos o utworzenie nowego, pustego sejfu na tym urządzeniu, gdy jest zablokowany. Istniejące sejfy pozostają zablokowane: nie są otwierane ani zmieniane. Jeśli nie prosisz o to, wybierz „Nie twórz”.
+
+native-addVault-title = Utworzyć nowy sejf na tym urządzeniu?
+
+native-backup-noteEmptied = Plik w wybranym miejscu zapisu może być pustylub niekompletny; jeśli zapis miał zastąpić starszą kopię zapasową, została ona opróżniona. Proszę usunąć ten plik, a zachować pozostałe kopie zapasowe.
 
 native-backup-noteUntouched = W wybranym miejscu zapisu może pozostać pusty plik (0 bajtów): można go usunąć. Proszę zachować każdą niepustą kopię zapasową.
 
@@ -1473,6 +1481,10 @@ newVault-name-hint = Wpisujesz tę nazwę na ekranie odblokowania, aby otworzyć
 newVault-name-invalid = Wybierz nazwę o długości od 1 do 64 znaków.
 
 newVault-lockNote = Wybranie opcji Utwórz sejf blokuje ten sejf, a potem otwiera nowy.
+
+newVault-introLocked = Nowy sejf na tym urządzeniu ma własne hasło główne, klucz odzyskiwania i własne osoby.
+
+newVault-confirmNote = Wybranie opcji Utwórz sejf najpierw prosi to urządzenie o potwierdzenie w osobnym oknie, którego ta aplikacja nie może kliknąć. Nic nie zostanie utworzone, jeśli tam się nie zgodzisz.
 
 newVault-submit = Utwórz sejf
 

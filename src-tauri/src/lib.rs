@@ -3257,7 +3257,7 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
-        forget_vault(throttle.inner(), store.arc(), store.all()).await;
+        forget_vault(throttle.inner(), &store).await;
         refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     }
     created
@@ -3277,6 +3277,7 @@ async fn vault_unlock(
     tried(
         throttle.inner(),
         Attempt::Unlock,
+        Holds::of(&store),
         run_blocking(store.arc(), move |store| {
             let result = store
                 .unlock(&request.passphrase)
@@ -4090,6 +4091,7 @@ async fn vault_change_passphrase(
     tried(
         throttle.inner(),
         Attempt::Unlock,
+        Holds::of(&store),
         run_blocking(store.arc(), move |store| {
             let result =
                 store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
@@ -4125,6 +4127,7 @@ async fn vault_recovery_key_begin(
     tried(
         throttle.inner(),
         Attempt::Unlock,
+        Holds::of(&store),
         run_blocking(store.arc(), move |store| {
             let result = store
                 .begin_recovery_key(&request.passphrase)
@@ -4393,6 +4396,7 @@ async fn vault_recover(
     let passphrase_replaced = tried(
         throttle.inner(),
         Attempt::RecoveryKey,
+        Holds::of(&store),
         run_blocking(store.arc(), move |store| {
             let result = store
                 .recover(&request.recovery_key, &request.new_passphrase)
@@ -4471,6 +4475,7 @@ impl<W: std::io::Write> std::io::Write for Counted<W> {
 async fn tried<T>(
     throttle: &Arc<AttemptThrottle>,
     attempt: Attempt,
+    holds: Holds,
     command: impl std::future::Future<Output = CommandResult<T>>,
 ) -> CommandResult<T> {
     // A try the app is killed during stays counted: that must not be a way
@@ -4481,8 +4486,12 @@ async fn tried<T>(
         .map_err(PublicError::wait)?;
     let result = command.await;
     let now = now_ms();
+    // A right secret clears the counts only when the device holds one vault: with several, it
+    // opens one of them and says nothing of guesses at the others (#562 review F1).
+    let alone = result.is_ok() && holds.alone_on_device().await;
     let outcome = match &result {
-        Ok(_) => Outcome::Right,
+        Ok(_) if alone => Outcome::Right,
+        Ok(_) => Outcome::RightWithOthers,
         Err(error) if matches!(error.code, "wrong_passphrase" | "wrong_recovery_key") => {
             Outcome::Wrong
         }
@@ -4496,21 +4505,48 @@ async fn tried<T>(
     result
 }
 
+/// The vaults the device holds, as a command that tries a secret sees them: what decides whether a
+/// right secret may clear the counts (`tried`). A command that has a vault store passes
+/// [`Holds::of`] its handle.
+struct Holds(StoreHandle);
+
+impl Holds {
+    fn of(store: &StoreHandle) -> Self {
+        let store = store.pin();
+        Self(store)
+    }
+
+    /// Whether the vault this handle is on is the only vault there is, asked AFTER the command ran
+    /// (a vault added while it ran is seen, #562 review). A doubt leaves the counts: see
+    /// [`device_is_alone`].
+    async fn alone_on_device(self) -> bool {
+        device_is_alone(&self.0).await
+    }
+}
+
+/// Whether the vault `store` is on is the only vault the device has: no other listed vault that
+/// exists (or cannot be told not to: `other_vault_exists`) and no unlisted one either (a vault an
+/// add made whose name was not written, or one a lost registry left: `unlisted_vault_exists`). The
+/// list of vaults is read now, not when the command began. A check that could not run is "not
+/// alone": a doubt leaves the counts as they were.
+async fn device_is_alone(store: &StoreHandle) -> bool {
+    let store = store.pin();
+    let (this, all, source) = (Arc::clone(store.arc()), store.all(), store.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        !other_vault_exists(&this, &all) && !source.unlisted_vault_exists()
+    })
+    .await
+    .unwrap_or(false)
+}
+
 /// The vault the counts were about is gone or replaced: its counts go too, **but only when it was
 /// the only vault on the device** (#357 4c). With several vaults the counts are about the device,
 /// not about one vault: a vault made, set aside or restored while another exists must not be a way
 /// to start the counter again. A vault that cannot be read is taken to exist, so a doubt leaves the
 /// counts as they were.
-async fn forget_vault(
-    throttle: &Arc<AttemptThrottle>,
-    this: &Arc<VaultStore>,
-    all: Vec<Arc<VaultStore>>,
-) {
-    let this = Arc::clone(this);
-    let alone = tauri::async_runtime::spawn_blocking(move || !other_vault_exists(&this, &all))
-        .await
-        .unwrap_or(false);
-    if !alone {
+async fn forget_vault(throttle: &Arc<AttemptThrottle>, store: &StoreHandle) {
+    let store = store.pin();
+    if !device_is_alone(&store).await {
         return;
     }
     let now = now_ms();
@@ -5323,17 +5359,22 @@ async fn vault_restore_inspect(
         .restores
         .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
-    tried(throttle.inner(), Attempt::Backup, async move {
-        run_blocking(store.arc(), move |store| {
-            let result = request.credential().and_then(|credential| {
-                store.inspect_backup(open_restore_source(&app, source)?, credential)
-            });
-            request.zeroize();
-            result
-        })
-        .await
-        .map_err(PublicError::of_restore)
-    })
+    tried(
+        throttle.inner(),
+        Attempt::Backup,
+        Holds::of(&store),
+        async move {
+            run_blocking(store.arc(), move |store| {
+                let result = request.credential().and_then(|credential| {
+                    store.inspect_backup(open_restore_source(&app, source)?, credential)
+                });
+                request.zeroize();
+                result
+            })
+            .await
+            .map_err(PublicError::of_restore)
+        },
+    )
     .await
 }
 
@@ -5393,6 +5434,7 @@ async fn vault_restore(
         tried(
             throttle.inner(),
             Attempt::Backup,
+            Holds::of(&store),
             run_blocking(store.arc(), move |store| {
                 store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
             }),
@@ -5436,7 +5478,7 @@ async fn vault_restore(
     .await
     .map_err(PublicError::of_restore)?;
     // The vault the counts were about is replaced, or there was none.
-    forget_vault(throttle.inner(), store.arc(), store.all()).await;
+    forget_vault(throttle.inner(), &store).await;
     Ok(true)
 }
 
@@ -7514,49 +7556,100 @@ async fn vault_unlock_named(
     let picks = Arc::clone(picks.inner());
     let received = Arc::clone(received.inner());
     let vaults = store.clone();
-    let opened = tried(throttle.inner(), Attempt::Unlock, async move {
-        let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
-        let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
-        drop(request);
-        tauri::async_runtime::spawn_blocking(move || {
-            vaults
-                .unlock_named(&name, &passphrase, || {
-                    stop_work_for_switch(&picks, &received)
-                })
-                // As `vault_unlock`: a pick that read the old session passes no check in the new one.
-                .inspect(|_| picks.clear())
-        })
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
-    })
+    let opened = tried(
+        throttle.inner(),
+        Attempt::Unlock,
+        Holds::of(&store),
+        async move {
+            let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
+            let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+            drop(request);
+            tauri::async_runtime::spawn_blocking(move || {
+                vaults
+                    .unlock_named(&name, &passphrase, || {
+                        stop_work_for_switch(&picks, &received)
+                    })
+                    // As `vault_unlock`: a pick that read the old session passes no check in the new one.
+                    .inspect(|_| picks.clear())
+            })
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(Into::into)
+        },
+    )
     .await?;
     after_open(&opened);
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
+/// When the last vault add began (milliseconds, 0 when none has since the app started): the one add
+/// per [`ADD_INTERVAL_MS`] rule of `vault_add_vault` (#562 review F2).
+static LAST_ADD_MS: AtomicU64 = AtomicU64::new(0);
+/// The least time between two adds of a vault. Far longer than a person needs for a second vault,
+/// and far shorter than the cap ([`vault_registry::MAX_VAULTS`]) would take to reach by hand.
+const ADD_INTERVAL_MS: u64 = 5 * 60 * 1000;
+
+/// Takes the one place for an add at `now_ms`, atomically: `Ok` with what was there before (for
+/// [`release_add`]), or `Err` with the milliseconds left before another add may begin. A clock set
+/// back behind the last add is not a wait that never ends: it lets the add through.
+fn reserve_add(last: &AtomicU64, now_ms: u64) -> Result<u64, u64> {
+    let mut seen = last.load(Ordering::Acquire);
+    loop {
+        if seen != 0 && now_ms >= seen && now_ms < seen.saturating_add(ADD_INTERVAL_MS) {
+            return Err(seen.saturating_add(ADD_INTERVAL_MS) - now_ms);
+        }
+        match last.compare_exchange(seen, now_ms, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(before) => return Ok(before),
+            Err(changed) => seen = changed,
+        }
+    }
+}
+
+/// Gives the place back when the add made no vault, unless another add has taken it since.
+fn release_add(last: &AtomicU64, taken_at_ms: u64, before: u64) {
+    let _ = last.compare_exchange(taken_at_ms, before, Ordering::AcqRel, Ordering::Acquire);
+}
+
 /// Add a vault (#357 4c). The name is what the owner will type to find it, the passphrase opens it
-/// and the profile name is its first person; the registry entry is written first and the vault second
-/// (`VaultSlots::add_vault`), and the new vault becomes the one the screen is on. An add is not a
-/// guess, so it is not counted on the device-wide counter, but it is refused while a wait is running:
-/// a screen the device has locked out must not be a way to make vaults. Adding never clears the
-/// counter (the counts are about the device). **It needs the screen's vault to be OPEN** (an
-/// authenticated session, SLOT-02): it refuses as locked otherwise, and when it goes ahead it
-/// locks that vault itself, before anything is written, so the page cannot create vaults on a locked
-/// device and the lock-first order is the native side's, not the page's. Granted to the renderer
-/// with the several-vaults screen (PR 5), which offers it only inside an unlocked vault. A refusal
-/// after the vault was made (the window was closed to the tray meanwhile, or the old vault began
-/// something while the new one was made) leaves the new vault registered and locked: the screen
-/// must say it was already added, not offer to add it again.
+/// and the profile name is its first person; the vault is created first and its name written second
+/// (`VaultSlots::add_vault_confirmed`), and the new vault becomes the one the screen is on, opened
+/// empty, only after it exists. An add is not a guess, so it is not counted on the device-wide
+/// counter, but it is refused while a wait is running: a screen the device has locked out must not
+/// be a way to make vaults. Adding never clears the counter (the counts are about the device).
+///
+/// **The authority is a trusted native confirmation** (SLOT-02, Ben's decision on #562): an OS
+/// message box the page can neither draw nor click, shown before anything is created, with the
+/// screen's vault LOCKED (a new person can set a vault up from the lock screen; an existing vault is
+/// never opened, switched to or changed by it) or OPEN (then the vault is locked first, natively, as
+/// before, and the dialog is asked too, so a page in an open vault cannot add one without a human
+/// click). A refused dialog is `cancelled` and nothing was written. Besides the dialog: at most one
+/// add every five minutes, locked adds included, and at most sixteen vaults. A locked add answers a
+/// full device and a taken name alike (`Invalid`), after the dialog. A refusal after the vault was
+/// made (the window was closed to the tray meanwhile, or the old vault began something while the
+/// new one was made) leaves the new vault registered and locked: the screen must say it was already
+/// added, not offer to add it again.
 #[tauri::command]
 async fn vault_add_vault(
+    app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     received: State<'_, Arc<ReceivedFiles>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: AddVaultRequest,
+    locale: Option<UiLocale>,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // The trusted native confirmation (an OS message box the page can neither draw nor click),
+    // asked by `add_vault_confirmed` before anything is created, with the screen's vault locked or
+    // open: a new person can set a vault up from the lock screen, and a page in an open vault
+    // cannot add one without a human click. Its words come before anything is taken or written.
+    let locale = locale.unwrap_or_default();
+    let title = locale.text(MessageId::NativeAddVaultTitle)?;
+    let message = locale.text(MessageId::NativeAddVaultMessage)?;
+    let decline = locale.text(MessageId::NativeAddVaultDecline)?;
+    let go_ahead = locale.text(MessageId::NativeAddVaultConfirm)?;
+    let cancel = locale.text(MessageId::NativeCancel)?;
+    let dialog_app = app.clone();
     // As `vault_create` and `vault_unlock`: an add that finishes after the window was closed to the
     // tray is closed again and refused (#206), or the new vault would open in a window nobody sees.
     let started = desktop_background::close_locks();
@@ -7576,17 +7669,51 @@ async fn vault_add_vault(
     let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
     let profile = std::mem::take(&mut request.initial_profile_name);
     drop(request);
-    let opened = tauri::async_runtime::spawn_blocking(move || {
+    // At most one add every `ADD_INTERVAL_MS`, whoever asks (#562 review F2): a page in an unlocked
+    // vault could otherwise add vaults one after another, each opening the next. The place is taken
+    // before the add and given back if it did not make a vault, so a mistyped form costs nothing.
+    let reserved = reserve_add(&LAST_ADD_MS, now).map_err(PublicError::wait)?;
+    // A refused add that still made a vault (its name could not be written) keeps its place
+    // taken: such failures stay metered, and the vaults they leave are bounded by the cap.
+    let made_before = store.vaults_made();
+    let added = tauri::async_runtime::spawn_blocking(move || {
         vaults
-            .add_vault(&name, &passphrase, &profile, now_ms(), || {
-                stop_work_for_switch(&picks, &received)
-            })
+            .add_vault_confirmed(
+                || {
+                    confirmed_natively(
+                        &dialog_app,
+                        &title,
+                        message.clone(),
+                        &decline,
+                        &go_ahead,
+                        &cancel,
+                    )
+                },
+                &name,
+                &passphrase,
+                &profile,
+                now_ms(),
+                || stop_work_for_switch(&picks, &received),
+            )
             // As `vault_create`: a pick that read the old session passes no check in the new one.
             .inspect(|_| picks.clear())
     })
-    .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?
-    .map_err(PublicError::from)?;
+    .await;
+    let opened = match added {
+        Ok(Ok(opened)) => opened,
+        Ok(Err(error)) => {
+            if store.vaults_made() == made_before {
+                release_add(&LAST_ADD_MS, now, reserved);
+            }
+            return Err(PublicError::from(error));
+        }
+        Err(_) => {
+            if store.vaults_made() == made_before {
+                release_add(&LAST_ADD_MS, now, reserved);
+            }
+            return Err(PublicError::from(VaultError::Storage));
+        }
+    };
     // The vault is made and stays registered; it is locked again and the screen is told no.
     refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
     after_open(&opened);
@@ -7618,6 +7745,15 @@ async fn vault_find_other_vaults(
             },
             |outcome| {
                 if let Some(begun) = started.take() {
+                    // A vault the search opens is one of several (the registry's, and this one the
+                    // registry does not list): it says nothing of guesses at the others, so it
+                    // never clears the counts, in the middle of a search least of all (#562
+                    // review F1).
+                    let outcome = if outcome == Outcome::Right {
+                        Outcome::RightWithOthers
+                    } else {
+                        outcome
+                    };
                     throttle.settle(Attempt::Unlock, begun, outcome, now_ms());
                 }
             },
@@ -7644,6 +7780,12 @@ async fn vault_name_found_vaults(
     mut request: NameFoundRequest,
 ) -> CommandResult<()> {
     let store = store.pin();
+    // A device holds at most `MAX_VAULTS`, so a longer list names vaults that cannot all be there;
+    // refused before any of it is read (#562 review F3). Each name's own length is refused, before
+    // it is normalised, by the registry.
+    if request.vaults.len() > vault_registry::MAX_VAULTS {
+        return Err(VaultError::Invalid.into());
+    }
     let mut named = Vec::new();
     for vault in &mut request.vaults {
         let slot = vault_registry::SlotId::parse(&vault.id)
@@ -7879,7 +8021,7 @@ async fn vault_reset(
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
-    forget_vault(throttle.inner(), store.arc(), store.all()).await;
+    forget_vault(throttle.inner(), &store).await;
     Ok(true)
 }
 
@@ -8898,22 +9040,294 @@ mod tests {
         }
     }
 
+    const PASSPHRASE_A: &str = "river-azimuth-cobalt-sparrow-934";
+    const PASSPHRASE_B: &str = "lantern-orbit-willow-cascade-572";
+
+    /// A device of two real vaults, Main (passphrase A) and "Second" (passphrase B), both locked,
+    /// opened through the same handle the commands use.
+    fn two_real_vaults(dir: &std::path::Path) -> StoreHandle {
+        let mut registry =
+            vault_registry::Registry::with_main(vault_registry::HashCost::TEST).unwrap();
+        let second = registry.add_extra("Second").unwrap();
+        registry.save(dir).unwrap();
+        let slots = vault_slots::VaultSlots::open(dir.to_path_buf(), "FAKE.app".into());
+        for (slot, passphrase) in [
+            (vault_registry::SlotId::Main, PASSPHRASE_A),
+            (second, PASSPHRASE_B),
+        ] {
+            let store = slots.store_of(slot).unwrap();
+            store.create(passphrase, "FAKE Person", 1).unwrap();
+            store.lock();
+        }
+        StoreHandle::from_source(Arc::new(slots))
+    }
+
+    /// One counted try at an unlock by name, as `vault_unlock_named` makes it.
+    fn try_named(
+        throttle: &Arc<AttemptThrottle>,
+        vaults: &StoreHandle,
+        name: &str,
+        passphrase: &str,
+    ) -> &'static str {
+        let vaults = vaults.pin();
+        let (name, passphrase) = (name.to_owned(), passphrase.to_owned());
+        let (opened, vaults_for_command) = (vaults.clone(), vaults.clone());
+        let result = tauri::async_runtime::block_on(tried(
+            throttle,
+            Attempt::Unlock,
+            Holds::of(&opened),
+            async move {
+                vaults_for_command
+                    .unlock_named(&name, &passphrase, || {})
+                    .map(|_| ())
+                    .map_err(PublicError::from)
+            },
+        ));
+        // "ok" for a vault that opened, else the refusal's code (`PublicError` has no `Debug`).
+        result.map_or_else(|error| error.code, |()| "ok")
+    }
+
+    /// The review's blocker (F1): guesses at one vault, and a right passphrase for the other vault
+    /// in between. The count must stand, so the wait that guessing earns is not given back.
+    #[test]
+    fn a_right_passphrase_for_one_vault_does_not_give_back_the_guesses_made_at_another() {
+        let temp = tempfile::tempdir().unwrap();
+        let vaults = two_real_vaults(temp.path());
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        // Four wrong tries (the first five are free) ...
+        for _ in 0..throttle::FREE_TRIES - 1 {
+            assert_eq!(
+                try_named(
+                    &throttle,
+                    &vaults,
+                    "Second",
+                    "wrong-passphrase-for-nobody-1"
+                ),
+                "wrong_passphrase"
+            );
+        }
+        // ... then the right passphrase of the vault named Second opens it. Before the fix this
+        // cleared the count: here it does not, and it is not counted as a wrong try either.
+        assert_eq!(try_named(&throttle, &vaults, "Second", PASSPHRASE_B), "ok");
+        // Lock it again and make the fifth wrong try: the count stands at five, not at one.
+        vaults.arc().lock();
+        assert_eq!(
+            try_named(
+                &throttle,
+                &vaults,
+                "Second",
+                "wrong-passphrase-for-nobody-2"
+            ),
+            "wrong_passphrase"
+        );
+        // The sixth is held off by the wait the five earned (with the count cleared by the right
+        // one it would have been the second try, and let through).
+        assert_eq!(
+            try_named(&throttle, &vaults, "Second", PASSPHRASE_B),
+            "too_many_attempts"
+        );
+        assert!(vaults.arc().open_vault_id().is_none());
+    }
+
+    /// The attack as the review states it: guesses at vault B, a right passphrase for vault A in
+    /// between (A is Main, reached by the empty name). The count stands, in memory and on disk.
+    #[test]
+    fn a_right_passphrase_for_vault_a_does_not_give_back_the_guesses_at_vault_b_and_the_count_is_on_disk(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let vaults = two_real_vaults(temp.path());
+        let counts_file = temp.path().join("attempts.json");
+        let throttle = Arc::new(AttemptThrottle::new(Some(counts_file.clone())));
+        for _ in 0..throttle::FREE_TRIES - 1 {
+            assert_eq!(
+                try_named(
+                    &throttle,
+                    &vaults,
+                    "Second",
+                    "wrong-passphrase-for-nobody-6"
+                ),
+                "wrong_passphrase"
+            );
+            // Vault A (the default, by the empty name) opens with its own passphrase, and is locked.
+            assert_eq!(try_named(&throttle, &vaults, "", PASSPHRASE_A), "ok");
+            vaults.arc().lock();
+        }
+        // The fifth guess at B is the last free one, and now both vaults wait.
+        assert_eq!(
+            try_named(
+                &throttle,
+                &vaults,
+                "Second",
+                "wrong-passphrase-for-nobody-7"
+            ),
+            "wrong_passphrase"
+        );
+        assert_eq!(
+            try_named(&throttle, &vaults, "Second", PASSPHRASE_B),
+            "too_many_attempts"
+        );
+        assert_eq!(
+            try_named(&throttle, &vaults, "", PASSPHRASE_A),
+            "too_many_attempts"
+        );
+        // A copy of the app started now reads the same wait from the file.
+        let reloaded = AttemptThrottle::new(Some(counts_file));
+        assert!(reloaded.wait(Attempt::Unlock, now_ms()).is_some());
+    }
+
+    /// A vault the registry does not list (an add whose name was not written, or a lost registry)
+    /// is another vault: a right passphrase for the one listed vault must not clear the counts that
+    /// guesses at it ran up.
+    #[test]
+    fn an_unlisted_vault_on_the_device_keeps_a_right_passphrase_from_clearing_the_counts() {
+        let temp = tempfile::tempdir().unwrap();
+        // One listed vault (Main, with no registry file) and an unlisted one beside it.
+        let slots = vault_slots::VaultSlots::open(temp.path().to_path_buf(), "FAKE.app".into());
+        let main = slots.store_of(vault_registry::SlotId::Main).unwrap();
+        main.create(PASSPHRASE_A, "FAKE Person", 1).unwrap();
+        main.lock();
+        let orphan = VaultStore::new(vault_registry::slot_store_root(
+            temp.path(),
+            vault_registry::SlotId::new_extra(),
+        ));
+        orphan.create(PASSPHRASE_B, "FAKE Person", 1).unwrap();
+        orphan.lock();
+        let vaults = StoreHandle::from_source(Arc::new(slots));
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        for _ in 0..throttle::FREE_TRIES - 1 {
+            assert_eq!(
+                try_named(&throttle, &vaults, "", "wrong-passphrase-for-nobody-8"),
+                "wrong_passphrase"
+            );
+        }
+        assert_eq!(try_named(&throttle, &vaults, "", PASSPHRASE_A), "ok");
+        vaults.arc().lock();
+        // Not cleared: this is the fifth wrong try, and the next one waits.
+        assert_eq!(
+            try_named(&throttle, &vaults, "", "wrong-passphrase-for-nobody-9"),
+            "wrong_passphrase"
+        );
+        assert_eq!(
+            try_named(&throttle, &vaults, "", PASSPHRASE_A),
+            "too_many_attempts"
+        );
+    }
+
+    /// And again and again: ten rounds of a guess and a right passphrase for the other vault never
+    /// bring back the free tries.
+    #[test]
+    fn guessing_with_a_right_passphrase_in_between_never_gets_free_tries_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let vaults = two_real_vaults(temp.path());
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        let mut let_through = 0;
+        for _ in 0..10 {
+            // A wrong guess; once the wait runs it is refused without being tried.
+            if try_named(
+                &throttle,
+                &vaults,
+                "Second",
+                "wrong-passphrase-for-nobody-3",
+            ) == "wrong_passphrase"
+            {
+                let_through += 1;
+            }
+            // The right passphrase of Second, when it is let through: it opens, and is locked again.
+            if try_named(&throttle, &vaults, "Second", PASSPHRASE_B) == "ok" {
+                vaults.arc().lock();
+            }
+        }
+        // Only the first five wrong tries are free; every later one is stopped by the wait.
+        assert_eq!(let_through, throttle::FREE_TRIES as usize);
+    }
+
+    /// With one vault on the device a right passphrase still starts the count again (nothing else
+    /// is there to guess at).
+    #[test]
+    fn a_right_passphrase_on_a_device_with_one_vault_still_clears_the_guesses() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(VaultStore::new(temp.path().join("vault-home")));
+        store.create(PASSPHRASE_A, "FAKE Person", 1).unwrap();
+        store.lock();
+        let vaults = StoreHandle::single(Arc::clone(&store));
+        let throttle = Arc::new(AttemptThrottle::new(None));
+        let check = |passphrase: &'static str| -> &'static str {
+            let (pinned, opened) = (vaults.pin(), Arc::clone(&store));
+            let result = tauri::async_runtime::block_on(tried(
+                &throttle,
+                Attempt::Unlock,
+                Holds::of(&pinned),
+                async move { opened.unlock(passphrase).map_err(PublicError::from) },
+            ));
+            result.map_or_else(|error| error.code, |()| "ok")
+        };
+        for _ in 0..throttle::FREE_TRIES - 1 {
+            assert_eq!(check("wrong-passphrase-for-nobody-4"), "wrong_passphrase");
+        }
+        assert_eq!(check(PASSPHRASE_A), "ok");
+        store.lock();
+        // Cleared: five more wrong tries are all let through.
+        for _ in 0..throttle::FREE_TRIES {
+            assert_eq!(check("wrong-passphrase-for-nobody-5"), "wrong_passphrase");
+        }
+    }
+
+    #[test]
+    fn a_vault_is_added_at_most_once_every_interval_and_a_failed_add_gives_its_place_back() {
+        let last = AtomicU64::new(0);
+        let start = 10_000_000;
+        // The first add goes ahead, and takes the place.
+        assert_eq!(reserve_add(&last, start), Ok(0));
+        // A second one, at once or almost the whole interval later, is refused with the time left.
+        assert_eq!(reserve_add(&last, start), Err(ADD_INTERVAL_MS));
+        assert_eq!(reserve_add(&last, start + ADD_INTERVAL_MS - 1), Err(1));
+        // A failed add gives the place back, so a mistyped form costs nothing.
+        release_add(&last, start, 0);
+        assert_eq!(reserve_add(&last, start + 1_000), Ok(0));
+        // An add that went through (its place kept) is not given back by a later release that
+        // belongs to another try.
+        release_add(&last, start, 0);
+        assert_eq!(last.load(Ordering::Acquire), start + 1_000);
+        // The interval ends exactly at its length, and a clock set back is no wait without end.
+        assert_eq!(
+            reserve_add(&last, start + 1_000 + ADD_INTERVAL_MS),
+            Ok(start + 1_000)
+        );
+        assert_eq!(
+            reserve_add(&last, 5_000),
+            Ok(start + 1_000 + ADD_INTERVAL_MS)
+        );
+    }
+
+    /// A device with one vault and nothing else on it (the case where a right secret clears).
+    fn solo() -> Holds {
+        let only = Arc::new(VaultStore::new(
+            std::env::temp_dir().join("carlos-solo-holds-test-never-created"),
+        ));
+        Holds(StoreHandle::single(only))
+    }
+
     #[test]
     fn a_secret_tried_too_soon_after_wrong_ones_waits_and_says_so() {
         let throttle = Arc::new(AttemptThrottle::new(None));
         let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
         for _ in 0..throttle::FREE_TRIES {
-            assert!(
-                tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong())).is_err()
-            );
+            assert!(tauri::async_runtime::block_on(tried(
+                &throttle,
+                Attempt::Unlock,
+                solo(),
+                wrong()
+            ))
+            .is_err());
         }
         // Refused before the command runs: nothing is tried.
         let ran = std::cell::Cell::new(false);
-        let waited = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, async {
-            ran.set(true);
-            Ok(())
-        }))
-        .unwrap_err();
+        let waited =
+            tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, solo(), async {
+                ran.set(true);
+                Ok(())
+            }))
+            .unwrap_err();
         assert!(!ran.get());
         assert_eq!(waited.code, "too_many_attempts");
         assert!(waited
@@ -8924,8 +9338,10 @@ mod tests {
         assert!(public_error_text(&waited).contains("To slow down anyone guessing"));
         // Another secret is not held up by this one's count.
         assert!(
-            tauri::async_runtime::block_on(tried(&throttle, Attempt::Backup, async { Ok(()) }))
-                .is_ok()
+            tauri::async_runtime::block_on(tried(&throttle, Attempt::Backup, solo(), async {
+                Ok(())
+            }))
+            .is_ok()
         );
     }
 
@@ -8944,6 +9360,9 @@ mod tests {
             let body = &body[..body.find("\n}\n").unwrap()];
             assert!(body.contains("tried("), "{command}");
             assert!(body.contains(attempt), "{command}");
+            // What a right secret clears depends on how many vaults the device holds (#562 review
+            // F1), so each of these says which vaults there are.
+            assert!(body.contains("Holds::of(&store)"), "{command}");
         }
         // A new, erased or restored vault starts its counts again, and only
         // once it is: a create refused because a vault exists, or a restore
@@ -8953,7 +9372,7 @@ mod tests {
             (
                 "async fn vault_create(",
                 concat!(
-                    "if created.is_ok() { forget_vault(throttle.inner(), store.arc(), store.all()).await; ",
+                    "if created.is_ok() { forget_vault(throttle.inner(), &store).await; ",
                     "refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?; }",
                 ),
             ),
@@ -8962,12 +9381,12 @@ mod tests {
                 concat!(
                     "VaultStore::reset).await?; ",
                     "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
-                    "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
+                    "forget_vault(throttle.inner(), &store).await; Ok(true)",
                 ),
             ),
             (
                 "async fn vault_restore(",
-                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
+                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner(), &store).await; Ok(true)",
             ),
         ] {
             let body = source.split(command).nth(1).unwrap();
@@ -8993,9 +9412,44 @@ mod tests {
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
         let restore = &restore[..restore.find("\n}\n").unwrap()];
-        assert!(restore.ends_with(
-            "forget_vault(throttle.inner(), store.arc(), store.all()).await;\n    Ok(true)"
-        ));
+        assert!(restore.ends_with("forget_vault(throttle.inner(), &store).await;\n    Ok(true)"));
+    }
+
+    /// An add of a vault, from the lock screen or from an open vault, goes through the same gates in
+    /// the same order: the wait of the device counter, the one add per interval (the place is
+    /// taken whether or not the screen is locked), and then the add on a NATIVE confirmation; the
+    /// plain add (which needs an open vault and shows no dialog) is not called by the command.
+    #[test]
+    fn adding_a_vault_takes_the_rate_place_and_asks_the_dialog_whether_the_screen_is_locked_or_not()
+    {
+        let source = include_str!("lib.rs");
+        let body = source.split("async fn vault_add_vault(").nth(1).unwrap();
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let code = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let wait = code.find("throttle.wait(Attempt::Unlock, now)").unwrap();
+        let place = code.find("reserve_add(&LAST_ADD_MS, now)").unwrap();
+        let add = code.find(".add_vault_confirmed(").unwrap();
+        let dialog = code.find("confirmed_natively(").unwrap();
+        assert!(wait < place && place < add);
+        // The dialog is the confirmation handed to the add, not something done after it.
+        assert!(add < dialog);
+        // No branch on whether the screen is locked decides whether the place or the dialog is used.
+        assert!(
+            !code.contains("open_vault_id"),
+            "the command does not ask whether it is locked"
+        );
+        assert!(
+            !code.contains(".add_vault("),
+            "the plain add shows no dialog"
+        );
+        // A refused add that made no vault gives its place back; one that made a vault keeps it.
+        assert!(code.contains("release_add(&LAST_ADD_MS, now, reserved)"));
+        assert!(code.contains("store.vaults_made() == made_before"));
     }
 
     /// Every command that opens a vault the owner cannot yet see closes it again if the window was
@@ -9047,11 +9501,13 @@ mod tests {
         let throttle = Arc::new(AttemptThrottle::new(None));
         let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
         for _ in 0..throttle::FREE_TRIES {
-            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
+            let _ =
+                tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, solo(), wrong()));
         }
         let first = throttle.wait(Attempt::Unlock, now_ms()).unwrap();
         for _ in 0..10 {
-            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, wrong()));
+            let _ =
+                tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, solo(), wrong()));
         }
         // Still the wait after five, not after fifteen.
         assert!(throttle.wait(Attempt::Unlock, now_ms()).unwrap() <= first);
@@ -9061,9 +9517,10 @@ mod tests {
     fn busy_kdf_work_does_not_count_as_a_wrong_passphrase() {
         let throttle = Arc::new(AttemptThrottle::new(None));
         for _ in 0..throttle::FREE_TRIES + 3 {
-            let result = tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, async {
-                Err::<(), _>(PublicError::from(VaultError::Busy))
-            }));
+            let result =
+                tauri::async_runtime::block_on(tried(&throttle, Attempt::Unlock, solo(), async {
+                    Err::<(), _>(PublicError::from(VaultError::Busy))
+                }));
             assert_eq!(result.unwrap_err().code, "busy");
         }
         assert_eq!(throttle.wait(Attempt::Unlock, now_ms()), None);
@@ -9074,15 +9531,21 @@ mod tests {
         let throttle = Arc::new(AttemptThrottle::new(None));
         // A key whose check characters are wrong is a typo, not a guess.
         for _ in 0..throttle::FREE_TRIES + 3 {
-            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::RecoveryKey, async {
-                Err::<(), _>(PublicError::from(VaultError::RecoveryKeyTypo))
-            }));
+            let _ = tauri::async_runtime::block_on(tried(
+                &throttle,
+                Attempt::RecoveryKey,
+                solo(),
+                async { Err::<(), _>(PublicError::from(VaultError::RecoveryKeyTypo)) },
+            ));
         }
         assert_eq!(throttle.wait(Attempt::RecoveryKey, now_ms()), None);
         for _ in 0..throttle::FREE_TRIES {
-            let _ = tauri::async_runtime::block_on(tried(&throttle, Attempt::RecoveryKey, async {
-                Err::<(), _>(PublicError::from(VaultError::WrongRecoveryKey))
-            }));
+            let _ = tauri::async_runtime::block_on(tried(
+                &throttle,
+                Attempt::RecoveryKey,
+                solo(),
+                async { Err::<(), _>(PublicError::from(VaultError::WrongRecoveryKey)) },
+            ));
         }
         assert!(throttle.wait(Attempt::RecoveryKey, now_ms()).is_some());
     }

@@ -199,7 +199,10 @@ describe("the unlock screen with several vaults", () => {
 describe("setting up another vault", () => {
   afterEach(cleanup);
 
-  const setUp = (onCreate = vi.fn().mockResolvedValue(undefined)) => {
+  const setUp = (
+    onCreate = vi.fn().mockResolvedValue(undefined),
+    fromLockScreen = false,
+  ) => {
     const onCancel = vi.fn();
     render(
       <CreateVault
@@ -208,7 +211,7 @@ describe("setting up another vault", () => {
         restoreBridge={restoreBridge}
         onRestored={vi.fn()}
         onCreate={onCreate}
-        newVault={{ onCancel }}
+        newVault={{ onCancel, fromLockScreen }}
       />,
     );
     return { onCreate, onCancel };
@@ -250,6 +253,42 @@ describe("setting up another vault", () => {
     ).toBeVisible();
     // Another vault is not restored from here.
     expect(screen.queryByText(humanText(/Restore/))).toBeNull();
+  });
+
+  it("says, from an open vault, that this vault is locked first and that the device asks for a confirmation", () => {
+    setUp();
+    expect(
+      screen.getByText(humanText(/This vault is locked first/)),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        humanText(
+          "Choosing Set up vault first asks this device to confirm, in a window of its own that this app cannot click. Nothing is created unless you agree there.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("says, from the lock screen, that the device asks for a confirmation and does not claim a vault is locked first", () => {
+    setUp(undefined, true);
+    expect(
+      screen.getByText(
+        humanText(
+          "A new vault on this device has its own passphrase, recovery key and people.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText(/locked first/))).toBeNull();
+    expect(
+      screen.queryByText(humanText(/locks this vault, then opens/)),
+    ).toBeNull();
+    expect(
+      screen.getByText(humanText(/asks this device to confirm/)),
+    ).toBeVisible();
+    // Still says the other vaults are not touched.
+    expect(
+      screen.getByText(humanText(/Your other vaults are not touched/)),
+    ).toBeVisible();
   });
 
   it("needs a name of 1 to 64 characters, and hands name, passphrase and person on", () => {

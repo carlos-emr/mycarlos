@@ -1309,13 +1309,16 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             wrote("unlocked", { how: "passphrase" });
             return captured();
           }
-          // The add needs an open vault (the owner's session): it locks it first, then makes the
-          // new vault and opens it. The fake keeps one snapshot for every vault.
+          // The add works from the lock screen (a new person) or from an open vault, on a native
+          // confirmation (the fake agrees: the real one is an OS dialog the page cannot click). An
+          // open vault is locked first, then the new vault is made and opened; a locked one is not
+          // touched. The fake keeps one snapshot for every vault.
           case "vault_add_vault": {
-            if (state.status !== "unlocked")
+            if (state.status !== "unlocked" && state.status !== "locked")
               throw refuse("locked", "native.error.14");
+            const wasOpen = state.status === "unlocked";
             // A degraded (read-only) vault is not left locked behind a new one.
-            if (state.snapshot.recovery !== null)
+            if (wasOpen && state.snapshot.recovery !== null)
               throw refuse("recovery_mode", "native.error.40");
             const typed = (request.name ?? "").trim().toLowerCase();
             if (
@@ -1325,12 +1328,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               !request.initialProfileName
             )
               throw refuse("invalid", "native.error.19");
-            // The lock comes first, and is recorded as the order the test reads.
-            cancelViews();
-            state.status = "locked";
-            state.picks = {};
-            state.pendingKey = null;
-            wrote("locked");
+            // The lock comes first, and is recorded as the order the test reads (an open vault
+            // only: a locked screen has nothing to lock).
+            if (wasOpen) {
+              cancelViews();
+              state.status = "locked";
+              state.picks = {};
+              state.pendingKey = null;
+              wrote("locked");
+            }
             state.otherVaults.push({
               name: typed,
               passphrase: request.passphrase,

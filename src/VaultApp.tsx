@@ -2037,6 +2037,52 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }, ["box.passphrase"]);
   };
 
+  // A new person sets a vault up from the LOCK screen (#562): no vault is open, so there is nothing
+  // to lock first and nothing here ends. The device asks for a confirmation of its own, which this
+  // page cannot draw or click, before anything is created; if it is refused nothing was made and
+  // the form stays with the reason. An existing vault is never opened or changed: the new one opens
+  // empty, and the screen moves to it only after it exists.
+  const setUpNewVaultFromLockScreen = async (
+    profile: string,
+    passphrase: string,
+    vaultName: string,
+  ) => {
+    lockReasonRef.current = null;
+    await run(async () => {
+      const current = await bridge.addVault!(vaultName, passphrase, profile);
+      setNotice("");
+      setOpeningRecoverySetup(null);
+      installOpeningSnapshot(current);
+      setConcealed(false);
+      setAddingVault(false);
+      setStatus("unlocked");
+      setUnlockCheck({ session: sessionRef.current, offerOpen: false });
+      setLibraryNotice({
+        message: deferredText(() => t("notice.newVaultReady")),
+        outcome: null,
+      });
+    }, ["box.passphrase"]);
+  };
+
+  if (addingVault && status === "locked" && bridge.addVault) {
+    return (
+      <CreateVault
+        busy={busy}
+        notice={notice}
+        checkRules={bridge.passphraseRules}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
+        newVault={{
+          onCancel: () => setAddingVault(false),
+          fromLockScreen: true,
+        }}
+        onCreate={(profile, passphrase, _details, vaultName) =>
+          setUpNewVaultFromLockScreen(profile, passphrase, vaultName ?? "")
+        }
+      />
+    );
+  }
+
   if (addingVault && status === "unlocked" && snapshot && bridge.addVault) {
     return (
       <CreateVault
@@ -2083,6 +2129,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                   });
                   return saved.value;
                 },
+                onSetUp: bridge.addVault
+                  ? () => setAddingVault(true)
+                  : undefined,
               }
             : undefined
         }

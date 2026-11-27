@@ -1917,6 +1917,21 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Whether `passphrase` opens this vault, found out by reading its header files and deriving the
+    /// key, and **nothing else** (#562 review F4): no session, no storage lock, no pending reset
+    /// finished, no history entry, no staging cleanup, no orphan quarantine and no manifest upgrade
+    /// (`unlock` does all of those, and the upgrade is a one-way format change). It is what "Find my
+    /// other vaults" needs for a vault the owner has not yet taken back: look, and leave it exactly
+    /// as it was. The key it derives is zeroized as soon as it is dropped, here. Counted as a key
+    /// derivation (`Busy` while another runs), as an unlock is.
+    pub(crate) fn passphrase_opens_read_only(&self, passphrase: &str) -> Result<(), VaultError> {
+        let _work = self.start_kdf_work()?;
+        if passphrase.len() > MAX_PASSPHRASE_BYTES {
+            return Err(VaultError::Invalid);
+        }
+        read_header_for_passphrase(&self.root, passphrase).map(drop)
+    }
+
     /// Everything on disk an unlock by NAME reads from this vault, read in one place and BEFORE any
     /// derivation (#357, PR 4b): the storage lock is taken and a half-done reset finished, as
     /// `unlock` does, and the header files are read. An unlock by name does this for EVERY slot of

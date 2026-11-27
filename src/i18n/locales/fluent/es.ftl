@@ -723,6 +723,14 @@ lockWarning-title =
     *[other] myCarlos se bloqueará en { $count } segundos para mantener privados sus documentos.
     }
 
+native-addVault-confirm = Crear una nueva bóveda
+
+native-addVault-decline = No crear
+
+native-addVault-message = Se pidió a myCarlos crear una bóveda nueva y vacía en este dispositivo mientras está bloqueado. Sus bóvedas actuales siguen bloqueadas: no se abren ni se modifican. Si usted no lo pidió, elija «No crear».
+
+native-addVault-title = ¿Crear una nueva bóveda en este dispositivo?
+
 native-backup-noteEmptied = El archivo donde eligió guardar puede estar vacío o incompleto; si eligió sobrescribir una copia de seguridad antigua, esa copia se vació. Elimine esa, no sus otras copias de seguridad.
 
 native-backup-noteUntouched = Puede quedar un archivo vacío (0 bytes) donde eligió guardar: puede eliminarlo. Conserve cualquier copia de seguridad que no esté vacía.
@@ -1436,6 +1444,10 @@ newVault-name-hint = Escribirá este nombre en la pantalla de desbloqueo para ab
 newVault-name-invalid = Elija un nombre de 1 a 64 caracteres.
 
 newVault-lockNote = Al elegir Crear bóveda se bloquea esta bóveda y luego se abre la nueva.
+
+newVault-introLocked = Una bóveda nueva en este dispositivo tiene su propia frase de contraseña, clave de recuperación y personas.
+
+newVault-confirmNote = Al elegir Crear bóveda, este dispositivo pide primero una confirmación en una ventana propia que esta aplicación no puede pulsar. No se crea nada si no acepta allí.
 
 newVault-submit = Crear bóveda
 

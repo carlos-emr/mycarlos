@@ -723,6 +723,14 @@ lockWarning-title =
     *[other] O myCarlos será bloqueado em { $count } segundos para manter seus documentos privados.
     }
 
+native-addVault-confirm = Criar um novo cofre
+
+native-addVault-decline = Não criar
+
+native-addVault-message = O myCarlos foi solicitado a criar um cofre novo e vazio neste dispositivo enquanto ele está bloqueado. Seus cofres atuais continuam bloqueados: não são abertos nem alterados. Se você não pediu isso, escolha "Não criar".
+
+native-addVault-title = Criar um novo cofre neste dispositivo?
+
 native-backup-noteEmptied = O arquivo no local escolhido para salvar pode estar vazio ou incompleto; se você escolheu salvar por cima de uma cópia de segurança anterior, ela foi esvaziada. Exclua essa, não suas outras cópias de segurança.
 
 native-backup-noteUntouched = Um arquivo vazio (0 bytes) pode ficar no local que você escolheu para salvar: você pode excluí-lo. Guarde qualquer cópia de segurança que não esteja vazia.
@@ -1436,6 +1444,10 @@ newVault-name-hint = Você digita este nome na tela de desbloqueio para abrir es
 newVault-name-invalid = Escolha um nome de 1 a 64 caracteres.
 
 newVault-lockNote = Ao escolher Configurar cofre, este cofre é bloqueado e depois o novo é aberto.
+
+newVault-introLocked = Um novo cofre neste dispositivo tem sua própria frase secreta, chave de recuperação e pessoas.
+
+newVault-confirmNote = Ao escolher Configurar cofre, este dispositivo pede primeiro uma confirmação em uma janela própria que este app não consegue clicar. Nada é criado se você não concordar ali.
 
 newVault-submit = Configurar cofre
 

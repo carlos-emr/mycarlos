@@ -702,6 +702,14 @@ lockWarning-title =
     *[other] myCarlos will lock in { $count } seconds to keep your records private.
     }
 
+native-addVault-confirm = Set up a new vault
+
+native-addVault-decline = Do not set up
+
+native-addVault-message = myCarlos was asked to set up a new, empty vault on this device while it is locked. Your existing vaults stay locked: they are not opened or changed. If you did not ask for this, choose "Do not set up".
+
+native-addVault-title = Set up a new vault on this device?
+
 native-backup-noteEmptied = The file where you chose to save may be empty or incomplete; if you chose to save over an older backup, it was emptied. Delete that one, not your other backups.
 
 native-backup-noteUntouched = An empty file (0 bytes) may be left where you chose to save: you can delete it. Keep any backup that is not empty.
@@ -1405,6 +1413,10 @@ newVault-name-hint = You type this name on the unlock screen to open this vault.
 newVault-name-invalid = Choose a name of 1 to 64 characters.
 
 newVault-lockNote = Choosing Set up vault locks this vault, then opens the new one.
+
+newVault-introLocked = A new vault on this device has its own passphrase, recovery key and people.
+
+newVault-confirmNote = Choosing Set up vault first asks this device to confirm, in a window of its own that this app cannot click. Nothing is created unless you agree there.
 
 newVault-submit = Set up vault
 

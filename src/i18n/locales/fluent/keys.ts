@@ -311,6 +311,10 @@ export const MESSAGE_KEYS = [
   "lockWarning.keepOpen",
   "lockWarning.left",
   "lockWarning.title",
+  "native.addVault.confirm",
+  "native.addVault.decline",
+  "native.addVault.message",
+  "native.addVault.title",
   "native.backup.noteEmptied",
   "native.backup.noteUntouched",
   "native.cancel",
@@ -630,6 +634,8 @@ export const MESSAGE_KEYS = [
   "newVault.name.hint",
   "newVault.name.invalid",
   "newVault.lockNote",
+  "newVault.introLocked",
+  "newVault.confirmNote",
   "newVault.submit",
   "newVault.cancel",
   "security.newVault.title",
@@ -1863,6 +1869,10 @@ const FLUENT_IDS_BY_KEY = {
   "lockWarning.keepOpen": "lockWarning-keepOpen",
   "lockWarning.left": "lockWarning-left",
   "lockWarning.title": "lockWarning-title",
+  "native.addVault.confirm": "native-addVault-confirm",
+  "native.addVault.decline": "native-addVault-decline",
+  "native.addVault.message": "native-addVault-message",
+  "native.addVault.title": "native-addVault-title",
   "native.backup.noteEmptied": "native-backup-noteEmptied",
   "native.backup.noteUntouched": "native-backup-noteUntouched",
   "native.cancel": "native-cancel",
@@ -2184,6 +2194,8 @@ const FLUENT_IDS_BY_KEY = {
   "newVault.name.hint": "newVault-name-hint",
   "newVault.name.invalid": "newVault-name-invalid",
   "newVault.lockNote": "newVault-lockNote",
+  "newVault.introLocked": "newVault-introLocked",
+  "newVault.confirmNote": "newVault-confirmNote",
   "newVault.submit": "newVault-submit",
   "newVault.cancel": "newVault-cancel",
   "security.newVault.title": "security-newVault-title",
@@ -3541,6 +3553,10 @@ export interface MessageArgsByKey {
   "lockWarning.keepOpen": undefined;
   "lockWarning.left": { count: FluentArgument };
   "lockWarning.title": { count: FluentArgument };
+  "native.addVault.confirm": undefined;
+  "native.addVault.decline": undefined;
+  "native.addVault.message": undefined;
+  "native.addVault.title": undefined;
   "native.backup.noteEmptied": undefined;
   "native.backup.noteUntouched": undefined;
   "native.cancel": undefined;
@@ -3887,6 +3903,8 @@ export interface MessageArgsByKey {
   "newVault.name.hint": undefined;
   "newVault.name.invalid": undefined;
   "newVault.lockNote": undefined;
+  "newVault.introLocked": undefined;
+  "newVault.confirmNote": undefined;
   "newVault.submit": undefined;
   "newVault.cancel": undefined;
   "security.newVault.title": undefined;

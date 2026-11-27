@@ -688,8 +688,11 @@ export interface VaultBridge {
    * its passphrase; an empty name is the device's own vault. A wrong name and
    * a wrong passphrase are one and the same refusal. */
   unlockNamed?(name: string, passphrase: string): Promise<VaultSnapshot>;
-  /** Makes another vault on this device, and opens it. The screen's vault must
-   * be at rest, so it is locked first. */
+  /** Makes another vault on this device, and opens it. The device asks for a
+   * confirmation of its own first, in a window the page cannot draw or click
+   * (#562); refused, nothing is made (`cancelled`). The screen's vault may be
+   * locked (a new person setting up from the lock screen) or open, in which
+   * case it is locked first. */
   addVault?(
     name: string,
     passphrase: string,
@@ -1409,6 +1412,8 @@ export function createVaultBridge(): VaultBridge {
     addVault: (name, passphrase, initialProfileName) =>
       invoke<VaultSnapshot>("vault_add_vault", {
         request: { name, passphrase, initialProfileName },
+        // The words of the device's own confirmation dialog (#562).
+        locale: getLocale(),
       }),
     findOtherVaults: (passphrase) =>
       invoke<FoundVaults>("vault_find_other_vaults", {

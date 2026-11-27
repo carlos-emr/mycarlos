@@ -723,7 +723,15 @@ lockWarning-title =
     *[other] myCarlos se verrouillera dans { $count } secondes pour protéger vos documents.
     }
 
-native-backup-noteEmptied = Le fichier à l’emplacement choisi peut être vide ou incomplet; si vous avez choisi de remplacer une ancienne sauvegarde, celle-ci a été vidée. Supprimez ce fichier, pas vos autres sauvegardes.
+native-addVault-confirm = Créer un nouveau coffre-fort
+
+native-addVault-decline = Ne pas créer
+
+native-addVault-message = On a demandé à myCarlos de créer un nouveau coffre-fort vide sur cet appareil pendant qu’il est verrouillé. Vos coffres-forts actuels restent verrouillés : ils ne sont ni ouverts ni modifiés. Si vous n’avez pas fait cette demande, choisissez « Ne pas créer ».
+
+native-addVault-title = Créer un nouveau coffre-fort sur cet appareil?
+
+native-backup-noteEmptied = Le fichier à l’emplacement choisi peut êtrevide ou incomplet; si vous avez choisi de remplacer une ancienne sauvegarde, celle-ci a été vidée. Supprimez ce fichier, pas vos autres sauvegardes.
 
 native-backup-noteUntouched = Un fichier vide (0 octet) peut rester à l’emplacement choisi; vous pouvez le supprimer. Conservez toute sauvegarde qui n’est pas vide.
 
@@ -1436,6 +1444,10 @@ newVault-name-hint = Vous saisissez ce nom sur l’écran de déverrouillage pou
 newVault-name-invalid = Choisissez un nom de 1 à 64 caractères.
 
 newVault-lockNote = Choisir Configurer le coffre-fort verrouille ce coffre-fort, puis ouvre le nouveau.
+
+newVault-introLocked = Un nouveau coffre-fort sur cet appareil a sa propre phrase secrète, sa propre clé de récupération et ses propres personnes.
+
+newVault-confirmNote = Choisir Configurer le coffre-fort demande d’abord une confirmation à cet appareil, dans une fenêtre à part que cette application ne peut pas cliquer. Rien n’est créé si vous n’acceptez pas.
 
 newVault-submit = Configurer le coffre-fort
 
