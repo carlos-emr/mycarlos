@@ -1446,6 +1446,42 @@ mod network_tests {
     }
 
     #[test]
+    fn should_link_on_an_answer_with_replacement_fields_and_refuse_any_other_unknown_one() {
+        let _root = Trusting::test_root(Duration::from_secs(5));
+        // The portal's own link-lifecycle-v1 answer for a clinic whose key was replaced twice.
+        let (answer, device, _) =
+            crate::portal_link::lifecycle_answers::answer("bootstrap-historical-chain");
+        let mut unrelated: serde_json::Value = serde_json::from_slice(&answer).unwrap();
+        unrelated["note"] = "FAKE".into();
+        let unrelated = serde_json::to_vec(&unrelated).unwrap();
+        let server = serve(move |request| {
+            let body: &[u8] = if request.target == "/link/unrelated" {
+                &unrelated
+            } else {
+                &answer
+            };
+            Step::Reply(http(200, &[("Content-Type", "application/json")], body))
+        });
+        let ask = |route: &str| {
+            link(
+                link_request(&format!("{}{route}", server.base())),
+                &device,
+                NEVER,
+            )
+        };
+        let clinic = ask("/link/replacement").unwrap();
+        assert_eq!(clinic.clinic_keys.len(), 3);
+        assert!(clinic
+            .clinic_keys
+            .iter()
+            .any(|key| { key.status == crate::portal_link::KeyStatus::Active }));
+        assert!(matches!(
+            ask("/link/unrelated"),
+            Err(LinkError::InvalidResponse)
+        ));
+    }
+
+    #[test]
     fn should_send_the_link_request_as_given_and_nothing_else() {
         let _root = Trusting::test_root(Duration::from_secs(5));
         let server = serve(|_| Step::Reply(http(409, &[], br#"{"code":"device_exists"}"#)));

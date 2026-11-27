@@ -540,10 +540,186 @@ pub fn parse_response(bytes: &[u8], expected_device: &str) -> Result<LinkedClini
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(LinkError::InvalidResponse);
     }
-    let clinic: LinkedClinic =
+    let answer: WireLinkedClinic =
         serde_json::from_slice(bytes).map_err(|_| LinkError::InvalidResponse)?;
+    let clinic = answer.into_stored()?;
     clinic.validate_initial(expected_device)?;
     Ok(clinic)
+}
+
+/// The portal's link answer as it is spelled on the wire. It is the stored `LinkedClinic` plus,
+/// for a key that replaces another, the two fields the portal's lifecycle contract adds to it
+/// (`replaces_kid`, `replacement_signature`, always together: carlos-portal
+/// `docs/architecture/mycarlos-link-lifecycle-v1.md`). A separate type, so that the STORED
+/// `ClinicKey` keeps refusing every unknown field and the vault format does not change: the two
+/// fields are read here and dropped. Every other unknown member, and any repeated member, is
+/// still refused.
+///
+/// The two fields are checked for shape and the graph they make for structure (each replaced key
+/// is listed, one successor each, no cycle, at most 15 edges), because initial linking validates
+/// the whole graph. No signature is verified and nothing is kept: a key listed with a proof is
+/// trusted at linking exactly as a key without one has been (the accepted residual risk for
+/// linking, DEL-06). Verifying the proofs, and keeping them, is the refresh client's job; the
+/// refresh and recovery answers have these same five members, and their clients must read them
+/// through this type, not through a second copy of it.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireLinkedClinic {
+    recipient_id: String,
+    device_key_id: String,
+    clinic_id: String,
+    clinic_name: String,
+    clinic_keys: Vec<WireClinicKey>,
+}
+
+#[cfg_attr(target_os = "android", allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireClinicKey {
+    kid: String,
+    spki: String,
+    status: KeyStatus,
+    // Absent is "not a replacement"; a member that is present must be text. The portal omits
+    // the members of a key that replaces nothing, and the stored type refuses any other
+    // spelling of them, so an explicit `null` is refused too.
+    #[serde(default, deserialize_with = "present_text")]
+    replaces_kid: Option<String>,
+    #[serde(default, deserialize_with = "present_text")]
+    replacement_signature: Option<String>,
+}
+
+/// `Some(text)` for a member that is present; a present `null` (or any non-text value) fails.
+/// Absence never reaches this function: `#[serde(default)]` gives `None`.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn present_text<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(Some)
+}
+
+/// A replacement graph holds at most this many edges: sixteen keys in one chain.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+const MAX_REPLACEMENT_EDGES: usize = 15;
+
+impl WireClinicKey {
+    /// Whether the two replacement fields are well formed: both present or both absent, a key id
+    /// (43 characters of canonical unpadded base64url, the shape of a SHA-256 digest) that is not
+    /// this key's own, and a canonical unpadded base64url signature of exactly 64 bytes. This is
+    /// shape only; no signature is checked.
+    fn replacement_is_well_formed(&self) -> bool {
+        match (&self.replaces_kid, &self.replacement_signature) {
+            (None, None) => true,
+            (Some(replaces), Some(signature)) => {
+                // The base64 engine already refuses padding and non-zero trailing bits, so the
+                // re-encoding comparison cannot fail where the decode succeeded. It stays as the
+                // explicit statement of "canonical", so that nobody trims it as dead.
+                let canonical = |text: &str, bytes: usize| {
+                    B64.decode(text)
+                        .is_ok_and(|raw| raw.len() == bytes && B64.encode(&raw) == text)
+                };
+                canonical(replaces, 32) && replaces != &self.kid && canonical(signature, 64)
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The structure of the replacement graph, which needs no cryptography: every key a key replaces
+/// is listed in the same answer, a key has at most one successor, there are at most 15 edges,
+/// and following predecessors never loops. Initial linking validates the whole graph (the
+/// lifecycle spec); the proofs themselves are not verified yet.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn replacement_graph_is_sound(keys: &[WireClinicKey]) -> bool {
+    let listed: std::collections::HashMap<&str, &WireClinicKey> =
+        keys.iter().map(|key| (key.kid.as_str(), key)).collect();
+    let mut successors = std::collections::HashSet::new();
+    let mut edges = 0;
+    for key in keys {
+        let Some(replaces) = key.replaces_kid.as_deref() else {
+            continue;
+        };
+        if !listed.contains_key(replaces) || !successors.insert(replaces) {
+            return false;
+        }
+        edges += 1;
+    }
+    if edges > MAX_REPLACEMENT_EDGES {
+        return false;
+    }
+    // Following predecessors from any key must end: each key has at most one predecessor, so a
+    // walk of at most `keys.len()` steps that meets a key twice has found a cycle.
+    keys.iter().all(|key| {
+        let mut seen = std::collections::HashSet::new();
+        let mut current = Some(key);
+        while let Some(next) = current {
+            if !seen.insert(next.kid.as_str()) {
+                return false;
+            }
+            current = next
+                .replaces_kid
+                .as_deref()
+                .and_then(|replaces| listed.get(replaces).copied());
+        }
+        true
+    })
+}
+
+#[cfg_attr(target_os = "android", allow(dead_code))]
+impl WireLinkedClinic {
+    fn into_stored(self) -> Result<LinkedClinic, LinkError> {
+        if !self
+            .clinic_keys
+            .iter()
+            .all(WireClinicKey::replacement_is_well_formed)
+            || !replacement_graph_is_sound(&self.clinic_keys)
+        {
+            return Err(LinkError::InvalidResponse);
+        }
+        Ok(LinkedClinic {
+            recipient_id: self.recipient_id,
+            device_key_id: self.device_key_id,
+            clinic_id: self.clinic_id,
+            clinic_name: self.clinic_name,
+            clinic_keys: self
+                .clinic_keys
+                .into_iter()
+                .map(|key| ClinicKey {
+                    kid: key.kid,
+                    spki: key.spki,
+                    status: key.status,
+                })
+                .collect(),
+        })
+    }
+}
+
+/// The link answers excerpted from the portal's link-lifecycle-v1 fixture, for the tests here and
+/// in `portal_client`: the answer's exact bytes and the device key id it names.
+#[cfg(test)]
+pub(crate) mod lifecycle_answers {
+    pub(crate) fn answer(name: &str) -> (Vec<u8>, String, bool) {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/link-lifecycle-v1-link-answers.json"
+        ))
+        .unwrap();
+        let vector = fixture["vectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|vector| vector["name"] == name)
+            .unwrap_or_else(|| panic!("no vector {name}"));
+        let hex = vector["response_utf8_hex"].as_str().unwrap();
+        let bytes = (0..hex.len() / 2)
+            .map(|at| u8::from_str_radix(&hex[at * 2..at * 2 + 2], 16).unwrap())
+            .collect();
+        (
+            bytes,
+            fixture["device_key_id"].as_str().unwrap().to_owned(),
+            vector["expect_accept"].as_bool().unwrap(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -774,6 +950,246 @@ mod tests {
         assert!(summary.get("recipientId").is_none());
         assert!(summary.get("clinic").is_none());
         assert_eq!(summary["incomplete"], true);
+    }
+
+    // The portal adds `replaces_kid` and `replacement_signature` to a key that replaces another
+    // (link-lifecycle-v1). A link answer that carries them must still link; the vault keeps the
+    // shape it always had.
+    use super::lifecycle_answers::answer;
+
+    fn with_keys(bytes: &[u8], change: impl FnOnce(&mut Vec<serde_json::Value>)) -> Vec<u8> {
+        let mut value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        change(value["clinic_keys"].as_array_mut().unwrap());
+        serde_json::to_vec(&value).unwrap()
+    }
+
+    #[test]
+    fn a_link_answer_with_a_replacement_chain_parses_and_keeps_the_stored_shape() {
+        let (bytes, device, expected) = answer("bootstrap-historical-chain");
+        assert!(expected, "the shared vector is an accepted answer");
+        let clinic = parse_response(&bytes, &device).unwrap();
+        assert_eq!(clinic.clinic_keys.len(), 3);
+        assert_eq!(
+            clinic
+                .clinic_keys
+                .iter()
+                .map(|key| key.status)
+                .collect::<Vec<_>>(),
+            [KeyStatus::Revoked, KeyStatus::Revoked, KeyStatus::Active]
+        );
+        // Stored exactly as before: the two fields are dropped, so what the vault keeps is the
+        // answer with them removed, byte for byte what an answer without them gives.
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        for key in value["clinic_keys"].as_array_mut().unwrap() {
+            let key = key.as_object_mut().unwrap();
+            key.remove("replaces_kid");
+            key.remove("replacement_signature");
+        }
+        let without = serde_json::to_vec(&value).unwrap();
+        let plain = parse_response(&without, &device).unwrap();
+        assert!(clinic == plain);
+        let stored = serde_json::to_string(&clinic).unwrap();
+        assert_eq!(stored, serde_json::to_string(&plain).unwrap());
+        assert!(!stored.contains("replace"));
+        // The stored type still refuses what it never stored: a manifest holding the two fields
+        // is not one this build wrote.
+        assert!(serde_json::from_slice::<LinkedClinic>(&bytes).is_err());
+        assert!(serde_json::from_str::<LinkedClinic>(&stored).is_ok());
+    }
+
+    #[test]
+    fn a_link_answer_still_refuses_any_other_unknown_or_repeated_member() {
+        let (bytes, device, _) = answer("bootstrap-historical-chain");
+        // An unrelated member on the answer, on a key, and on a replacement key.
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        value["note"] = "FAKE".into();
+        assert!(parse_response(&serde_json::to_vec(&value).unwrap(), &device).is_err());
+        for index in [0, 1, 2] {
+            let changed = with_keys(&bytes, |keys| {
+                keys[index]["note"] = "FAKE".into();
+            });
+            assert!(parse_response(&changed, &device).is_err(), "key {index}");
+        }
+        // A repeated replacement field is a repeated member, never "the last one wins".
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        let repeated = text.replacen(
+            "\"replaces_kid\":",
+            "\"replaces_kid\":\"FAKE\",\"replaces_kid\":",
+            1,
+        );
+        assert_ne!(repeated, text);
+        assert!(parse_response(repeated.as_bytes(), &device).is_err());
+    }
+
+    #[test]
+    fn a_link_answer_refuses_a_replacement_that_is_not_well_formed() {
+        // The shared vector: a replacement key with its signature missing is not an answer.
+        let (bytes, device, expected) = answer("one-paired-field-missing");
+        assert!(!expected);
+        assert!(parse_response(&bytes, &device).is_err());
+        let (good, device, _) = answer("bootstrap-historical-chain");
+        // Each of the two alone, a key that replaces itself, and malformed values.
+        let signature = |keys: &Vec<serde_json::Value>| keys[2]["replacement_signature"].clone();
+        let alone_signature = with_keys(&good, |keys| {
+            keys[2].as_object_mut().unwrap().remove("replaces_kid");
+        });
+        let alone_kid = with_keys(&good, |keys| {
+            keys[2]
+                .as_object_mut()
+                .unwrap()
+                .remove("replacement_signature");
+        });
+        let itself = with_keys(&good, |keys| {
+            let kid = keys[2]["kid"].clone();
+            keys[2]["replaces_kid"] = kid;
+        });
+        let short_signature = with_keys(&good, |keys| {
+            let long = signature(&*keys);
+            let short = &long.as_str().unwrap()[..64];
+            keys[2]["replacement_signature"] = short.into();
+        });
+        let padded_signature = with_keys(&good, |keys| {
+            let padded = format!("{}==", signature(&*keys).as_str().unwrap());
+            keys[2]["replacement_signature"] = padded.into();
+        });
+        let short_kid = with_keys(&good, |keys| {
+            keys[2]["replaces_kid"] = "FAKE".into();
+        });
+        let not_text = with_keys(&good, |keys| {
+            keys[2]["replacement_signature"] = 7.into();
+        });
+        for (name, bad) in [
+            ("signature alone", alone_signature),
+            ("key id alone", alone_kid),
+            ("replaces itself", itself),
+            ("short signature", short_signature),
+            ("padded signature", padded_signature),
+            ("short key id", short_kid),
+            ("not text", not_text),
+        ] {
+            assert!(parse_response(&bad, &device).is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_link_answer_refuses_a_replacement_value_with_unused_bits_set() {
+        // A 32-byte key id is 43 characters with two unused bits in the last one, and a 64-byte
+        // signature 86 characters with four. A canonical spelling leaves those bits zero (so its
+        // last character is one of a few), and another spelling of the same bytes is refused.
+        // This is what the explicit re-encoding comparison in `replacement_is_well_formed`
+        // would also catch if the base64 decoder ever stopped being strict: today the decoder
+        // alone refuses it, and this test pins the result either way.
+        let (bytes, device, _) = answer("bootstrap-historical-chain");
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let replaces = value["clinic_keys"][2]["replaces_kid"].as_str().unwrap();
+        let signature = value["clinic_keys"][2]["replacement_signature"]
+            .as_str()
+            .unwrap();
+        assert!(replaces.ends_with(canonical_last_chars(2)), "{replaces}");
+        assert!(signature.ends_with(canonical_last_chars(4)), "{signature}");
+        for member in ["replaces_kid", "replacement_signature"] {
+            let changed = with_keys(&bytes, |keys| {
+                let text = keys[2][member].as_str().unwrap().to_owned();
+                let mut loose = text[..text.len() - 1].to_owned();
+                loose.push('B'); // low bits set: not a canonical last character
+                assert_ne!(loose, text);
+                keys[2][member] = loose.into();
+            });
+            assert!(parse_response(&changed, &device).is_err(), "{member}");
+        }
+    }
+
+    /// The last characters a canonical unpadded base64url string may end with when `unused` low
+    /// bits of it are padding: those whose index is a multiple of `1 << unused`.
+    fn canonical_last_chars(unused: u32) -> &'static [char] {
+        match unused {
+            2 => &[
+                'A', 'E', 'I', 'M', 'Q', 'U', 'Y', 'c', 'g', 'k', 'o', 's', 'w', '0', '4', '8',
+            ],
+            4 => &['A', 'Q', 'g', 'w'],
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn a_link_answer_refuses_a_null_replacement_member() {
+        // The portal omits the members of a key that replaces nothing, and the stored type
+        // refused any spelling of them, so a present `null` is refused, alone or together.
+        let (bytes, device, _) = answer("bootstrap-historical-chain");
+        let null = serde_json::Value::Null;
+        let cases = [
+            ("both null on a plain key", 0, true, true),
+            ("replaces_kid null on a plain key", 0, true, false),
+            ("signature null on a plain key", 0, false, true),
+            ("replaces_kid null beside a signature", 2, true, false),
+            ("signature null beside a key id", 2, false, true),
+            ("both null on a replacement key", 2, true, true),
+        ];
+        for (name, at, kid, signature) in cases {
+            let changed = with_keys(&bytes, |keys| {
+                if kid {
+                    keys[at]["replaces_kid"] = null.clone();
+                }
+                if signature {
+                    keys[at]["replacement_signature"] = null.clone();
+                }
+            });
+            assert!(parse_response(&changed, &device).is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_link_answer_refuses_a_replacement_graph_that_is_not_sound() {
+        // Signatures are not verified here, but the structure follows the lifecycle spec: the
+        // shared vectors an initial link must refuse (and the fork a refresh must).
+        for name in [
+            "cycle-valid-individual-signatures",
+            "missing-predecessor",
+            "fork-two-valid-successors",
+        ] {
+            let (bytes, device, expected) = answer(name);
+            assert!(!expected, "{name}");
+            assert!(parse_response(&bytes, &device).is_err(), "{name}");
+        }
+        // Sixteen keys in one chain of fifteen edges is the largest sound graph.
+        let (bytes, device, expected) = answer("sixteen-keys-fifteen-edges");
+        assert!(expected);
+        assert_eq!(
+            parse_response(&bytes, &device).unwrap().clinic_keys.len(),
+            16
+        );
+        // A longer loop than the shared two-key one: the chain A, B<-A, C<-B with A made to
+        // replace C is well formed key by key and still a cycle.
+        let (bytes, device, _) = answer("bootstrap-historical-chain");
+        let looped = with_keys(&bytes, |keys| {
+            keys[0]["replaces_kid"] = keys[2]["kid"].clone();
+            keys[0]["replacement_signature"] = keys[2]["replacement_signature"].clone();
+        });
+        assert!(parse_response(&looped, &device).is_err());
+        // Two keys replacing the same one, built from the chain: C replaces A as B does.
+        let forked = with_keys(&bytes, |keys| {
+            keys[2]["replaces_kid"] = keys[0]["kid"].clone();
+        });
+        assert!(parse_response(&forked, &device).is_err());
+    }
+
+    #[test]
+    fn the_other_link_answer_limits_still_hold_with_replacement_fields() {
+        // No active key (a link needs one) and over sixteen keys, as the shared vectors say.
+        for name in ["bootstrap-all-revoked", "seventeen-keys-over-limit"] {
+            let (bytes, device, expected) = answer(name);
+            assert!(!expected, "{name}");
+            assert!(parse_response(&bytes, &device).is_err(), "{name}");
+        }
+        // A different device id, and a key whose id is not its key's hash.
+        let (bytes, _, _) = answer("bootstrap-historical-chain");
+        assert!(parse_response(&bytes, "FAKE_other_device").is_err());
+        let (bytes, device, _) = answer("bootstrap-historical-chain");
+        let changed = with_keys(&bytes, |keys| {
+            let other = keys[0]["kid"].clone();
+            keys[2]["kid"] = other;
+        });
+        assert!(parse_response(&changed, &device).is_err());
     }
 }
 
