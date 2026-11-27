@@ -1959,6 +1959,21 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Whether `passphrase` opens this vault, found out by reading its header files and deriving the
+    /// key, and **nothing else** (#562 review F4): no session, no storage lock, no pending reset
+    /// finished, no history entry, no staging cleanup, no orphan quarantine and no manifest upgrade
+    /// (`unlock` does all of those, and the upgrade is a one-way format change). It is what "Find my
+    /// other vaults" needs for a vault the owner has not yet taken back: look, and leave it exactly
+    /// as it was. The key it derives is zeroized as soon as it is dropped, here. Counted as a key
+    /// derivation (`Busy` while another runs), as an unlock is.
+    pub(crate) fn passphrase_opens_read_only(&self, passphrase: &str) -> Result<(), VaultError> {
+        let _work = self.start_kdf_work()?;
+        if passphrase.len() > MAX_PASSPHRASE_BYTES {
+            return Err(VaultError::Invalid);
+        }
+        read_header_for_passphrase(&self.root, passphrase).map(drop)
+    }
+
     /// Everything on disk an unlock by NAME reads from this vault, read in one place and BEFORE any
     /// derivation (#357, PR 4b): the storage lock is taken and a half-done reset finished, as
     /// `unlock` does, and the header files are read. An unlock by name does this for EVERY slot of
@@ -9887,6 +9902,25 @@ impl VaultStore {
     /// The open vault's id, for what is kept outside it (#230's notice keys).
     pub(crate) fn open_vault_id(&self) -> Option<Uuid> {
         self.session().as_ref().map(|open| open.manifest.vault_id)
+    }
+
+    /// Whether the open vault is in recovery mode (read-only: its files are damaged or a write
+    /// failed); false when it is locked. Asked by what must not go on beside a degraded vault.
+    pub(crate) fn is_open_in_recovery(&self) -> bool {
+        self.session()
+            .as_ref()
+            .is_some_and(|open| open.recovery.is_some())
+    }
+
+    /// For tests: puts the open vault into recovery mode, as a failed write does.
+    #[cfg(test)]
+    pub(crate) fn put_in_recovery_for_test(&self) {
+        self.unlocked
+            .lock()
+            .unwrap()
+            .as_mut()
+            .expect("the vault is open")
+            .recovery = Some(RecoveryReason::WriteFailed);
     }
 
     /// Which vault, if any, the notice keys of this store belong to, open or locked: the open

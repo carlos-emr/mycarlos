@@ -12,6 +12,9 @@
     "background_status": [
       "locale: enum UiLocale"
     ],
+    "vault_add_vault": [
+      "locale: enum UiLocale"
+    ],
     "vault_ai_result_save": [
       "SaveAiResultRequest.sources: the elements of SourceSpan"
     ],
@@ -243,6 +246,10 @@
     },
     "vault_add_vault": {
       "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
         "request": {
           "optional": false,
           "struct": "AddVaultRequest"

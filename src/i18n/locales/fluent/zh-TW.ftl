@@ -618,6 +618,14 @@ lockWarning-left = 還剩 { $count } 秒。
 
 lockWarning-title = myCarlos 將在 { $count } 秒後鎖定，以保護您的紀錄隱私。
 
+native-addVault-confirm = 建立新保險庫
+
+native-addVault-decline = 不建立
+
+native-addVault-message = myCarlos 收到了在此裝置上建立一個空保險庫的要求。現有的保險庫不會被開啟或變更；如果有已開啟的保險庫，會先將其鎖定。如果這不是您的要求，請選擇「不建立」。
+
+native-addVault-title = 要在此裝置上建立新保險庫嗎？
+
 native-backup-noteEmptied = 您選擇的檔案可能為空或不完整；如果您選擇覆寫較舊的備份，該備份已被清空。請刪除該檔案，不要刪除其他備份。
 
 native-backup-noteUntouched = 您選擇的儲存位置可能留下空檔案（0 位元組）；您可以刪除該檔案。請保留所有非空的備份。
@@ -1231,6 +1239,66 @@ unlock-noKey-heading = 沒有復原金鑰嗎？
 unlock-submit = 解鎖
 
 unlock-title = 解鎖保險庫
+
+unlock-otherVault-summary = 使用其他保險庫
+
+unlock-otherVault-name = 保險庫名稱
+
+unlock-otherVault-hint = 您為該保險庫取的名稱。留空則開啟您的主保險庫。myCarlos 不保存保險庫清單，因此無法向您顯示它們的名稱。
+
+unlock-otherVault-find = 尋找我的其他保險庫
+
+unlock-otherVault-findHelp = 用您輸入的密語嘗試 myCarlos 不認識的每個資料夾。每次嘗試都計為一次密語嘗試。
+
+unlock-otherVault-findButton = 尋找保險庫
+
+unlock-otherVault-found = 找到 { $count } 個保險庫。
+
+unlock-otherVault-notOpened = 有 { $count } 個資料夾無法用該密語開啟。
+
+unlock-otherVault-empty = 有 { $count } 個資料夾是空的。
+
+unlock-otherVault-none = 沒有其他保險庫能用該密語開啟。
+
+unlock-otherVault-nameTitle = 為每個保險庫取一個您開啟它時要輸入的名稱
+
+unlock-otherVault-nameLabel = 第 { $number } 個保險庫，共 { $count } 個
+
+unlock-otherVault-save = 儲存名稱
+
+unlock-otherVault-named = 名稱已儲存。沒有解鎖任何保險庫。
+
+unlock-otherVault-nameFailed = 名稱未儲存。沒有變更任何內容。
+
+newVault-title = 設定新保險庫
+
+newVault-intro = 此裝置上的新保險庫有自己的密語、復原金鑰和人員。此保險庫會先被鎖定。
+
+newVault-others = 您的其他保險庫不受影響：每個保險庫保留各自的密語和復原金鑰。
+
+newVault-name-label = 此保險庫的名稱
+
+newVault-name-hint = 您在解鎖畫面輸入此名稱來開啟這個保險庫。它不是密碼：任何持有此裝置及其檔案副本的人都可以嘗試猜測，所以它不能取代密語。
+
+newVault-name-invalid = 請選擇 1 至 64 個字元的名稱。
+
+newVault-lockNote = 選擇「設定保險庫」會先鎖定此保險庫，然後開啟新的保險庫。
+
+newVault-introLocked = 此裝置上的新保險庫有自己的密語、復原金鑰和人員。
+
+newVault-confirmNote = 選擇「設定保險庫」後，此裝置會先在獨立的視窗中要求確認，本應用程式無法點擊該視窗。除非您在那裡同意，否則不會建立任何內容。
+
+newVault-submit = 設定保險庫
+
+newVault-cancel = 取消
+
+security-newVault-title = 此裝置上的另一個保險庫
+
+security-newVault-body = 設定一個獨立的保險庫，有自己的名稱、密語和人員。此保險庫會先被鎖定。
+
+security-newVault-button = 設定新保險庫…
+
+notice-newVaultReady = 新保險庫已就緒。完成後請將其鎖定，之後用它的名稱和密語再次解鎖。
 
 unlock-waiting = 有 { $count } 個分享檔案正在等候。解鎖後，myCarlos 會先詢問，再將它們加入「{ $folder }」。如果 myCarlos 先關閉，檔案就不會保留，請重新分享。
 

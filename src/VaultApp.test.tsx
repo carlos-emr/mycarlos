@@ -17365,3 +17365,291 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     ).toBeVisible();
   });
 });
+
+// Several vaults on one device (#357): the screens in the app. FAKE values only.
+describe("several vaults on one device", () => {
+  const PASS = "river-azimuth-cobalt-sparrow-934";
+  const severalVaultBridge = (overrides: Partial<VaultBridge> = {}) =>
+    nativeBridge({
+      unlockNamed: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(emptySnapshot)),
+      addVault: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(emptySnapshot)),
+      findOtherVaults: vi
+        .fn()
+        .mockResolvedValue({ found: [], notOpened: 0, empty: 0 }),
+      nameFoundVaults: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+
+  it("unlocks the vault of the name typed under 'Use a different vault', not the device's own", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByText(humanText("Use a different vault")),
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Vault name")),
+      "FAKE Garden",
+    );
+    await user.type(screen.getByLabelText(humanText("Passphrase")), PASS);
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    // The library is open: its Security entry is there.
+    await screen.findByRole("button", { name: humanText(/Security/) });
+    expect(bridge.unlockNamed).toHaveBeenCalledExactlyOnceWith(
+      "FAKE Garden",
+      PASS,
+    );
+    expect(bridge.unlock).not.toHaveBeenCalled();
+  });
+
+  it("unlocks the device's own vault, as always, when no name is typed", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.type(
+      await screen.findByLabelText(humanText("Passphrase")),
+      PASS,
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await screen.findByRole("button", { name: humanText(/Security/) });
+    expect(bridge.unlock).toHaveBeenCalledExactlyOnceWith(PASS);
+    expect(bridge.unlockNamed).not.toHaveBeenCalled();
+  });
+
+  // A new person sets a vault up from the lock screen (#562): the native add asks the device for a
+  // confirmation the page cannot click, and an existing vault is never opened or locked by it.
+  it("offers to set up a new vault on the unlock screen when the native side can add one", async () => {
+    render(<VaultApp bridge={severalVaultBridge()} />);
+    await screen.findByText(humanText("Use a different vault"));
+    expect(
+      screen.getByRole("button", { name: humanText("Set up a new vault…") }),
+    ).toBeVisible();
+  });
+
+  it("does not offer it where the native side cannot add a vault", async () => {
+    render(<VaultApp bridge={severalVaultBridge({ addVault: undefined })} />);
+    await screen.findByText(humanText("Use a different vault"));
+    expect(screen.queryByText(humanText(/Set up a new vault/))).toBeNull();
+  });
+
+  // The lock screen's own set-up: opens the form, fills it in and submits it.
+  const submitSetUpFromLockScreen = async (
+    user: ReturnType<typeof userEvent.setup>,
+  ) => {
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    await user.type(
+      await screen.findByLabelText(humanText("Name for this vault")),
+      "FAKE Garden",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
+      "FAKE Robin",
+    );
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
+      await user.type(field, PASS);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Set up vault") }),
+    );
+  };
+
+  it("sets a vault up from the lock screen: it says the device asks first, locks nothing, and opens the new vault", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    // No vault is open, so it does not claim that one is locked first; it does say that the device
+    // asks for a confirmation in a window of its own.
+    expect(
+      screen.queryByText(humanText(/This vault is locked first/)),
+    ).toBeNull();
+    expect(
+      screen.queryByText(humanText(/Choosing Set up vault locks this vault/)),
+    ).toBeNull();
+    expect(
+      screen.getByText(humanText(/asks this device to confirm/)),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
+    await submitSetUpFromLockScreen(user);
+    expect(
+      await screen.findByText(
+        humanText(
+          "The new vault is ready. Lock it when you are done, and unlock it again with its name and passphrase.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(bridge.addVault).toHaveBeenCalledExactlyOnceWith(
+      "FAKE Garden",
+      PASS,
+      "FAKE Robin",
+    );
+    // Nothing was unlocked, and nothing locked: there was nothing open.
+    expect(bridge.unlock).not.toHaveBeenCalled();
+    expect(bridge.unlockNamed).not.toHaveBeenCalled();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("stays on the form when the device's confirmation is refused, and nothing was made", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge({
+      addVault: vi
+        .fn()
+        .mockRejectedValue({ code: "cancelled", message: "FAKE cancelled" }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await submitSetUpFromLockScreen(user);
+    await waitFor(() => expect(bridge.addVault).toHaveBeenCalledTimes(1));
+    // Still the set-up form, not a library; the vault name field is still there.
+    expect(
+      await screen.findByLabelText(humanText("Name for this vault")),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: humanText(/Security/) }),
+    ).toBeNull();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the unlock screen when the lock screen's set-up is cancelled", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge();
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
+    expect(
+      await screen.findByText(humanText("Use a different vault")),
+    ).toBeVisible();
+    expect(bridge.addVault).not.toHaveBeenCalled();
+  });
+
+  // Opens Security, then the setup screen, and fills it in and submits it.
+  const submitSetUp = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    await user.type(
+      await screen.findByLabelText(humanText("Name for this vault")),
+      "FAKE Garden",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
+      "FAKE Robin",
+    );
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
+      await user.type(field, PASS);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Set up vault") }),
+    );
+  };
+
+  it("sets up another vault from Security: the native add needs this vault open, locks it, and opens the new one", async () => {
+    const user = userEvent.setup();
+    // The vault is open when the page asks (nothing else locked it); the native add locks it and
+    // opens the new one, which the fake answers with the new vault's snapshot.
+    const bridge = severalVaultBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await submitSetUp(user);
+    expect(
+      await screen.findByText(
+        humanText(
+          "The new vault is ready. Lock it when you are done, and unlock it again with its name and passphrase.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(bridge.addVault).toHaveBeenCalledExactlyOnceWith(
+      "FAKE Garden",
+      PASS,
+      "FAKE Robin",
+    );
+    // The page never locks first (the native add does), so there is no gap in which the page
+    // could add without the lock: `lock` is never called, and `addVault` is called with this
+    // vault still open.
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("stays in the open vault, with the refusal shown, when the add is refused before the lock", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      addVault: vi.fn().mockRejectedValue(new Error("FAKE refused")),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await submitSetUp(user);
+    await waitFor(() => expect(bridge.addVault).toHaveBeenCalledTimes(1));
+    // Still on the setup screen of the open vault, which can be cancelled.
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Set up a new vault"),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: humanText("Unlock your vault") }),
+    ).toBeNull();
+  });
+
+  it("says this vault is locked, and shows the unlock screen, when the add fails after the native lock", async () => {
+    const user = userEvent.setup();
+    let state: "locked" | "unlocked" = "unlocked";
+    const bridge = severalVaultBridge({
+      status: vi.fn().mockImplementation(async () => state),
+      addVault: vi.fn().mockImplementation(async () => {
+        // The native add locked this vault, then could not make the new one: the owner unlocks again.
+        state = "locked";
+        throw new Error("FAKE no room");
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await submitSetUp(user);
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the library when setting up another vault is cancelled", async () => {
+    const user = userEvent.setup();
+    const bridge = severalVaultBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up a new vault…"),
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
+    // Back in the open vault's library (on its first section), nothing locked or added.
+    expect(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText("Set up a new vault"))).toBeNull();
+    expect(bridge.addVault).not.toHaveBeenCalled();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+});

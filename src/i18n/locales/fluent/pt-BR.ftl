@@ -723,6 +723,14 @@ lockWarning-title =
     *[other] O myCarlos será bloqueado em { $count } segundos para manter seus documentos privados.
     }
 
+native-addVault-confirm = Criar um novo cofre
+
+native-addVault-decline = Não criar
+
+native-addVault-message = O myCarlos foi solicitado a criar um cofre novo e vazio neste dispositivo. Nenhum cofre existente é aberto nem alterado; se houver um aberto, ele é bloqueado primeiro. Se você não pediu isso, escolha "Não criar".
+
+native-addVault-title = Criar um novo cofre neste dispositivo?
+
 native-backup-noteEmptied = O arquivo no local escolhido para salvar pode estar vazio ou incompleto; se você escolheu salvar por cima de uma cópia de segurança anterior, ela foi esvaziada. Exclua essa, não suas outras cópias de segurança.
 
 native-backup-noteUntouched = Um arquivo vazio (0 bytes) pode ficar no local que você escolheu para salvar: você pode excluí-lo. Guarde qualquer cópia de segurança que não esteja vazia.
@@ -1386,6 +1394,78 @@ unlock-noKey-heading = Não tem uma chave de recuperação?
 unlock-submit = Desbloquear
 
 unlock-title = Desbloqueie seu cofre
+
+unlock-otherVault-summary = Usar outro cofre
+
+unlock-otherVault-name = Nome do cofre
+
+unlock-otherVault-hint = O nome que você deu a esse cofre. Deixe em branco para abrir seu cofre principal. O myCarlos não guarda uma lista de cofres, então não pode mostrar os nomes deles.
+
+unlock-otherVault-find = Encontrar meus outros cofres
+
+unlock-otherVault-findHelp = Tenta a frase secreta que você digitar em cada pasta que o myCarlos não conhece. Cada tentativa conta como uma tentativa de frase secreta.
+
+unlock-otherVault-findButton = Encontrar cofres
+
+unlock-otherVault-found =
+    { $count ->
+    [one] { $count } cofre encontrado.
+    *[other] { $count } cofres encontrados.
+    }
+
+unlock-otherVault-notOpened =
+    { $count ->
+    [one] { $count } pasta não abriu com essa frase secreta.
+    *[other] { $count } pastas não abriram com essa frase secreta.
+    }
+
+unlock-otherVault-empty =
+    { $count ->
+    [one] { $count } pasta estava vazia.
+    *[other] { $count } pastas estavam vazias.
+    }
+
+unlock-otherVault-none = Nenhum outro cofre abriu com essa frase secreta.
+
+unlock-otherVault-nameTitle = Dê a cada cofre o nome que você digitará para abri-lo
+
+unlock-otherVault-nameLabel = Cofre { $number } de { $count }
+
+unlock-otherVault-save = Salvar nomes
+
+unlock-otherVault-named = Os nomes foram salvos. Nada foi desbloqueado.
+
+unlock-otherVault-nameFailed = Os nomes não foram salvos. Nada foi alterado.
+
+newVault-title = Configurar um novo cofre
+
+newVault-intro = Um novo cofre neste dispositivo tem sua própria frase secreta, chave de recuperação e pessoas. Este cofre é bloqueado primeiro.
+
+newVault-others = Seus outros cofres não são alterados: cada um mantém sua própria frase secreta e chave de recuperação.
+
+newVault-name-label = Nome deste cofre
+
+newVault-name-hint = Você digita este nome na tela de desbloqueio para abrir este cofre. Não é uma senha: quem tiver este dispositivo e uma cópia dos arquivos dele poderia tentar adivinhar, então ele não substitui a frase secreta.
+
+newVault-name-invalid = Escolha um nome de 1 a 64 caracteres.
+
+newVault-lockNote = Ao escolher Configurar cofre, este cofre é bloqueado e depois o novo é aberto.
+
+newVault-introLocked = Um novo cofre neste dispositivo tem sua própria frase secreta, chave de recuperação e pessoas.
+
+newVault-confirmNote = Ao escolher Configurar cofre, este dispositivo pede primeiro uma confirmação em uma janela própria que este app não consegue clicar. Nada é criado se você não concordar ali.
+
+newVault-submit = Configurar cofre
+
+newVault-cancel = Cancelar
+
+security-newVault-title = Outro cofre neste dispositivo
+
+security-newVault-body = Configure um cofre separado, com nome, frase secreta e pessoas próprios. Este cofre é bloqueado primeiro.
+
+security-newVault-button = Configurar um novo cofre…
+
+notice-newVaultReady = O novo cofre está pronto. Bloqueie-o quando terminar e desbloqueie-o de novo com o nome e a frase secreta dele.
 
 unlock-waiting =
     { $count ->

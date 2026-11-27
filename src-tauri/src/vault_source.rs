@@ -75,10 +75,12 @@ pub(crate) trait VaultSource: Send + Sync + 'static {
     }
 
     /// Adds a vault the owner will find by `name`, creates it with `passphrase` and its first
-    /// person, and makes it the one the screen is on (see `VaultSlots::add_vault`). The one vault
+    /// person, and makes it the one the screen is on, on a trusted native confirmation, so it also
+    /// works with the screen's vault locked (see `VaultSlots::add_vault_confirmed`). The one vault
     /// has nowhere to add one: the refusal is `Invalid`, nothing is written.
-    fn add_vault(
+    fn add_vault_confirmed(
         &self,
+        _confirm: &mut dyn FnMut() -> bool,
         _name: &str,
         _passphrase: &str,
         _initial_profile_name: &str,
@@ -86,6 +88,20 @@ pub(crate) trait VaultSource: Send + Sync + 'static {
         _stop_work: &mut dyn FnMut(),
     ) -> Result<Arc<VaultStore>, VaultError> {
         Err(VaultError::Invalid)
+    }
+
+    /// Whether a vault the registry does not list is on this device (a creation whose name was not
+    /// written, a registry that was lost): such a vault is another vault for what a right
+    /// passphrase may clear (#562 review). A doubt (a registry that cannot be read) is `true`. The
+    /// one vault has no registry and nothing unlisted.
+    fn unlisted_vault_exists(&self) -> bool {
+        false
+    }
+
+    /// How many vaults an add has made since the app started, listed or not, so that a caller can
+    /// tell whether a refused add made one (see `VaultSlots::add_vault`).
+    fn vaults_made(&self) -> usize {
+        0
     }
 }
 
@@ -180,23 +196,35 @@ impl StoreHandle {
         self.source.register_found(named)
     }
 
-    /// See [`VaultSource::add_vault`]. Goes to the source even on a pinned handle: the new vault
-    /// becomes the screen's.
-    pub(crate) fn add_vault(
+    /// See [`VaultSource::add_vault_confirmed`]. Goes to the source even on a pinned handle: the new
+    /// vault becomes the screen's.
+    pub(crate) fn add_vault_confirmed(
         &self,
+        mut confirm: impl FnMut() -> bool,
         name: &str,
         passphrase: &str,
         initial_profile_name: &str,
         now_ms: u64,
         mut stop_work: impl FnMut(),
     ) -> Result<Arc<VaultStore>, VaultError> {
-        self.source.add_vault(
+        self.source.add_vault_confirmed(
+            &mut confirm,
             name,
             passphrase,
             initial_profile_name,
             now_ms,
             &mut stop_work,
         )
+    }
+
+    /// See [`VaultSource::unlisted_vault_exists`].
+    pub(crate) fn unlisted_vault_exists(&self) -> bool {
+        self.source.unlisted_vault_exists()
+    }
+
+    /// See [`VaultSource::vaults_made`].
+    pub(crate) fn vaults_made(&self) -> usize {
+        self.source.vaults_made()
     }
 
     /// A handle for the one vault the device has (the tests' mock apps).

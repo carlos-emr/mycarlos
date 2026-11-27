@@ -98,6 +98,10 @@ interface SecuritySettingsProps {
   focusHandover?: number;
   /** Add a person from a handover file (#360). */
   onAddFromFile?: () => void;
+  /** Several vaults on one device (#357): opens the screen that sets up another vault. Offered
+   * only where the native side can make one. This is the only place a vault can be added from,
+   * so only whoever holds this unlocked vault can. */
+  onSetUpNewVault?: () => void;
   /** Hide a whole person, bring one back, and the people who are hidden (#360). */
   hiddenPeople?: HiddenProfile[];
   onHidePerson?: (profileId: string) => void;
@@ -225,6 +229,7 @@ export function SecuritySettings({
   onHandOver,
   focusHandover = 0,
   onAddFromFile,
+  onSetUpNewVault,
   onBackupSize,
   onSpeedTest,
   showSpeedTest = speedTestShownByBuild(),
@@ -866,6 +871,24 @@ export function SecuritySettings({
                   {translateNow("handover.import.button")}
                 </button>
               )}
+            </div>
+          </section>
+        )}
+        {onSetUpNewVault && (
+          <section className="setting-row native-new-vault-settings">
+            <div>
+              <h2>{translateNow("security.newVault.title")}</h2>
+              <p>{translateNow("security.newVault.body")}</p>
+            </div>
+            <div>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || readOnly}
+                onClick={onSetUpNewVault}
+              >
+                {translateNow("security.newVault.button")}
+              </button>
             </div>
           </section>
         )}

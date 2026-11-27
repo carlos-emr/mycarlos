@@ -723,6 +723,14 @@ lockWarning-title =
     *[other] myCarlos se bloqueará en { $count } segundos para mantener privados sus documentos.
     }
 
+native-addVault-confirm = Crear una nueva bóveda
+
+native-addVault-decline = No crear
+
+native-addVault-message = Se pidió a myCarlos crear una bóveda nueva y vacía en este dispositivo. Ninguna bóveda existente se abre ni se modifica; si hay una abierta, se bloquea primero. Si usted no lo pidió, elija «No crear».
+
+native-addVault-title = ¿Crear una nueva bóveda en este dispositivo?
+
 native-backup-noteEmptied = El archivo donde eligió guardar puede estar vacío o incompleto; si eligió sobrescribir una copia de seguridad antigua, esa copia se vació. Elimine esa, no sus otras copias de seguridad.
 
 native-backup-noteUntouched = Puede quedar un archivo vacío (0 bytes) donde eligió guardar: puede eliminarlo. Conserve cualquier copia de seguridad que no esté vacía.
@@ -1386,6 +1394,78 @@ unlock-noKey-heading = ¿No tiene una clave de recuperación?
 unlock-submit = Desbloquear
 
 unlock-title = Desbloquee su bóveda
+
+unlock-otherVault-summary = Usar otra bóveda
+
+unlock-otherVault-name = Nombre de la bóveda
+
+unlock-otherVault-hint = El nombre que le dio a esa bóveda. Déjelo vacío para abrir su bóveda principal. myCarlos no guarda una lista de bóvedas, así que no puede mostrarle sus nombres.
+
+unlock-otherVault-find = Buscar mis otras bóvedas
+
+unlock-otherVault-findHelp = Prueba la frase de contraseña que escriba en cada carpeta que myCarlos no conoce. Cada intento cuenta como un intento de frase de contraseña.
+
+unlock-otherVault-findButton = Buscar bóvedas
+
+unlock-otherVault-found =
+    { $count ->
+    [one] Se encontró { $count } bóveda.
+    *[other] Se encontraron { $count } bóvedas.
+    }
+
+unlock-otherVault-notOpened =
+    { $count ->
+    [one] { $count } carpeta no se abrió con esa frase de contraseña.
+    *[other] { $count } carpetas no se abrieron con esa frase de contraseña.
+    }
+
+unlock-otherVault-empty =
+    { $count ->
+    [one] { $count } carpeta estaba vacía.
+    *[other] { $count } carpetas estaban vacías.
+    }
+
+unlock-otherVault-none = Ninguna otra bóveda se abrió con esa frase de contraseña.
+
+unlock-otherVault-nameTitle = Dé a cada bóveda el nombre que escribirá para abrirla
+
+unlock-otherVault-nameLabel = Bóveda { $number } de { $count }
+
+unlock-otherVault-save = Guardar nombres
+
+unlock-otherVault-named = Se guardaron los nombres. No se desbloqueó nada.
+
+unlock-otherVault-nameFailed = No se guardaron los nombres. No se cambió nada.
+
+newVault-title = Crear una bóveda nueva
+
+newVault-intro = Una bóveda nueva en este dispositivo tiene su propia frase de contraseña, clave de recuperación y personas. Esta bóveda se bloquea primero.
+
+newVault-others = Sus otras bóvedas no se tocan: cada una conserva su propia frase de contraseña y su clave de recuperación.
+
+newVault-name-label = Nombre de esta bóveda
+
+newVault-name-hint = Escribirá este nombre en la pantalla de desbloqueo para abrir esta bóveda. No es una contraseña: quien tenga este dispositivo y una copia de sus archivos podría probar suposiciones, así que no reemplaza la frase de contraseña.
+
+newVault-name-invalid = Elija un nombre de 1 a 64 caracteres.
+
+newVault-lockNote = Al elegir Crear bóveda se bloquea esta bóveda y luego se abre la nueva.
+
+newVault-introLocked = Una bóveda nueva en este dispositivo tiene su propia frase de contraseña, clave de recuperación y personas.
+
+newVault-confirmNote = Al elegir Crear bóveda, este dispositivo pide primero una confirmación en una ventana propia que esta aplicación no puede pulsar. No se crea nada si no acepta allí.
+
+newVault-submit = Crear bóveda
+
+newVault-cancel = Cancelar
+
+security-newVault-title = Otra bóveda en este dispositivo
+
+security-newVault-body = Cree una bóveda aparte con su propio nombre, frase de contraseña y personas. Esta bóveda se bloquea primero.
+
+security-newVault-button = Crear una bóveda nueva…
+
+notice-newVaultReady = La bóveda nueva está lista. Bloquéela cuando termine y vuelva a desbloquearla con su nombre y su frase de contraseña.
 
 unlock-waiting =
     { $count ->

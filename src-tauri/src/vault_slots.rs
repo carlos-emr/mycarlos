@@ -92,6 +92,21 @@ pub(crate) struct VaultSlots {
     registry: Mutex<Registry>,
     /// Set while an unlock by name is under way: one per device at a time (see `unlock_named`).
     named_attempt: AtomicBool,
+    /// How many vaults `add_vault` has made since the app started, whether or not their names were
+    /// written: lets the command tell a refused add that made a vault (its place in the add rate
+    /// stays taken) from one that made nothing (it is given back).
+    vaults_made: AtomicUsize,
+}
+
+/// What allows an add (see [`VaultSlots::add_vault_confirmed`]).
+pub(crate) enum AddAuthority<'a> {
+    /// The screen's vault is open: the owner's authenticated session. No dialog. Only the tests'
+    /// plain add uses it (the command always asks the native confirmation).
+    #[cfg_attr(not(test), allow(dead_code))]
+    OpenVault,
+    /// A trusted native confirmation, which says whether the person at the device agreed. Works
+    /// with the screen's vault locked or open.
+    Confirmed(&'a mut dyn FnMut() -> bool),
 }
 
 /// Held by the one unlock by name that is under way; releases the device on every path, a panic
@@ -148,6 +163,22 @@ impl VaultSlots {
             registry_problem: Mutex::new(problem),
             found: Mutex::new(Vec::new()),
             named_attempt: AtomicBool::new(false),
+            vaults_made: AtomicUsize::new(0),
+        }
+    }
+
+    /// How many slot folders the registry does not list hold (or began to hold) a vault: made by an
+    /// add whose name was not written, or left by a registry that was lost. Each is a vault the
+    /// device has, so it counts toward the device's cap and keeps a right passphrase from clearing
+    /// the wrong-try counts (#562 review). A registry that is newer or cannot be read at all is a
+    /// doubt, counted as one.
+    pub(crate) fn unlisted_vault_count(&self) -> usize {
+        match self.unlisted_slots() {
+            Ok(slots) => slots
+                .iter()
+                .filter(|slot| slot_store_root(&self.data_dir, **slot).exists())
+                .count(),
+            Err(_) => 1,
         }
     }
 
@@ -206,17 +237,22 @@ impl VaultSlots {
     /// Adds a slot the registry now lists (a later step writes the registry, then calls this), with
     /// its own store and ledger. Adding one the device already has changes nothing.
     pub(crate) fn add_slot(&self, slot: SlotId) -> &Arc<VaultStore> {
+        self.add_slot_with(slot, || Self::new_store(&self.data_dir, &self.app_id, slot))
+    }
+
+    /// [`VaultSlots::add_slot`] with the store the caller already made (an add creates the vault
+    /// before it is listed, and the list must hold that very store, which the create left open).
+    fn add_slot_with(
+        &self,
+        slot: SlotId,
+        make: impl FnOnce() -> Arc<VaultStore>,
+    ) -> &Arc<VaultStore> {
         let _changing = self.changing.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(store) = self.store_of(slot) {
             return store;
         }
         let tail = self.nodes().last().expect("the list always has its head");
-        let node = tail.next.get_or_init(|| {
-            Box::new(Node::new(
-                slot,
-                Self::new_store(&self.data_dir, &self.app_id, slot),
-            ))
-        });
+        let node = tail.next.get_or_init(|| Box::new(Node::new(slot, make())));
         &node.store
     }
 
@@ -372,24 +408,118 @@ impl VaultSlots {
     }
 
     /// Makes a new vault the owner will find by `name`, creates it with `passphrase` and its first
-    /// person, and makes it the vault the screen is on (#357 4c). The order is the registry first,
-    /// then the vault: **the entry is written under the device lock (`Registry::update`, which
-    /// refuses a damaged or newer file untouched), the in-memory registry is read again so the name
-    /// finds the vault at once, the slot's store is added, the vault is created in it, and only then
-    /// does the screen move.** If the vault cannot be created (a weak passphrase, no room) the entry
-    /// is taken out again by a second `update` and the screen stays where it was; a folder the
-    /// attempt half made is left for `unregistered_slot_folders` to report, and the store the list
-    /// gained stays in memory until the app restarts, reachable by nothing (no name or slot finds
-    /// it).
+    /// person, and makes it the vault the screen is on (#357 4c). The order is the vault first, then
+    /// its name (#562 review F5): **the vault is created in a slot folder of its own, and only then is
+    /// its entry written under the device lock (`Registry::update`, which refuses a damaged or newer
+    /// file untouched), the in-memory registry read again so the name finds the vault at once, the
+    /// created store added to the list, and the screen moved.** If the vault cannot be created (a
+    /// weak passphrase, no room) nothing was registered, so there is nothing to take out: a folder
+    /// the attempt half made is left for `unregistered_slot_folders` to report. If the vault was made
+    /// and its entry cannot be written (another window took the name's last place, no room, a crash
+    /// in between), the vault is left made and locked and **unlisted**: "Find my other vaults" finds
+    /// it with its passphrase. A name with no vault behind it can no longer happen, whatever fails.
     ///
-    /// Nothing is written unless the screen's vault is at rest (an add opens a vault and moves the
-    /// screen: it would otherwise leave two open), and one add or unlock by name runs at a time per
-    /// device, so an add cannot overlap a guess. An add is not a guess and is not counted (the
-    /// command refuses it while a wait is running). A name already shared by four vaults is
-    /// `AlreadyExists`, a name that cannot be a name is `Invalid`, and a registry that cannot be read
-    /// or written is `Storage`; the typed name is hashed (never stored) by the registry.
+    /// **An add needs an authenticated session** (SLOT-02): the screen's vault must be OPEN, which
+    /// only its owner's passphrase did, so nobody holding a locked device can add vaults, move the
+    /// screen to a new one, or learn from `AlreadyExists` how many vaults share a name. It is then
+    /// **locked here, natively** (`stop_work` first, so what it was doing ends), because an add
+    /// opens the new vault and must not leave two open. Everything that can be refused without
+    /// touching anything (the inputs `create` would refuse, a name that cannot be a name, a registry
+    /// that cannot be used, a name already shared by as many vaults as the cap allows) is refused
+    /// BEFORE the lock, so such a refusal leaves the vault open. A lock that does not hold (a key
+    /// derivation or a transfer still running) adds nothing. What can only fail later (no room, a
+    /// failed write, or another window taking the last place of a name in between) leaves the
+    /// owner's vault locked: they unlock it again.
+    ///
+    /// One add or unlock by name runs at a time per device, so an add cannot overlap a guess. An add
+    /// is not a guess and is not counted (the command refuses it while a wait is running). A name
+    /// already shared by four vaults is `AlreadyExists`, a name that cannot be a name is `Invalid`,
+    /// a locked screen is `Locked`, and a registry that cannot be read or written is `Storage`; the
+    /// typed name is hashed (never stored) by the registry.
+    // The command adds on a native confirmation (`add_vault_confirmed`); this plain add, which needs
+    // the screen's vault open and shows no dialog, is the tests' way to exercise that authority.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn add_vault(
         &self,
+        name: &str,
+        passphrase: &str,
+        initial_profile_name: &str,
+        now_ms: u64,
+        stop_work: impl FnOnce(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        self.add_vault_as(
+            AddAuthority::OpenVault,
+            name,
+            passphrase,
+            initial_profile_name,
+            now_ms,
+            stop_work,
+        )
+    }
+
+    /// [`VaultSlots::add_vault`] on the authority of a trusted NATIVE confirmation (`confirm`, which
+    /// shows the OS dialog and says whether the person at the device agreed), so that **a new person
+    /// can set up a vault from the lock screen**, and so that a page in an open vault cannot add
+    /// one without a human click either (Ben's decision on #562, F2). The screen's vault may be
+    /// locked or open; it is never opened, switched to or changed by the add (it is locked, as
+    /// before, when it was open), and the new vault opens empty, the screen moving to it only after
+    /// it exists.
+    ///
+    /// The order is: the refusals that need no registry state (the inputs `create` would refuse, a
+    /// name that cannot be one) with no dialog; for an OPEN vault, the registry's refusals with their
+    /// own words, still before any dialog; **then `confirm`** (refused: `Cancelled`, nothing written
+    /// or locked); and, for a LOCKED screen only, the registry's refusals after it, all as the one
+    /// `Invalid` (a full device, a name shared by as many vaults as the cap allows), so a page on a
+    /// locked device learns nothing about the registry, not even from a person's click. Then, as
+    /// always, the vault is created and its name written.
+    pub(crate) fn add_vault_confirmed(
+        &self,
+        confirm: &mut dyn FnMut() -> bool,
+        name: &str,
+        passphrase: &str,
+        initial_profile_name: &str,
+        now_ms: u64,
+        stop_work: impl FnOnce(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        self.add_vault_as(
+            AddAuthority::Confirmed(confirm),
+            name,
+            passphrase,
+            initial_profile_name,
+            now_ms,
+            stop_work,
+        )
+    }
+
+    /// The registry's refusals of an add that need its state: damaged or newer, a name already
+    /// shared by as many vaults as the cap allows, and the device's cap (vaults an earlier add
+    /// made without a name count too, so they are not a way round it, #562 review).
+    fn registry_has_room_for(&self, name: &str) -> Result<(), VaultError> {
+        // Whatever the registry could not be read as at start is left exactly as it is.
+        if self.registry_problem().is_some() {
+            return Err(VaultError::Storage);
+        }
+        // Read from the file as it is now; another window adding the same name in between is only
+        // found out by the write below.
+        match Registry::load(&self.data_dir) {
+            Ok(Some(registry)) => registry.name_has_room(name).map_err(registry_refusal)?,
+            Ok(None) => {}
+            Err(_) => return Err(VaultError::Storage),
+        }
+        if self
+            .slots()
+            .len()
+            .saturating_add(self.unlisted_vault_count())
+            >= crate::vault_registry::MAX_VAULTS
+        {
+            return Err(VaultError::Invalid);
+        }
+        Ok(())
+    }
+
+    fn add_vault_as(
+        &self,
+        mut authority: AddAuthority<'_>,
         name: &str,
         passphrase: &str,
         initial_profile_name: &str,
@@ -399,33 +529,80 @@ impl VaultSlots {
         let Some(_attempt) = self.begin_named_attempt() else {
             return Err(VaultError::Busy);
         };
-        // A passphrase or name `create` would refuse registers nothing.
-        crate::vault::check_new_vault_inputs(passphrase, initial_profile_name)?;
-        // Whatever the registry could not be read as at start is left exactly as it is.
-        if self.registry_problem().is_some() {
-            return Err(VaultError::Storage);
+        let locked = self.current().open_vault_id().is_none();
+        // Without a native confirmation the authority is the authenticated session: the screen's
+        // vault is open.
+        if locked && matches!(authority, AddAuthority::OpenVault) {
+            return Err(VaultError::Locked);
         }
+        // A degraded (read-only) vault is repaired or backed up, not left locked behind a new one:
+        // refused, as an import, a hand-over and a backup are, and before anything is locked.
+        if !locked && self.current().is_open_in_recovery() {
+            return Err(VaultError::RecoveryMode);
+        }
+        // A passphrase or name `create` would refuse registers nothing, and locks nothing; these
+        // depend on what was typed alone, so they are refused before any dialog.
+        crate::vault::check_new_vault_inputs(passphrase, initial_profile_name)?;
+        if !crate::vault_registry::name_is_valid(name) {
+            return Err(VaultError::Invalid);
+        }
+        // An open vault is an authenticated session: the registry's refusals keep their words and
+        // come before any dialog.
+        if !locked {
+            self.registry_has_room_for(name)?;
+        }
+        if let AddAuthority::Confirmed(confirm) = &mut authority {
+            if !(*confirm)() {
+                return Err(VaultError::Cancelled);
+            }
+        }
+        // A locked screen has shown nothing to anyone yet, so what the registry says is only said
+        // after the person at the device agreed, and as the one `Invalid` (a taken name and a full
+        // device look alike: no probe). A registry that cannot be used is no secret and stays
+        // `Storage`.
+        if locked {
+            self.registry_has_room_for(name)
+                .map_err(|error| match error {
+                    VaultError::Storage => VaultError::Storage,
+                    _ => VaultError::Invalid,
+                })?;
+        }
+        // Lock the owner's vault first (a locked one stays as it is). If it does not hold,
+        // nothing was added.
+        stop_work();
+        self.current().lock();
         if !self.current().is_at_rest() {
             return Err(VaultError::Busy);
         }
-        let slot = Registry::update(
+        // The vault FIRST, its name second (#562 review F5). A name that was written before the
+        // vault could be left with no vault behind it (the create failing, the removal of the entry
+        // failing too, or a crash between the two): typing it would be a silent wrong passphrase.
+        // Made in this order, every failure leaves at worst a vault with no name, which "Find my
+        // other vaults" lists (`unregistered_slot_folders`), and never a name with no vault.
+        let slot = SlotId::new_extra();
+        let store = Self::new_store(&self.data_dir, &self.app_id, slot);
+        store.create(passphrase, initial_profile_name, now_ms)?;
+        // A vault exists from here on, listed or not (the command keeps the add's place taken).
+        self.vaults_made.fetch_add(1, Ordering::AcqRel);
+        #[cfg(test)]
+        if tests::CRASH_AFTER_CREATE.with(std::cell::Cell::take) {
+            // The app is killed here: the vault is on disk, the registry has not heard of it.
+            return Err(VaultError::Storage);
+        }
+        // Listed now, under the device lock; `add_recovered` is the same checks as `add_extra` (the
+        // name, its cap, the device's cap) for a slot that already exists. Refused, or failing to
+        // write (another window took the name's last place, no room), it leaves the new vault
+        // made and unlisted, locked again, and says so.
+        if let Err(error) = Registry::update(
             &self.data_dir,
             || Registry::with_main(HashCost::DEVICE),
-            |registry| registry.add_extra(name),
-        )
-        .map_err(registry_refusal)?;
-        self.reload_registry();
-        let store = Arc::clone(self.add_slot(slot));
-        if let Err(error) = store.create(passphrase, initial_profile_name, now_ms) {
-            // The entry goes again: a vault that was never made must not be a name that matches.
-            let _ = Registry::update(
-                &self.data_dir,
-                || Registry::with_main(HashCost::DEVICE),
-                |registry| registry.remove(slot),
-            );
-            self.reload_registry();
-            return Err(error);
+            |registry| registry.add_recovered(slot, name),
+        ) {
+            store.lock();
+            return Err(registry_refusal(error));
         }
+        self.reload_registry();
+        let store = Arc::clone(self.add_slot_with(slot, || store));
         let _changing = self.changing.lock().unwrap_or_else(|p| p.into_inner());
         let target = self
             .nodes()
@@ -433,22 +610,23 @@ impl VaultSlots {
             .ok_or(VaultError::Storage)?;
         let from = self.current.load(Ordering::Acquire);
         if !self.node_at(from).store.is_at_rest() {
-            // The old vault began something while the new one was being made. The new vault
-            // exists and is registered; it is locked again, and the screen stays where it was.
+            // The old vault (locked above) was opened again while the new one was being made. The
+            // new vault exists and is registered; it is locked again, and the screen stays where
+            // it was.
             store.lock();
             return Err(VaultError::Busy);
         }
-        stop_work();
-        self.node_at(from).store.lock();
         self.current.store(target, Ordering::Release);
         Ok(store)
     }
 
-    /// Looks for vaults on this device that the registry does not list and opens none of them for
-    /// good: it tries `passphrase` on each unlisted slot folder (#357 4c-2), one derivation each,
-    /// one after another, and locks every vault it opens again. This is the owner's deliberate "Find
-    /// my other vaults": after a registry that could not be read, or a vault whose creation was
-    /// interrupted. It writes nothing (see [`VaultSlots::register_found`]).
+    /// Looks for vaults on this device that the registry does not list and opens none of them: it
+    /// tries `passphrase` on each unlisted slot folder (#357 4c-2), one derivation each, one after
+    /// another, reading only the vault's header files (`VaultStore::passphrase_opens_read_only`), so
+    /// **a vault it finds is left byte for byte as it was**: no history entry, no format upgrade, no
+    /// cleanup, no lock file (#562 review F4). This is the owner's deliberate "Find my other vaults":
+    /// after a registry that could not be read, or a vault whose creation was interrupted. It writes
+    /// nothing (see [`VaultSlots::register_found`]).
     ///
     /// `before_try` runs before each derivation and may refuse it (the device counter is waiting:
     /// the search stops there and hands back what it had found); `after_try` hears how each went, so the
@@ -509,10 +687,13 @@ impl VaultSlots {
                 left,
                 found: FoundVaults::default(),
             })?;
-            let store = Self::new_store(&self.data_dir, &self.app_id, slot);
-            match store.unlock(passphrase) {
+            // A bare store, with no notification ledger: nothing of this vault is read but its
+            // header files.
+            let store = VaultStore::new(slot_store_root(&self.data_dir, slot));
+            // Read-only (#562 review F4): the search looks at a vault the owner has not taken back
+            // yet and must leave it as it was, not write its history or upgrade its format.
+            match store.passphrase_opens_read_only(passphrase) {
                 Ok(()) => {
-                    store.lock();
                     after_try(crate::throttle::Outcome::Right);
                     found.found.push(slot);
                 }
@@ -706,6 +887,9 @@ fn registry_refusal(error: RegistryError) -> VaultError {
     match error {
         RegistryError::Name(_) => VaultError::Invalid,
         RegistryError::NameTaken => VaultError::AlreadyExists,
+        // The device is full (#562 review F2): the owner's request is not one that can be met, said
+        // as the generic "not valid" (a screen that wants more words can ask for the count).
+        RegistryError::Full => VaultError::Invalid,
         _ => VaultError::Storage,
     }
 }
@@ -745,22 +929,32 @@ impl VaultSource for VaultSlots {
         VaultSlots::register_found(self, named)
     }
 
-    fn add_vault(
+    fn add_vault_confirmed(
         &self,
+        confirm: &mut dyn FnMut() -> bool,
         name: &str,
         passphrase: &str,
         initial_profile_name: &str,
         now_ms: u64,
         stop_work: &mut dyn FnMut(),
     ) -> Result<Arc<VaultStore>, VaultError> {
-        VaultSlots::add_vault(
+        VaultSlots::add_vault_confirmed(
             self,
+            confirm,
             name,
             passphrase,
             initial_profile_name,
             now_ms,
             stop_work,
         )
+    }
+
+    fn unlisted_vault_exists(&self) -> bool {
+        VaultSlots::unlisted_vault_count(self) > 0
+    }
+
+    fn vaults_made(&self) -> usize {
+        self.vaults_made.load(Ordering::Acquire)
     }
 }
 
@@ -1426,9 +1620,13 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let (slots, second) = two_vault_device(temp.path());
         assert_eq!(slots.current_slot(), SlotId::Main);
+        // An add needs an open vault: the owner's session.
+        slots.current().unlock(PASSWORD).unwrap();
         let stopped = Cell::new(0);
         let store = slots
             .add_vault("  Garden ", PASSWORD, "FAKE Gardener", 5, || {
+                // Its work stops while the owner's vault is still open: it is locked after that.
+                assert!(slots.current().open_vault_id().is_some());
                 stopped.set(stopped.get() + 1)
             })
             .unwrap();
@@ -1450,6 +1648,11 @@ mod tests {
             slots.store_of(second).unwrap().status(),
             Ok(VaultStatus::Locked)
         ));
+        // The owner's vault was locked natively by the add.
+        assert!(matches!(
+            slots.store_of(SlotId::Main).unwrap().status(),
+            Ok(VaultStatus::Locked)
+        ));
         // Locked again, its name finds it at once (the registry in memory was read again).
         store.lock();
         let opened = slots.unlock_named("GARDEN", PASSWORD, || {}).unwrap();
@@ -1467,6 +1670,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let slots = slots_in(temp.path());
         make_vault(&slots, SlotId::Main);
+        slots.current().unlock(PASSWORD).unwrap();
         let store = slots
             .add_vault("Garden", OTHER_PASSWORD, "FAKE Gardener", 5, || {})
             .unwrap();
@@ -1486,12 +1690,12 @@ mod tests {
     {
         let temp = tempfile::tempdir().unwrap();
         let (slots, _) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
         for n in 0..DUPLICATE_NAME_CAP_FOR_TEST {
             slots
                 .add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
-                .unwrap_or_else(|e| panic!("add {n}: {e:?}"))
-                .lock();
-            // The screen is on the new vault, which is locked: it is at rest for the next add.
+                .unwrap_or_else(|e| panic!("add {n}: {e:?}"));
+            // The screen is on the new vault, which is open: the next add is from it.
         }
         let before = fs::read(temp.path().join("vaults.v1")).unwrap();
         let slot_count = slots.slots().len();
@@ -1503,12 +1707,15 @@ mod tests {
         assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
         assert_eq!(slots.slots().len(), slot_count);
         assert_eq!(slots.current_slot(), current);
+        // A capped name is refused before anything is locked: the owner's vault is still open.
+        assert!(slots.current().open_vault_id().is_some());
     }
 
     #[test]
     fn given_inputs_create_would_refuse_when_a_vault_is_added_then_nothing_is_registered() {
         let temp = tempfile::tempdir().unwrap();
         let (slots, _) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
         let before = fs::read(temp.path().join("vaults.v1")).unwrap();
         for (name, passphrase, person) in [
             ("Garden", "short", "FAKE Gardener"),
@@ -1524,12 +1731,15 @@ mod tests {
         assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
         assert_eq!(slots.slots().len(), 2);
         assert_eq!(slots.current_slot(), SlotId::Main);
+        // Refused before anything is locked: the owner's vault is still open.
+        assert!(slots.current().open_vault_id().is_some());
     }
 
     #[test]
     fn given_a_vault_that_cannot_be_made_when_a_vault_is_added_then_its_entry_is_taken_out_again() {
         let temp = tempfile::tempdir().unwrap();
         let (slots, _) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
         let before = registry_slots(temp.path());
         // The vault's first history write fails, after the entry was written.
         let outcome = {
@@ -1542,6 +1752,8 @@ mod tests {
         assert!(open_vaults(&slots).is_empty());
         // The name finds nothing, and the owner can add it again.
         assert!(slots.unlock_named("Garden", PASSWORD, || {}).is_err());
+        // The owner's vault was locked by the failed add: they unlock it and add again.
+        slots.current().unlock(PASSWORD).unwrap();
         assert!(slots
             .add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
             .is_ok());
@@ -1560,28 +1772,72 @@ mod tests {
             let slots = slots_in(temp.path());
             assert!(slots.registry_problem().is_some());
             make_vault(&slots, SlotId::Main);
+            slots.current().unlock(PASSWORD).unwrap();
             assert!(matches!(
                 slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {}),
                 Err(VaultError::Storage)
             ));
             assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), bytes);
             assert_eq!(slots.slots(), vec![SlotId::Main]);
+            // Refused before the lock: the owner's vault is still open.
+            assert!(slots.current().open_vault_id().is_some());
         }
     }
 
     #[test]
-    fn given_the_screens_vault_is_open_or_a_try_is_under_way_when_a_vault_is_added_then_it_is_refused(
+    fn given_the_screens_vault_is_locked_when_a_vault_is_added_then_it_is_refused_and_nothing_changes(
     ) {
+        // The add needs an authenticated session (SLOT-02): nobody holding a locked device can add
+        // a vault, move the screen, or learn from `AlreadyExists` how many share a name.
         let temp = tempfile::tempdir().unwrap();
         let (slots, second) = two_vault_device(temp.path());
         let before = fs::read(temp.path().join("vaults.v1")).unwrap();
-        // An open vault is not left open beside a new one.
+        let stopped = Cell::new(0);
+        for name in ["Garden", "Second", "", "Gar\u{7}den"] {
+            assert!(
+                matches!(
+                    slots.add_vault(name, PASSWORD, "FAKE Gardener", 5, || stopped
+                        .set(stopped.get() + 1)),
+                    Err(VaultError::Locked)
+                ),
+                "{name:?}"
+            );
+        }
+        assert_eq!(stopped.get(), 0);
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert_eq!(slots.slots().len(), 2);
+        assert_eq!(slots.current_slot(), SlotId::Main);
+        assert!(slots.store_of(second).is_some());
+    }
+
+    #[test]
+    fn given_the_screens_vault_is_in_recovery_mode_when_a_vault_is_added_then_it_is_refused_and_stays_open(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
         slots.current().unlock(PASSWORD).unwrap();
+        slots.current().put_in_recovery_for_test();
+        let stopped = Cell::new(0);
         assert!(matches!(
-            slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {}),
-            Err(VaultError::Busy)
+            slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || stopped
+                .set(stopped.get() + 1)),
+            Err(VaultError::RecoveryMode)
         ));
-        slots.current().lock();
+        // Nothing was stopped, locked or written: the vault is as it was, still open.
+        assert_eq!(stopped.get(), 0);
+        assert!(slots.current().open_vault_id().is_some());
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert_eq!(slots.slots().len(), 2);
+        assert_eq!(slots.current_slot(), SlotId::Main);
+    }
+
+    #[test]
+    fn given_a_try_under_way_when_a_vault_is_added_then_it_is_refused_with_the_vault_still_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        slots.current().unlock(PASSWORD).unwrap();
         // One add or unlock by name at a time per device.
         let _taken = slots.begin_named_attempt().unwrap();
         assert!(matches!(
@@ -1589,7 +1845,29 @@ mod tests {
             Err(VaultError::Busy)
         ));
         assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
-        assert!(slots.store_of(second).is_some());
+        assert!(slots.current().open_vault_id().is_some());
+    }
+
+    #[test]
+    fn given_a_lock_that_does_not_hold_when_a_vault_is_added_then_nothing_is_added() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        slots.current().unlock(PASSWORD).unwrap();
+        // A key derivation starts as the add stops the vault's work: the vault is not at rest when
+        // it has been locked, so the add stops there.
+        // The marker only has to live until the add returns; its type is not nameable here.
+        #[allow(dyn_drop)]
+        let held: std::cell::RefCell<Vec<Box<dyn Drop + '_>>> = std::cell::RefCell::new(Vec::new());
+        let outcome = slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {
+            held.borrow_mut()
+                .push(Box::new(slots.current().hold_kdf_work_for_test()));
+        });
+        assert!(matches!(outcome, Err(VaultError::Busy)));
+        drop(held);
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert_eq!(slots.slots().len(), 2);
+        assert_eq!(slots.current_slot(), SlotId::Main);
     }
 
     #[test]
@@ -1605,6 +1883,7 @@ mod tests {
             |registry| registry.add_extra("Elsewhere"),
         )
         .unwrap();
+        slots.current().unlock(PASSWORD).unwrap();
         slots
             .add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
             .unwrap();
@@ -1875,5 +2154,427 @@ mod tests {
         assert_eq!(listed[2], lost);
         // The empty folder was not touched.
         assert!(slot_home(temp.path(), stray).is_dir());
+    }
+
+    // ---- #562 review F2 to F5 ----------------------------------------------------------------
+
+    thread_local! {
+        /// Makes the next add stop right after the vault was created and before its name is
+        /// written, as a crash there would (see `add_vault`).
+        pub(super) static CRASH_AFTER_CREATE: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Every file under `dir` with its bytes, and every folder (as an empty entry): what a search
+    /// must leave exactly as it found it.
+    fn tree(dir: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Option<Vec<u8>>> {
+        fn walk(
+            base: &Path,
+            at: &Path,
+            into: &mut std::collections::BTreeMap<std::path::PathBuf, Option<Vec<u8>>>,
+        ) {
+            for entry in fs::read_dir(at).unwrap() {
+                let path = entry.unwrap().path();
+                let relative = path.strip_prefix(base).unwrap().to_path_buf();
+                if path.is_dir() {
+                    into.insert(relative, None);
+                    walk(base, &path, into);
+                } else if path.file_name().is_some_and(|name| name == "vault-v1.lock") {
+                    // Windows prevents reads of the held storage lock. It must stay empty and
+                    // its path must still be included so the comparison can catch removal.
+                    assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+                    into.insert(relative, Some(Vec::new()));
+                } else {
+                    into.insert(relative, Some(fs::read(&path).unwrap()));
+                }
+            }
+        }
+        let mut into = std::collections::BTreeMap::new();
+        walk(dir, dir, &mut into);
+        into
+    }
+
+    #[test]
+    fn given_other_vaults_when_they_are_found_then_not_one_file_of_the_device_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        device_that_lost_its_registry(temp.path());
+        let slots = slots_in(temp.path());
+        let before = tree(temp.path());
+        // Both vaults opened by their passphrases, then a passphrase that opens neither: the search
+        // writes no history entry, upgrades no format, cleans nothing up and leaves no lock file.
+        assert_eq!(find(&slots, PASSWORD).0.unwrap().found.len(), 1);
+        assert_eq!(find(&slots, OTHER_PASSWORD).0.unwrap().found.len(), 1);
+        assert_eq!(
+            find(&slots, "no-such-passphrase-anywhere-1234")
+                .0
+                .unwrap()
+                .not_opened,
+            2
+        );
+        assert_eq!(tree(temp.path()), before);
+        assert!(open_vaults(&slots).is_empty());
+    }
+
+    #[test]
+    fn given_a_crash_between_the_vault_and_its_name_when_added_then_no_name_matches_and_find_gets_the_vault_back(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
+        let registry_before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        CRASH_AFTER_CREATE.with(|crash| crash.set(true));
+
+        let outcome = slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {});
+
+        // The add was cut short: nothing says it worked, and no name was written for a vault.
+        assert!(matches!(outcome, Err(VaultError::Storage)));
+        assert_eq!(
+            fs::read(temp.path().join("vaults.v1")).unwrap(),
+            registry_before
+        );
+        assert_eq!(slots.slots().len(), 2);
+        let plan = slots.plan_for("Garden");
+        assert!(
+            plan.real.is_empty(),
+            "no registered name for a vault that has no entry"
+        );
+        // The vault itself exists on disk, unlisted, and is the one thing that can be lost: the
+        // owner's "Find my other vaults" opens it with its passphrase and can name it again.
+        let (result, _) = find(&slots, PASSWORD);
+        let found = result.unwrap();
+        assert_eq!(found.found.len(), 1);
+        slots
+            .register_found(&[(found.found[0], "Garden".into())])
+            .unwrap();
+        assert_eq!(registry_slots(temp.path()).len(), 3);
+        assert_eq!(slots_in(temp.path()).plan_for("Garden").real.len(), 1);
+    }
+
+    // ---- an add on a native confirmation, from the lock screen (Ben's decision on #562) -------------
+
+    const THIRD_PASSWORD: &str = "harbor-quartz-meadow-ember-318";
+
+    /// A confirmation that answers `agree` and counts how often it was asked.
+    fn dialog(agree: bool, asked: &Cell<usize>) -> impl FnMut() -> bool + '_ {
+        move || {
+            asked.set(asked.get() + 1);
+            agree
+        }
+    }
+
+    #[test]
+    fn given_a_locked_screen_when_the_dialog_is_refused_then_nothing_is_created_or_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        assert!(open_vaults(&slots).is_empty());
+        let before = tree(temp.path());
+        let asked = Cell::new(0);
+
+        let outcome = slots.add_vault_confirmed(
+            &mut dialog(false, &asked),
+            "Garden",
+            THIRD_PASSWORD,
+            "FAKE Gardener",
+            5,
+            || panic!("a refused dialog stops nothing"),
+        );
+
+        assert!(matches!(outcome, Err(VaultError::Cancelled)));
+        assert_eq!(asked.get(), 1);
+        assert_eq!(tree(temp.path()), before);
+        assert_eq!((slots.vaults_made(), slots.unlisted_vault_count()), (0, 0));
+        assert_eq!(slots.slots().len(), 2);
+        assert!(open_vaults(&slots).is_empty());
+    }
+
+    #[test]
+    fn given_a_locked_screen_when_the_dialog_is_confirmed_then_a_new_vault_is_made_and_the_others_are_untouched(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, second) = two_vault_device(temp.path());
+        let main_before = tree(&slot_home(temp.path(), SlotId::Main));
+        let second_before = tree(&slot_home(temp.path(), second));
+        let asked = Cell::new(0);
+
+        let store = slots
+            .add_vault_confirmed(
+                &mut dialog(true, &asked),
+                "  Garden ",
+                THIRD_PASSWORD,
+                "FAKE Gardener",
+                5,
+                || {},
+            )
+            .unwrap();
+
+        // Made, counted, listed under its name, and the screen is on it, open and empty.
+        assert_eq!(asked.get(), 1);
+        assert_eq!(slots.vaults_made(), 1);
+        let listed = registry_slots(temp.path());
+        assert_eq!(listed.len(), 3);
+        let added = listed[2];
+        assert!(Arc::ptr_eq(&store, slots.store_of(added).unwrap()));
+        assert_eq!(slots.current_slot(), added);
+        assert_eq!(open_vaults(&slots), vec![added]);
+        assert_eq!(slots_in(temp.path()).plan_for("garden").real, vec![added]);
+        // No existing vault was opened, switched to or written to: their folders are byte for byte
+        // what they were.
+        assert_eq!(tree(&slot_home(temp.path(), SlotId::Main)), main_before);
+        assert_eq!(tree(&slot_home(temp.path(), second)), second_before);
+        // The new vault opens with its own passphrase and holds only the first person.
+        store.lock();
+        store.unlock(THIRD_PASSWORD).unwrap();
+    }
+
+    #[test]
+    fn given_a_locked_screen_when_the_inputs_are_not_valid_then_no_dialog_is_shown() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        let asked = Cell::new(0);
+        for (name, passphrase, person) in [
+            ("Garden", "short", "FAKE Gardener"),
+            ("   ", THIRD_PASSWORD, "FAKE Gardener"),
+            ("Garden", THIRD_PASSWORD, ""),
+        ] {
+            let outcome = slots.add_vault_confirmed(
+                &mut dialog(true, &asked),
+                name,
+                passphrase,
+                person,
+                5,
+                || {},
+            );
+            assert!(outcome.is_err(), "{name:?} {person:?}");
+        }
+        // What was typed alone decides these, so nobody is asked about them.
+        assert_eq!(asked.get(), 0);
+        assert_eq!(slots.vaults_made(), 0);
+    }
+
+    #[test]
+    fn given_a_locked_screen_when_the_name_is_taken_or_the_device_is_full_then_both_say_the_same_after_the_dialog(
+    ) {
+        // A name shared by as many vaults as the cap allows.
+        let taken = tempfile::tempdir().unwrap();
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        for _ in 0..crate::vault_registry::DUPLICATE_NAME_CAP {
+            registry.add_extra("Garden").unwrap();
+        }
+        registry.save(taken.path()).unwrap();
+        // A full device.
+        let full = tempfile::tempdir().unwrap();
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        for index in 1..crate::vault_registry::MAX_VAULTS {
+            registry.add_extra(&format!("Vault {index}")).unwrap();
+        }
+        registry.save(full.path()).unwrap();
+        for (dir, name) in [(&taken, "Garden"), (&full, "One more")] {
+            let slots = slots_in(dir.path());
+            let before = tree(dir.path());
+            let asked = Cell::new(0);
+
+            let outcome = slots.add_vault_confirmed(
+                &mut dialog(true, &asked),
+                name,
+                THIRD_PASSWORD,
+                "FAKE Gardener",
+                5,
+                || {},
+            );
+
+            // The same answer for both, not the taken name's own `AlreadyExists`, and only after
+            // the person at the device agreed.
+            assert!(matches!(outcome, Err(VaultError::Invalid)), "{name}");
+            assert_eq!(asked.get(), 1);
+            assert_eq!(tree(dir.path()), before);
+        }
+    }
+
+    #[test]
+    fn given_an_open_vault_when_the_dialog_is_refused_then_nothing_is_locked_or_written_and_it_stays_open(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
+        let asked = Cell::new(0);
+
+        let refused = slots.add_vault_confirmed(
+            &mut dialog(false, &asked),
+            "Garden",
+            THIRD_PASSWORD,
+            "FAKE Gardener",
+            5,
+            || panic!("a refused dialog stops nothing"),
+        );
+
+        // Nothing was locked or written: the owner is still in their vault.
+        assert!(matches!(refused, Err(VaultError::Cancelled)));
+        assert_eq!(asked.get(), 1);
+        assert!(slots.current().open_vault_id().is_some());
+        assert_eq!(slots.vaults_made(), 0);
+    }
+
+    #[test]
+    fn given_an_open_vault_when_the_dialog_is_confirmed_then_it_is_locked_first_and_the_new_vault_opens(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
+        let asked = Cell::new(0);
+        let stopped = Cell::new(0);
+
+        let store = slots
+            .add_vault_confirmed(
+                &mut dialog(true, &asked),
+                "Garden",
+                THIRD_PASSWORD,
+                "FAKE Gardener",
+                5,
+                || {
+                    assert!(slots.current().open_vault_id().is_some());
+                    stopped.set(stopped.get() + 1)
+                },
+            )
+            .unwrap();
+
+        assert_eq!((asked.get(), stopped.get(), slots.vaults_made()), (1, 1, 1));
+        assert_eq!(open_vaults(&slots), vec![slots.current_slot()]);
+        assert!(Arc::ptr_eq(&store, slots.current()));
+    }
+
+    #[test]
+    fn given_a_locked_screen_when_added_without_a_confirmation_then_it_is_refused_as_locked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        let before = tree(temp.path());
+
+        let outcome = slots.add_vault("Garden", THIRD_PASSWORD, "FAKE Gardener", 5, || {});
+
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        assert_eq!(tree(temp.path()), before);
+    }
+
+    #[test]
+    fn given_a_vault_made_but_not_listed_when_asked_then_it_is_counted_as_made_and_as_unlisted() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
+        assert_eq!((slots.vaults_made(), slots.unlisted_vault_count()), (0, 0));
+        CRASH_AFTER_CREATE.with(|crash| crash.set(true));
+
+        let outcome = slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {});
+
+        // The add failed, and a vault was made all the same: the command keeps the add's place
+        // taken, and the device has one more vault than its registry lists.
+        assert!(outcome.is_err());
+        assert_eq!((slots.vaults_made(), slots.unlisted_vault_count()), (1, 1));
+        // A refused add that made nothing (a name that cannot be one) changes neither.
+        slots.current().unlock(PASSWORD).unwrap();
+        assert!(slots
+            .add_vault("   ", PASSWORD, "FAKE Gardener", 5, || {})
+            .is_err());
+        assert_eq!((slots.vaults_made(), slots.unlisted_vault_count()), (1, 1));
+    }
+
+    #[test]
+    fn given_unlisted_vaults_when_a_vault_is_added_then_they_count_toward_the_device_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        for index in 1..crate::vault_registry::MAX_VAULTS - 1 {
+            registry.add_extra(&format!("Vault {index}")).unwrap();
+        }
+        registry.save(temp.path()).unwrap();
+        let slots = slots_in(temp.path());
+        make_vault(&slots, SlotId::Main);
+        slots.current().unlock(PASSWORD).unwrap();
+        // One short of the cap: a vault can still be added. A vault an earlier add made without a
+        // name takes that last place.
+        let orphan = SlotId::new_extra();
+        let store = VaultSlots::new_store(temp.path(), "FAKE.app", orphan);
+        store.create(OTHER_PASSWORD, "FAKE Person", 1).unwrap();
+        store.lock();
+        assert_eq!(slots.unlisted_vault_count(), 1);
+        let before = tree(temp.path());
+
+        let outcome = slots.add_vault("One more", PASSWORD, "FAKE Gardener", 5, || {
+            panic!("a refused add stops nothing")
+        });
+
+        assert!(matches!(outcome, Err(VaultError::Invalid)));
+        assert!(slots.current().open_vault_id().is_some());
+        assert_eq!(tree(temp.path()), before);
+    }
+
+    #[test]
+    fn given_a_full_device_when_a_vault_is_added_then_it_is_refused_before_the_owners_vault_is_locked(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        for index in 1..crate::vault_registry::MAX_VAULTS {
+            registry.add_extra(&format!("Vault {index}")).unwrap();
+        }
+        assert_eq!(registry.slots().len(), crate::vault_registry::MAX_VAULTS);
+        // The device's cap holds for every way in: a new vault, a name check, a recovered vault.
+        assert_eq!(registry.add_extra("One more"), Err(RegistryError::Full));
+        assert_eq!(registry.name_has_room("One more"), Err(RegistryError::Full));
+        assert_eq!(
+            registry.add_recovered(SlotId::new_extra(), "One more"),
+            Err(RegistryError::Full)
+        );
+        registry.save(temp.path()).unwrap();
+        let slots = slots_in(temp.path());
+        make_vault(&slots, SlotId::Main);
+        slots.current().unlock(PASSWORD).unwrap();
+        let before = tree(temp.path());
+
+        let outcome = slots.add_vault("One more", PASSWORD, "FAKE Gardener", 5, || {
+            panic!("the owner's work is not stopped for an add that is refused")
+        });
+
+        assert!(matches!(outcome, Err(VaultError::Invalid)));
+        // Refused before anything was locked or written: the owner's vault is still open.
+        assert!(slots.current().open_vault_id().is_some());
+        assert_eq!(tree(temp.path()), before);
+    }
+
+    #[test]
+    fn given_a_name_of_tens_of_megabytes_when_added_then_it_is_refused_before_it_is_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        slots.current().unlock(PASSWORD).unwrap();
+        let huge = "a".repeat(64 * 1024 * 1024);
+        let started = std::time::Instant::now();
+
+        let outcome = slots.add_vault(&huge, PASSWORD, "FAKE Gardener", 5, || {
+            panic!("a refused add stops nothing")
+        });
+
+        assert!(matches!(outcome, Err(VaultError::Invalid)));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "refused by its length, not worked through: {:?}",
+            started.elapsed()
+        );
+        assert!(slots.current().open_vault_id().is_some());
+    }
+
+    #[test]
+    fn given_a_name_too_long_to_read_when_a_vault_is_unlocked_by_name_then_it_is_a_name_that_matches_nothing(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        let huge = "a".repeat(64 * 1024 * 1024);
+        let started = std::time::Instant::now();
+
+        let plan = slots.plan_for(&huge);
+
+        // As for any other name no vault has: no match, and the same fixed number of derivations.
+        assert!(plan.real.is_empty());
+        assert_eq!(plan.decoys, crate::vault_registry::DUPLICATE_NAME_CAP);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(matches!(
+            slots.unlock_named(&huge, PASSWORD, || {}),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(open_vaults(&slots).is_empty());
     }
 }

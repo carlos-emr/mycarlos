@@ -22,8 +22,14 @@ use std::{
 pub enum Outcome {
     /// A passphrase or recovery key that does not open it.
     Wrong,
-    /// It opened.
+    /// It opened, and it is the only vault this device has: whoever did it has the vault anyway,
+    /// so the counts are cleared.
     Right,
+    /// It opened, and the device holds other vaults too. Opening this one gives no access to the
+    /// others, so the wrong tries that were counted stay (they may well have been guesses at
+    /// another vault's passphrase), and only this try's own count is taken back, as for
+    /// [`Outcome::Neither`] (#562 review F1). The wait then only ends with time ([`FORGIVE_MS`]).
+    RightWithOthers,
     /// Something else: a typo in a key's check characters, a storage error.
     Neither,
 }
@@ -35,6 +41,9 @@ pub struct Try {
     before: u64,
     at: u64,
     clears: u64,
+    /// The count as it was stored before this try was added (not what still stood: taking the
+    /// try back must not forgive the same quiet time a second time).
+    failures_before: u32,
 }
 
 /// What a secret was tried for. Each is counted apart.
@@ -53,6 +62,11 @@ const STEP_MS: u64 = 5_000;
 pub const LONGEST_WAIT_MS: u64 = 60_000;
 /// The counts file is a few dozen bytes; anything much larger is not it.
 const MAX_FILE_BYTES: usize = 4 * 1024;
+/// How long without a wrong try forgives one wrong try that is still counted. The device holds a
+/// count that a right passphrase cannot clear once there are several vaults (a right one for
+/// vault B says nothing of guesses at vault A), so time is what lets an owner who mistyped start
+/// again. It is far longer than the longest wait: a guess every minute only ever climbs.
+pub const FORGIVE_MS: u64 = 15 * 60 * 1000;
 
 /// The wait before the next try after `failures` wrong ones in a row: none
 /// for the first few, then 5 seconds more for each, up to a minute.
@@ -75,6 +89,14 @@ struct Count {
 }
 
 impl Count {
+    /// The wrong tries that still count at `now_ms`: one is forgiven for every [`FORGIVE_MS`]
+    /// since the last one. Not stored: only a new wrong try writes it down, from this value.
+    fn standing(&self, now_ms: u64) -> u32 {
+        let forgiven = now_ms.saturating_sub(self.last_failure_ms) / FORGIVE_MS;
+        self.failures
+            .saturating_sub(u32::try_from(forgiven).unwrap_or(u32::MAX))
+    }
+
     /// This run's count and the file's, taken together: whichever was
     /// cleared since the other wins; otherwise the higher count and the
     /// later time, so that no copy's wrong tries are lost, nor this run's
@@ -222,8 +244,11 @@ impl AttemptThrottle {
             before: count.last_failure_ms,
             at: now_ms,
             clears: count.clears,
+            failures_before: count.failures,
         };
-        count.failures = count.failures.saturating_add(1);
+        // From what still stands: the forgiveness time has earned is taken off before this try is
+        // added, so a long quiet spell is not lost by the next wrong try.
+        count.failures = count.standing(now_ms).saturating_add(1);
         count.last_failure_ms = now_ms;
         self.keep(&counts);
         Ok(started)
@@ -238,15 +263,18 @@ impl AttemptThrottle {
         match outcome {
             Outcome::Wrong => {}
             Outcome::Right => self.succeeded(attempt, now_ms),
-            Outcome::Neither => {
+            Outcome::RightWithOthers | Outcome::Neither => {
                 let mut counts = self.lock(now_ms);
                 let count = counts.of(attempt);
                 if count.clears != started.clears {
                     return;
                 }
-                count.failures = count.failures.saturating_sub(1);
                 if count.last_failure_ms == started.at {
+                    // No later try has counted: the count is put back as it was stored.
+                    count.failures = started.failures_before;
                     count.last_failure_ms = started.before;
+                } else {
+                    count.failures = count.failures.saturating_sub(1);
                 }
                 self.keep(&counts);
             }
@@ -291,13 +319,14 @@ impl AttemptThrottle {
         let count = *counts.of(attempt);
         let until = count
             .last_failure_ms
-            .saturating_add(wait_after(count.failures));
+            .saturating_add(wait_after(count.standing(now_ms)));
         let left = until.saturating_sub(now_ms);
         (left > 0).then_some(left)
     }
 
-    /// The right secret was given for `attempt`. Opening the vault, by its
-    /// passphrase or its recovery key, clears both counts: whoever did it
+    /// The right secret was given for `attempt`, and this is the only vault the device holds
+    /// ([`Outcome::Right`]; with others it is [`Outcome::RightWithOthers`], which clears nothing).
+    /// Opening the vault, by its passphrase or its recovery key, clears both counts: whoever did it
     /// has the vault anyway.
     pub fn succeeded(&self, attempt: Attempt, now_ms: u64) {
         let mut counts = self.lock(now_ms);
@@ -670,5 +699,142 @@ mod tests {
             AttemptThrottle::new(Some(path)).wait(Attempt::Unlock, 1_000),
             None
         );
+    }
+
+    // ---- several vaults (#562 review F1): a right passphrase for one vault clears nothing ------
+
+    /// A try that opened a vault when the device holds others: the wrong tries stay counted, the
+    /// try itself is not one of them.
+    #[test]
+    fn a_right_secret_among_several_vaults_clears_nothing_and_does_not_count_itself() {
+        let throttle = AttemptThrottle::new(None);
+        for _ in 0..FREE_TRIES {
+            throttle.failed(Attempt::Unlock, 1_000);
+        }
+        // The next try is held off by the wait, whoever types the passphrase.
+        assert!(throttle.begin(Attempt::Unlock, 2_000).is_err());
+        // After the wait, a right passphrase for another vault is let through...
+        let right = throttle.begin(Attempt::Unlock, 7_000).unwrap();
+        throttle.settle(Attempt::Unlock, right, Outcome::RightWithOthers, 7_000);
+        // ...and leaves the five wrong tries (and when the last was) as they were.
+        let counts = *throttle.counts.lock().unwrap();
+        assert_eq!(
+            (counts.unlock.failures, counts.unlock.last_failure_ms),
+            (FREE_TRIES, 1_000)
+        );
+        // So the very next wrong try is the sixth, not the first: the wait is back.
+        throttle.failed(Attempt::Unlock, 7_000);
+        assert_eq!(throttle.wait(Attempt::Unlock, 7_000), Some(10_000));
+    }
+
+    /// The attack in the review: five guesses at A, a right passphrase for B, again and again. The
+    /// wait must never fall back to nothing however many right ones come between.
+    #[test]
+    fn guesses_at_one_vault_are_not_forgiven_by_opening_another_again_and_again() {
+        let throttle = AttemptThrottle::new(None);
+        let start = 1_000;
+        let mut now = start;
+        // A try that waits out whatever wait is running, as a patient attacker does.
+        let patiently = |now: &mut u64| loop {
+            match throttle.begin(Attempt::Unlock, *now) {
+                Ok(started) => return started,
+                Err(left) => *now += left,
+            }
+        };
+        for _round in 0..6 {
+            for _ in 0..FREE_TRIES {
+                let guess = patiently(&mut now);
+                throttle.settle(Attempt::Unlock, guess, Outcome::Wrong, now);
+            }
+            // Vault B's own passphrase: a right one, which opens B and says nothing of A.
+            let right = patiently(&mut now);
+            throttle.settle(Attempt::Unlock, right, Outcome::RightWithOthers, now);
+        }
+        // Thirty guesses were made. Before the fix the right passphrase cleared the count each
+        // round, so every round had five free guesses and the whole run took no time at all. Now
+        // the count only grows: guess k waits (k - 5) steps up to a minute, so 30 guesses cost
+        // 5 + 10 + ... + 60 seconds, then a minute each: over twenty minutes.
+        assert_eq!(
+            throttle.counts.lock().unwrap().unlock.failures,
+            6 * FREE_TRIES
+        );
+        assert!(
+            now - start >= 1_200_000,
+            "the guesses were made to wait: {} ms",
+            now - start
+        );
+    }
+
+    /// The owner who is alone on the device keeps what they had: a right passphrase clears.
+    #[test]
+    fn a_right_secret_on_a_device_with_one_vault_still_clears_the_counts() {
+        let throttle = AttemptThrottle::new(None);
+        for _ in 0..FREE_TRIES + 3 {
+            throttle.failed(Attempt::Unlock, 1_000);
+        }
+        let right = throttle.begin(Attempt::Unlock, 100_000).unwrap();
+        throttle.settle(Attempt::Unlock, right, Outcome::Right, 100_000);
+        let counts = *throttle.counts.lock().unwrap();
+        assert_eq!(
+            (counts.unlock.failures, counts.unlock.last_failure_ms),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn a_wrong_try_is_forgiven_for_every_quiet_quarter_of_an_hour() {
+        let throttle = AttemptThrottle::new(None);
+        for _ in 0..FREE_TRIES + 2 {
+            throttle.failed(Attempt::Unlock, 1_000);
+        }
+        // Seven wrong tries: the wait after the last is 15 seconds.
+        assert_eq!(throttle.wait(Attempt::Unlock, 1_000), Some(15_000));
+        // One quarter of an hour on, six still stand; two quarters on, five: a new try is let
+        // through, and is the sixth at most.
+        let later = 1_000 + 2 * FORGIVE_MS;
+        assert_eq!(throttle.wait(Attempt::Unlock, later), None);
+        let begun = throttle.begin(Attempt::Unlock, later).unwrap();
+        let counts = *throttle.counts.lock().unwrap();
+        // The count written down is what stood plus this try (7 - 2 + 1), not 8.
+        assert_eq!(counts.unlock.failures, 6);
+        // Taken back (a typo), it is put back as it was written, not forgiven a second time.
+        throttle.settle(Attempt::Unlock, begun, Outcome::Neither, later);
+        let counts = *throttle.counts.lock().unwrap();
+        assert_eq!(
+            (counts.unlock.failures, counts.unlock.last_failure_ms),
+            (FREE_TRIES + 2, 1_000)
+        );
+    }
+
+    #[test]
+    fn a_long_quiet_spell_forgives_everything_and_never_underflows() {
+        let throttle = AttemptThrottle::new(None);
+        for _ in 0..FREE_TRIES + 15 {
+            throttle.failed(Attempt::Unlock, 1_000);
+        }
+        assert_eq!(throttle.wait(Attempt::Unlock, 1_000), Some(LONGEST_WAIT_MS));
+        // A year on: nothing stands, and a clock far ahead is no trouble.
+        let year = 1_000 + 365 * 24 * 60 * 60 * 1000;
+        assert_eq!(throttle.wait(Attempt::Unlock, year), None);
+        throttle.begin(Attempt::Unlock, u64::MAX).unwrap();
+        assert_eq!(throttle.counts.lock().unwrap().unlock.failures, 1);
+    }
+
+    /// The wait is not shortened by time inside it: forgiveness is a quarter of an hour apiece, and
+    /// the longest wait is a minute.
+    #[test]
+    fn forgiveness_never_shortens_a_wait_that_is_running() {
+        let throttle = AttemptThrottle::new(None);
+        for _ in 0..FREE_TRIES + 15 {
+            throttle.failed(Attempt::Unlock, 1_000);
+        }
+        assert_eq!(throttle.wait(Attempt::Unlock, 1_000), Some(LONGEST_WAIT_MS));
+        assert_eq!(
+            throttle.wait(Attempt::Unlock, 1_000 + LONGEST_WAIT_MS - 1),
+            Some(1)
+        );
+        const {
+            assert!(LONGEST_WAIT_MS < FORGIVE_MS);
+        }
     }
 }

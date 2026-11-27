@@ -256,6 +256,10 @@ describe("the text the operating system shows for myCarlos", () => {
   // confirmation dialogs, file filters, the notices and the tray). The notice and tray ones are
   // pinned above; a new one of any kind has to be placed here.
   const NATIVE_IDS_USED = [
+    "NativeAddVaultConfirm",
+    "NativeAddVaultDecline",
+    "NativeAddVaultMessage",
+    "NativeAddVaultTitle",
     "NativeCancel",
     "NativeFilterBackups",
     "NativeFilterModels",

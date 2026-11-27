@@ -100,6 +100,18 @@ const MAX_FILE_BYTES: usize = 1 << 24;
 pub(crate) const MAX_NAME_CHARS: usize = 64;
 /// A typed name longer than this is cut before it is hashed: it can match no stored name anyway.
 const MAX_PROBE_CHARS: usize = 1024;
+/// The most a typed name may be, in bytes, before anything is done with it (#562 review F3). A name
+/// is at most [`MAX_NAME_CHARS`] characters after normalising, and nobody types more than a few
+/// hundred bytes to get that; the lock screen takes a name with no passphrase, so a page there
+/// could send tens of megabytes, which the normalisation (several full copies) would work through.
+/// Longer is refused before it is read: at an unlock or a find it is a name that matches nothing
+/// (the decoys run and the answer is the same as for any other wrong name), when adding a vault it
+/// is too long.
+pub(crate) const MAX_TYPED_NAME_BYTES: usize = 4 * 1024;
+/// The most vaults one device may hold, Main included (#562 review F2): each costs a folder, a
+/// registry entry and a header read at every unlock attempt, so the number is bounded by the
+/// native side, not left to whoever can add them.
+pub(crate) const MAX_VAULTS: usize = 16;
 const SALT_BYTES: usize = 16;
 const NAME_HASH_BYTES: usize = 32;
 
@@ -111,6 +123,11 @@ pub(crate) enum SlotId {
 }
 
 impl SlotId {
+    /// A new random extra slot, not yet in any registry.
+    pub(crate) fn new_extra() -> Self {
+        SlotId::Extra(Uuid::new_v4())
+    }
+
     pub(crate) fn text(self) -> String {
         match self {
             SlotId::Main => "main".to_owned(),
@@ -142,6 +159,8 @@ pub(crate) enum RegistryError {
     Cost,
     /// [`DUPLICATE_NAME_CAP`] vaults already have this name.
     NameTaken,
+    /// The device already holds [`MAX_VAULTS`] vaults (#562 review F2).
+    Full,
     /// The file was written by a NEWER version of the app (a later file version or name
     /// normalisation). It is good, only not readable here: never replaced, never set aside.
     Unsupported,
@@ -220,6 +239,10 @@ fn is_untypeable(c: char) -> bool {
 
 /// A name checked for storing: normalised, 1 to [`MAX_NAME_CHARS`] characters.
 fn checked_name(typed: &str) -> Result<Zeroizing<String>, NameError> {
+    // Before any copy is made of it (#562 review F3).
+    if typed.len() > MAX_TYPED_NAME_BYTES {
+        return Err(NameError::TooLong);
+    }
     let name = normalise_name(typed);
     if name.chars().any(is_untypeable) {
         return Err(NameError::Invalid);
@@ -229,6 +252,13 @@ fn checked_name(typed: &str) -> Result<Zeroizing<String>, NameError> {
         n if n > MAX_NAME_CHARS => Err(NameError::TooLong),
         _ => Ok(name),
     }
+}
+
+/// Whether a typed name can be a vault's name (normalised, 1 to [`MAX_NAME_CHARS`] characters, no
+/// private-use or non-character code points): asked before anything is locked or written, so a name
+/// that would be refused costs the owner nothing.
+pub(crate) fn name_is_valid(typed: &str) -> bool {
+    checked_name(typed).is_ok()
 }
 
 /// The Argon2id cost of one name hash. It is stored in the registry, so it can be raised later and
@@ -367,6 +397,7 @@ impl Registry {
     /// vault in an empty registry is the default. A name may be shared with another vault (a check at
     /// the unlock screen would tell anyone there which names exist).
     pub(crate) fn add_extra(&mut self, name: &str) -> Result<SlotId, RegistryError> {
+        self.refuse_when_full()?;
         let name = checked_name(name).map_err(RegistryError::Name)?;
         let slot = SlotId::Extra(Uuid::new_v4());
         let hash = self.hash_name(&name);
@@ -379,6 +410,16 @@ impl Registry {
         Ok(slot)
     }
 
+    /// Whether a vault could be added under `name` now, without adding it: the same checks as
+    /// [`Registry::add_extra`] (a name that can be a name, and not already taken by
+    /// [`DUPLICATE_NAME_CAP`] vaults), so an owner can be refused BEFORE their vault is locked.
+    pub(crate) fn name_has_room(&self, name: &str) -> Result<(), RegistryError> {
+        self.refuse_when_full()?;
+        let name = checked_name(name).map_err(RegistryError::Name)?;
+        let hash = self.hash_name(&name);
+        self.refuse_a_name_taken_too_often(&hash, None)
+    }
+
     /// Lists a vault that already exists on disk under `slot` (its folder was found, and opened by
     /// the owner's passphrase) with the name the owner now gives it (#357 4c-2). Never the default
     /// unless the registry was empty. `slot` must be an extra one the registry does not list yet
@@ -387,6 +428,7 @@ impl Registry {
         if !matches!(slot, SlotId::Extra(_)) || self.contains(slot) {
             return Err(RegistryError::UnknownSlot);
         }
+        self.refuse_when_full()?;
         let name = checked_name(name).map_err(RegistryError::Name)?;
         let hash = self.hash_name(&name);
         self.refuse_a_name_taken_too_often(&hash, None)?;
@@ -395,6 +437,15 @@ impl Registry {
             default: self.entries.is_empty(),
             name_hash: Some(hash),
         });
+        Ok(())
+    }
+
+    /// At most [`MAX_VAULTS`] vaults, so that adding them is not a way to fill the disk or to make
+    /// every unlock (which reads every vault's header) slower without end.
+    fn refuse_when_full(&self) -> Result<(), RegistryError> {
+        if self.entries.len() >= MAX_VAULTS {
+            return Err(RegistryError::Full);
+        }
         Ok(())
     }
 
@@ -480,6 +531,10 @@ impl Registry {
     /// a name the registry does not know takes as long as one it does and no entry is skipped. A name
     /// of no vault is an empty list, never an error: the caller shows its one message for it.
     pub(crate) fn slots_named(&self, typed: &str) -> Vec<SlotId> {
+        // A name no stored name can be (#562 review F3): matches nothing, and is not read further.
+        if typed.len() > MAX_TYPED_NAME_BYTES {
+            return Vec::new();
+        }
         let probe = Zeroizing::new(
             normalise_name(typed)
                 .chars()
@@ -512,7 +567,9 @@ impl Registry {
     /// ONE derivation as today (a known default reveals nothing). Costs one name hash for a named
     /// attempt, none for an empty one.
     pub(crate) fn plan_for(&self, typed: &str) -> UnlockPlan {
-        let named = !normalise_name(typed).is_empty();
+        // A name too long to be read is a name, and matches nothing: the same decoys, the same
+        // answer (#562 review F3).
+        let named = typed.len() > MAX_TYPED_NAME_BYTES || !normalise_name(typed).is_empty();
         let real = self.slots_named(typed);
         let total = if named { DUPLICATE_NAME_CAP } else { 1 };
         UnlockPlan {
@@ -1030,8 +1087,15 @@ mod tests {
         }
         // One and five vaults in one bucket: the size says nothing about the count.
         assert_eq!(registry.to_bytes().len(), one);
+        // Past the device's cap (`MAX_VAULTS`), which `add_extra` enforces: the file format itself
+        // holds any number, so the entries are pushed to see the bucket grow.
         for index in 0..40 {
-            registry.add_extra(&format!("more {index}")).unwrap();
+            let name_hash = Some(registry.hash_name(&format!("more {index}")));
+            registry.entries.push(Entry {
+                slot: SlotId::new_extra(),
+                default: false,
+                name_hash,
+            });
         }
         let big = registry.to_bytes().len();
         assert!(big > one && big.is_power_of_two());

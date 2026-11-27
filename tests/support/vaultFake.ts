@@ -399,6 +399,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         captureSequence: number;
         status: string;
         passphrase: string;
+        /** Several vaults (#357): the other vaults on the device, by the name they were given
+         * (compared without case or outer spaces), and which one is open ("" is the main one). */
+        otherVaults: { name: string; passphrase: string }[];
+        openVault: string;
+        /** What "Find my other vaults" answers: folders the device does not list. */
+        unlisted: { found: string[]; notOpened: number; empty: number };
         recoveryKey: string | null;
         pendingKey: string | null;
         /** Documents locked with their own password, by record id. */
@@ -715,6 +721,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           history,
           status: setup.start,
           passphrase: setup.passphrase,
+          otherVaults: [],
+          openVault: "",
+          unlisted: { found: [], notOpened: 0, empty: 0 },
           recoveryKey: hasKey ? setup.recoveryKey : null,
           pendingKey: null,
           documentPasswords,
@@ -1282,6 +1291,85 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.status = "unlocked";
             wrote("unlocked", { how: "passphrase" });
             return captured();
+          // --- Several vaults (#357). The name is compared without case or outer spaces; a wrong
+          // name and a wrong passphrase are one refusal, as natively. ---
+          case "vault_unlock_named": {
+            if (state.status === "absent")
+              throw refuse("missing", "native.error.13");
+            const typed = (request.name ?? "").trim().toLowerCase();
+            const other = state.otherVaults.find(
+              (vault) => vault.name === typed,
+            );
+            const passphrase =
+              typed === "" ? state.passphrase : other?.passphrase;
+            if (passphrase === undefined || request.passphrase !== passphrase)
+              throw refuse("wrong_passphrase", "native.error.16");
+            state.openVault = typed;
+            state.status = "unlocked";
+            wrote("unlocked", { how: "passphrase" });
+            return captured();
+          }
+          // The add works from the lock screen (a new person) or from an open vault, on a native
+          // confirmation (the fake agrees: the real one is an OS dialog the page cannot click). An
+          // open vault is locked first, then the new vault is made and opened; a locked one is not
+          // touched. The fake keeps one snapshot for every vault.
+          case "vault_add_vault": {
+            if (state.status !== "unlocked" && state.status !== "locked")
+              throw refuse("locked", "native.error.14");
+            const wasOpen = state.status === "unlocked";
+            // A degraded (read-only) vault is not left locked behind a new one.
+            if (wasOpen && state.snapshot.recovery !== null)
+              throw refuse("recovery_mode", "native.error.40");
+            const typed = (request.name ?? "").trim().toLowerCase();
+            if (
+              typed === "" ||
+              Array.from(typed).length > 64 ||
+              !request.passphrase ||
+              !request.initialProfileName
+            )
+              throw refuse("invalid", "native.error.19");
+            // The lock comes first, and is recorded as the order the test reads (an open vault
+            // only: a locked screen has nothing to lock).
+            if (wasOpen) {
+              cancelViews();
+              state.status = "locked";
+              state.picks = {};
+              state.pendingKey = null;
+              wrote("locked");
+            }
+            state.otherVaults.push({
+              name: typed,
+              passphrase: request.passphrase,
+            });
+            state.openVault = typed;
+            state.status = "unlocked";
+            wrote("created", { name: request.initialProfileName });
+            return captured();
+          }
+          case "vault_find_other_vaults":
+            if (!request.passphrase) throw refuse("invalid", "native.error.19");
+            return state.unlisted;
+          case "vault_name_found_vaults": {
+            const named = (request.vaults ?? []) as {
+              id: string;
+              name: string;
+            }[];
+            if (
+              named.some(
+                (vault) =>
+                  !state.unlisted.found.includes(vault.id) ||
+                  !vault.name.trim(),
+              )
+            )
+              throw refuse("invalid", "native.error.19");
+            for (const vault of named)
+              state.otherVaults.push({
+                name: vault.name.trim().toLowerCase(),
+                passphrase: state.passphrase,
+              });
+            state.unlisted = { found: [], notOpened: 0, empty: 0 };
+            return;
+          }
           case "vault_recover":
             if (
               !state.recoveryKey ||
@@ -2126,6 +2214,18 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           state.importQueue = names;
           save();
         },
+        // Several vaults (#357): another vault the device lists, and what a search finds.
+        otherVault: (name: string, passphrase: string) => {
+          state.otherVaults.push({
+            name: name.trim().toLowerCase(),
+            passphrase,
+          });
+          save();
+        },
+        unlisted: (found: string[], notOpened: number, empty: number) => {
+          state.unlisted = { found, notOpened, empty };
+          save();
+        },
         pickVideo: (
           name: string,
           how: { refusal?: string; slow?: boolean } = {},
@@ -2318,6 +2418,41 @@ export async function fakeCalls(
   return (await allCalls(page))
     .filter((call) => call.command === command)
     .map((call) => call.args);
+}
+
+/** Several vaults (#357): another vault the device lists, by the name its owner gave it. */
+export async function fakeOtherVault(
+  page: Page,
+  name: string,
+  passphrase: string,
+) {
+  await page.evaluate(
+    ({ name, passphrase }) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          otherVault: (name: string, passphrase: string) => void;
+        }
+      ).otherVault(name, passphrase),
+    { name, passphrase },
+  );
+}
+
+/** What "Find my other vaults" answers: the opaque ids of the vaults it opened, and the counts. */
+export async function fakeUnlisted(
+  page: Page,
+  found: string[],
+  notOpened = 0,
+  empty = 0,
+) {
+  await page.evaluate(
+    ({ found, notOpened, empty }) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          unlisted: (found: string[], notOpened: number, empty: number) => void;
+        }
+      ).unlisted(found, notOpened, empty),
+    { found, notOpened, empty },
+  );
 }
 
 /** The FAKE files the next import picker (the library's "New") chooses. */

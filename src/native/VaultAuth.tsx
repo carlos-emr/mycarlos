@@ -29,9 +29,14 @@ import {
   useNewPassphraseRules,
   type CheckPassphraseRules,
 } from "./PassphraseChecklist";
-import type { PersonDetails, VaultBridge } from "../vault";
+import type { FoundVaults, PersonDetails, VaultBridge } from "../vault";
+import { OtherVaults } from "./OtherVaults";
 
 export { MIN_PASSPHRASE_CHARS, tooShortPassphrase };
+
+/** The longest name a vault can be given (the registry's own rule, `name_is_valid`): the
+ * screen says so early instead of sending a name the native side would refuse. */
+export const MAX_VAULT_NAME_CHARS = 64;
 
 /** What restoring a backup needs from the bridge. */
 export type RestoreBridge = Pick<
@@ -154,16 +159,25 @@ export function CreateVault({
   checkRules,
   restoreBridge,
   onRestored,
+  newVault,
 }: {
   busy: boolean;
   notice: string;
   /** `details` are the first person's full name and birth date, unless the
-   * patient chose to add them later (#234). */
+   * patient chose to add them later (#234). `vaultName` is only given when
+   * setting up another vault on the device (`newVault`, #357). */
   onCreate: (
     profile: string,
     passphrase: string,
     details?: PersonDetails,
+    vaultName?: string,
   ) => Promise<void>;
+  /** Setting up ANOTHER vault on this device (#357), from Security in an unlocked vault or from
+   * the unlock screen (`fromLockScreen`): the screen also asks for the new vault's name, says the
+   * others are not touched, says that the device asks for a confirmation first, in a window this
+   * app cannot click (#562), and can be cancelled. From the lock screen no vault is open, so it
+   * does not say that one is locked first. */
+  newVault?: { onCancel: () => void; fromLockScreen?: boolean };
   /** Whether the vault can keep a person's details: then they are asked for
    * here, after whose records these are, or left for later. */
   askDetails?: boolean;
@@ -175,6 +189,12 @@ export function CreateVault({
 }) {
   const { t } = useI18n();
   const [profile, setProfile] = useState("");
+  // The name the new vault is opened by on the unlock screen (`newVault` only).
+  const [vaultName, setVaultName] = useState("");
+  const vaultNameInvalid =
+    Boolean(newVault) &&
+    (!vaultName.trim() ||
+      Array.from(vaultName.trim()).length > MAX_VAULT_NAME_CHARS);
   const [details, setDetails] = useState<PersonDetails>({});
   const [birthDateUnknown, setBirthDateUnknown] = useState(false);
   const [detailsLater, setDetailsLater] = useState(false);
@@ -225,18 +245,22 @@ export function CreateVault({
     tooLong ||
     tooShort ||
     unmet ||
+    vaultNameInvalid ||
     passphrase !== confirmation;
   const invalid = detailsInvalid || otherwiseInvalid;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (invalid) return;
     const secret = passphrase;
+    const nameForVault = vaultName.trim();
     setPassphrase("");
     setConfirmation("");
+    setVaultName("");
     setShown(false);
     setConfirmationShown(false);
     forget();
-    if (askDetails && !detailsLater)
+    if (newVault) void onCreate(profile, secret, undefined, nameForVault);
+    else if (askDetails && !detailsLater)
       void onCreate(profile, secret, trimmedDetails(details));
     else void onCreate(profile, secret);
   };
@@ -244,10 +268,40 @@ export function CreateVault({
     <VaultAuthFrame state="Setting up" language>
       <section className="vault-card" aria-labelledby="create-title">
         <p className="vault-kicker">{t("auth.kicker")}</p>
-        <h1 id="create-title">{t("create.title")}</h1>
-        <p>{t("create.intro")}</p>
-        <p>{t("create.stays")}</p>
+        <h1 id="create-title">
+          {t(newVault ? "newVault.title" : "create.title")}
+        </h1>
+        <p>
+          {t(
+            newVault
+              ? newVault.fromLockScreen
+                ? "newVault.introLocked"
+                : "newVault.intro"
+              : "create.intro",
+          )}
+        </p>
+        {!newVault && <p>{t("create.stays")}</p>}
+        {newVault && <p>{t("newVault.others")}</p>}
         <form onSubmit={submit}>
+          {newVault && (
+            <>
+              <label>
+                {t("newVault.name.label")}
+                <input
+                  required
+                  autoComplete="off"
+                  maxLength={NAME_INPUT_MAX_LENGTH}
+                  aria-describedby="new-vault-name-hint"
+                  value={vaultName}
+                  onChange={(e) => setVaultName(e.target.value)}
+                />
+              </label>
+              <p id="new-vault-name-hint">{t("newVault.name.hint")}</p>
+              {vaultName && vaultNameInvalid && (
+                <p role="alert">{t("newVault.name.invalid")}</p>
+              )}
+            </>
+          )}
           <label>
             {t("create.profile.label")}
             <input
@@ -344,15 +398,31 @@ export function CreateVault({
           {confirmation && passphrase !== confirmation && (
             <p role="alert">{t("passphrase.mismatch")}</p>
           )}
+          {newVault && !newVault.fromLockScreen && (
+            <p>{t("newVault.lockNote")}</p>
+          )}
+          {newVault && <p>{t("newVault.confirmNote")}</p>}
           <AuthNotice notice={notice} />
           <button className="button primary" disabled={busy || invalid}>
-            {t("create.submit")}
+            {t(newVault ? "newVault.submit" : "create.submit")}
           </button>
+          {newVault && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={newVault.onCancel}
+            >
+              {t("newVault.cancel")}
+            </button>
+          )}
         </form>
-        <details className="vault-reset">
-          <summary>{t("restore.summary")}</summary>
-          <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
-        </details>
+        {!newVault && (
+          <details className="vault-reset">
+            <summary>{t("restore.summary")}</summary>
+            <RestoreBackup bridge={restoreBridge} onRestored={onRestored} />
+          </details>
+        )}
       </section>
     </VaultAuthFrame>
   );
@@ -365,6 +435,7 @@ export function UnlockVault({
   trayWaiting = false,
   autoLockMinutes,
   onUnlock,
+  severalVaults,
   onRecover,
   onReset,
   restoreBridge,
@@ -372,13 +443,26 @@ export function UnlockVault({
 }: {
   busy: boolean;
   notice: string;
+  /** Several vaults on one device (#357). Given wherever the native side can open a vault by
+   * name, and then shown on every device alike: "Use a different vault", with its Vault name
+   * field and "Find my other vaults". Without it the screen is as it always was. */
+  severalVaults?: {
+    onFind: (passphrase: string) => Promise<FoundVaults | null>;
+    onNameFound: (vaults: { id: string; name: string }[]) => Promise<boolean>;
+    /** "Set up a new vault…" (#562): a new person can set a vault up from the lock screen. The
+     * device asks for a confirmation of its own, which this page cannot click, before anything
+     * is created. Given wherever the native side can add a vault. */
+    onSetUp?: () => void;
+  };
   /** How many shared files wait for an unlock. Their names are not shown. */
   waiting?: number;
   /** The tray check found a document waiting at the clinic (#230): one fixed sentence, with
    * nothing about the document, the clinic or the person. */
   trayWaiting?: boolean;
   autoLockMinutes: number;
-  onUnlock: (passphrase: string) => Promise<void>;
+  /** `vaultName` is given only when a name was typed under "Use a different vault"; with none,
+   * this is the device's own vault, exactly as before. */
+  onUnlock: (passphrase: string, vaultName?: string) => Promise<void>;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
   onReset: (confirmation: string) => Promise<void>;
   restoreBridge: RestoreBridge;
@@ -386,6 +470,9 @@ export function UnlockVault({
 }) {
   const { t } = useI18n();
   const [passphrase, setPassphrase] = useState("");
+  // The vault name typed under "Use a different vault". Cleared as soon as it is sent, and with
+  // the screen: nothing keeps it.
+  const [vaultName, setVaultName] = useState("");
   // Messages go next to the part of the screen they answer: the Unlock form,
   // or the recovery key and erase controls under "Forgot your passphrase?".
   const [source, setSource] = useState<"unlock" | "forgot">("unlock");
@@ -398,9 +485,12 @@ export function UnlockVault({
     event.preventDefault();
     if (tooLong) return;
     const secret = passphrase;
+    const named = severalVaults ? vaultName.trim() : "";
     setPassphrase("");
+    setVaultName("");
     setSource("unlock");
-    void onUnlock(secret);
+    if (named) void onUnlock(secret, named);
+    else void onUnlock(secret);
   };
   return (
     <VaultAuthFrame state="Locked" language>
@@ -448,6 +538,26 @@ export function UnlockVault({
           <button className="button primary" disabled={busy || tooLong}>
             {t("unlock.submit")}
           </button>
+          {severalVaults && (
+            <OtherVaults
+              name={vaultName}
+              onName={setVaultName}
+              passphrase={passphrase}
+              busy={busy}
+              onFind={severalVaults.onFind}
+              onNameFound={severalVaults.onNameFound}
+            />
+          )}
+          {severalVaults?.onSetUp && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={severalVaults.onSetUp}
+            >
+              {t("security.newVault.button")}
+            </button>
+          )}
         </form>
         <details className="vault-reset">
           <summary>{t("unlock.forgot.summary")}</summary>
