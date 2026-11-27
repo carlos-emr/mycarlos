@@ -717,6 +717,8 @@ pub enum MessageId {
     InterfaceHistoryDamagedStorageOnly,
     InterfaceHistoryEmpty,
     InterfaceHistoryErrorUnverified,
+    InterfaceHistoryEventAiCloudAnswered,
+    InterfaceHistoryEventAiCloudSent,
     InterfaceHistoryEventAiResultSaved,
     InterfaceHistoryEventBackupRestored,
     InterfaceHistoryEventBackupSaved,
@@ -2143,6 +2145,8 @@ impl MessageId {
         Self::InterfaceHistoryDamagedStorageOnly,
         Self::InterfaceHistoryEmpty,
         Self::InterfaceHistoryErrorUnverified,
+        Self::InterfaceHistoryEventAiCloudAnswered,
+        Self::InterfaceHistoryEventAiCloudSent,
         Self::InterfaceHistoryEventAiResultSaved,
         Self::InterfaceHistoryEventBackupRestored,
         Self::InterfaceHistoryEventBackupSaved,
@@ -3891,6 +3895,8 @@ impl MessageId {
             Self::InterfaceHistoryDamagedStorageOnly => "interface-history-damagedStorageOnly",
             Self::InterfaceHistoryEmpty => "interface-history-empty",
             Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
+            Self::InterfaceHistoryEventAiCloudAnswered => "interface-history-event-aiCloudAnswered",
+            Self::InterfaceHistoryEventAiCloudSent => "interface-history-event-aiCloudSent",
             Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
             Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
             Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
@@ -6187,6 +6193,10 @@ impl MessageId {
             }
             "interface.history.event.cloudKeyRemoved" => {
                 Some(Self::InterfaceHistoryEventCloudKeyRemoved)
+            }
+            "interface.history.event.aiCloudSent" => Some(Self::InterfaceHistoryEventAiCloudSent),
+            "interface.history.event.aiCloudAnswered" => {
+                Some(Self::InterfaceHistoryEventAiCloudAnswered)
             }
             "interface.history.how.summary" => Some(Self::InterfaceHistoryHowSummary),
             "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),

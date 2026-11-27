@@ -1080,6 +1080,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.aiResultSaved",
   "interface.history.event.cloudKeyAdded",
   "interface.history.event.cloudKeyRemoved",
+  "interface.history.event.aiCloudSent",
+  "interface.history.event.aiCloudAnswered",
   "interface.history.how.summary",
   "interface.history.how.explain",
   "ai.summary.again",
@@ -2733,6 +2735,9 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-cloudKeyAdded",
   "interface.history.event.cloudKeyRemoved":
     "interface-history-event-cloudKeyRemoved",
+  "interface.history.event.aiCloudSent": "interface-history-event-aiCloudSent",
+  "interface.history.event.aiCloudAnswered":
+    "interface-history-event-aiCloudAnswered",
   "interface.history.how.summary": "interface-history-how-summary",
   "interface.history.how.explain": "interface-history-how-explain",
   "ai.summary.again": "ai-summary-again",
@@ -4326,6 +4331,8 @@ export interface MessageArgsByKey {
   "interface.history.event.aiResultSaved": undefined;
   "interface.history.event.cloudKeyAdded": undefined;
   "interface.history.event.cloudKeyRemoved": undefined;
+  "interface.history.event.aiCloudSent": undefined;
+  "interface.history.event.aiCloudAnswered": undefined;
   "interface.history.how.summary": undefined;
   "interface.history.how.explain": undefined;
   "ai.summary.again": undefined;

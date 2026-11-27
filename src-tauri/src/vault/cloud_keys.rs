@@ -253,6 +253,23 @@ impl VaultStore {
         })
     }
 
+    /// Writes one history entry that changes nothing else (the record that a cloud send is about to
+    /// happen, and how it ended). The detail is cut to `MAX_DETAIL_CHARS`.
+    pub fn cloud_record_event(&self, mut entry: HistoryEntry) -> Result<(), VaultError> {
+        if let Some(detail) = entry.detail.take() {
+            entry.detail = Some(
+                detail
+                    .chars()
+                    .take(crate::history::MAX_DETAIL_CHARS)
+                    .collect(),
+            );
+        }
+        self.mutate_recorded(|_, entries| {
+            entries.push(entry);
+            Ok(())
+        })
+    }
+
     /// The secret itself, for native code that is about to use it (never for the page): a
     /// zeroizing copy that lives only as long as the caller keeps it.
     pub(crate) fn cloud_key_secret(&self, id: Uuid) -> Result<Zeroizing<String>, VaultError> {

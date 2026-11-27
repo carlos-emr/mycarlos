@@ -1079,6 +1079,8 @@
   "interface.history.event.aiResultSaved",
   "interface.history.event.cloudKeyAdded",
   "interface.history.event.cloudKeyRemoved",
+  "interface.history.event.aiCloudSent",
+  "interface.history.event.aiCloudAnswered",
   "interface.history.how.summary",
   "interface.history.how.explain",
   "ai.summary.again",

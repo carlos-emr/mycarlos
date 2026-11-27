@@ -1712,6 +1712,8 @@ interface-history-error-unverified = Nie udało się odczytać ani zweryfikować
 interface-history-event-aiResultSaved = Zachowano odpowiedź AI
 interface-history-event-cloudKeyAdded = Dodano klucz AI w chmurze
 interface-history-event-cloudKeyRemoved = Usunięto klucz AI w chmurze
+interface-history-event-aiCloudSent = Tekst wysłany do AI w chmurze
+interface-history-event-aiCloudAnswered = Zakończono wysyłanie do AI w chmurze
 
 interface-history-event-backupRestored = Przywrócono kopię zapasową
 

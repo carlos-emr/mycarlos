@@ -1508,6 +1508,8 @@ interface-history-error-unverified = 無法讀取並驗證紀錄，因此不顯�
 interface-history-event-aiResultSaved = AI 回答已保存
 interface-history-event-cloudKeyAdded = 已新增雲端 AI 金鑰
 interface-history-event-cloudKeyRemoved = 已移除雲端 AI 金鑰
+interface-history-event-aiCloudSent = 文字已傳送到雲端 AI
+interface-history-event-aiCloudAnswered = 傳送到雲端 AI 已結束
 
 interface-history-event-backupRestored = 備份已還原
 

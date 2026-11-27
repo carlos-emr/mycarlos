@@ -624,7 +624,9 @@ export interface AuditHistoryEntry {
     | "profileRestored"
     | "profileImported"
     | "cloudKeyAdded"
-    | "cloudKeyRemoved";
+    | "cloudKeyRemoved"
+    | "aiCloudSent"
+    | "aiCloudAnswered";
   name: string | null;
   oldName: string | null;
   from: string[] | null;

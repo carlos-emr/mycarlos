@@ -1508,6 +1508,8 @@ interface-history-error-unverified = 无法读取并验证记录，因此不显�
 interface-history-event-aiResultSaved = AI 回答已保存
 interface-history-event-cloudKeyAdded = 已添加云端 AI 密钥
 interface-history-event-cloudKeyRemoved = 已移除云端 AI 密钥
+interface-history-event-aiCloudSent = 文本已发送到云端 AI
+interface-history-event-aiCloudAnswered = 发送到云端 AI 已结束
 
 interface-history-event-backupRestored = 备份已还原
 
