@@ -380,7 +380,6 @@ const ENTRY_POINTS: &[(&str, Reach)] = &[
     // folder's documents is empty for a folder out of reach.
     ("hide_folder", Reach::Asks("folder_in_reach")),
     ("restore_folder", Reach::Asks("folder_parent_in_reach")),
-    ("folder_record_ids", Reach::Asks("folder_in_reach")),
 ];
 
 /// Functions that take such an id and are not entry points: the helpers themselves.

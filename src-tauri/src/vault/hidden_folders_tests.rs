@@ -206,8 +206,8 @@ fn nested_cases_a_folder_hidden_on_its_own_stays_hidden_and_hiding_under_a_hidde
     // Hiding under a hidden parent (the folder is out of reach), hiding again, and restoring the
     // inner one while its parent is hidden are all "not found": a hidden thing is not named.
     for refused in [
-        v.store.hide_folder(v.year, 102),
-        v.store.hide_folder(v.letters, 102),
+        v.store.hide_folder(v.year, 102).map(|_| ()),
+        v.store.hide_folder(v.letters, 102).map(|_| ()),
         v.store.restore_folder(v.year),
     ] {
         assert!(matches!(refused, Err(VaultError::NotFound)));
@@ -331,8 +331,16 @@ fn a_document_filed_only_in_hidden_folders_is_out_of_reach_and_one_visible_folde
     v.store
         .assign_folders(v.in_letters, vec![v.letters, v.imaging])
         .unwrap();
-    assert!(v.store.folder_record_ids(v.letters).contains(&v.in_year));
-    assert!(!v.store.folder_record_ids(v.letters).contains(&v.in_letters));
+    let covered = v.store.hide_folder(v.letters, 101).unwrap();
+    assert!(covered.contains(&v.in_year));
+    assert!(!covered.contains(&v.in_letters));
+    assert!(record_ids(&v.store).contains(&v.in_letters));
+
+    // Hiding its remaining visible placement must now revoke playback and pending AI work.
+    let covered = v.store.hide_folder(v.imaging, 102).unwrap();
+    assert!(covered.contains(&v.in_letters));
+    assert!(!covered.contains(&v.in_year));
+    assert!(!record_ids(&v.store).contains(&v.in_letters));
 }
 
 #[test]
@@ -717,9 +725,8 @@ fn clearing_the_ai_helper_and_the_lock_leave_the_folder_flag_alone() {
     let snapshot = v.store.snapshot().unwrap();
     assert_eq!(snapshot.hidden_folders.len(), 1);
     assert_eq!(snapshot.records.len(), 2);
-    assert_eq!(v.store.folder_record_ids(v.letters), Vec::<Uuid>::new());
     v.store.restore_folder(v.letters).unwrap();
-    assert_eq!(v.store.folder_record_ids(v.letters).len(), 2);
+    assert_eq!(v.store.snapshot().unwrap().records.len(), 4);
 }
 
 #[test]

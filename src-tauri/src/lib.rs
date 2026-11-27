@@ -8214,8 +8214,8 @@ async fn vault_restore_profile(
 }
 
 /// Hides a whole folder as one thing (#574): one flag, one history entry, nothing deleted. The
-/// folder, every folder below it and every document in them leave the library; whatever the AI
-/// helper holds for those documents is forgotten, as for one hidden document.
+/// folder and its descendants leave the library. A document that loses its last visible placement
+/// leaves with them, and the AI helper forgets its pending work.
 #[tauri::command]
 async fn vault_hide_folder(
     store: State<'_, StoreHandle>,
@@ -8226,8 +8226,7 @@ async fn vault_hide_folder(
     let picks = Arc::clone(picks.inner());
     run_blocking(store.arc(), move |store| {
         // Forgotten only once the folder is hidden: a refused hide changes nothing.
-        let ids = store.folder_record_ids(request.folder_id);
-        store.hide_folder(request.folder_id, now_ms())?;
+        let ids = store.hide_folder(request.folder_id, now_ms())?;
         for record_id in ids {
             picks.forget_texts_for(record_id);
         }

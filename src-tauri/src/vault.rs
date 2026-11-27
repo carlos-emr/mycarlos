@@ -937,15 +937,19 @@ impl Manifest {
                     .any(|folder_id| folders_in_reach.contains(folder_id)))
     }
 
-    /// The documents that are filed ONLY inside `folders` (and in at least one of them): what
-    /// leaves the library when a folder is hidden, since a document also filed in a folder that
-    /// stays visible stays visible (#574).
-    pub(crate) fn records_only_in(&self, folders: &HashSet<Uuid>) -> Vec<Uuid> {
+    /// Documents losing their last visible placement when this subtree is hidden (#574).
+    fn records_hidden_by_folder(&self, folder_id: Uuid) -> Vec<Uuid> {
+        let subtree = self.folder_subtree(folder_id);
+        let visible = self.folders_in_reach();
         self.records
             .iter()
             .filter(|record| {
                 !record.folder_ids.is_empty()
-                    && record.folder_ids.iter().all(|id| folders.contains(id))
+                    && self.record_in_reach_given(&visible, record)
+                    && record
+                        .folder_ids
+                        .iter()
+                        .all(|id| subtree.contains(id) || !visible.contains(id))
             })
             .map(|record| record.id)
             .collect()
@@ -4447,24 +4451,6 @@ impl VaultStore {
         self.set_hidden(record_id, None)
     }
 
-    /// The documents in a folder and in every folder below it, hidden or not: what the AI helper
-    /// forgets when the folder is hidden (#574). Ids only; none for a folder that is out of reach.
-    pub(crate) fn folder_record_ids(&self, folder_id: Uuid) -> Vec<Uuid> {
-        let guard = self.session();
-        guard
-            .as_ref()
-            .map(|unlocked| {
-                let manifest = &unlocked.manifest;
-                if !manifest.folder_in_reach(folder_id) {
-                    return Vec::new();
-                }
-                // Only what would leave the library: a document also filed in a folder that stays
-                // visible stays visible, and keeps whatever the AI helper holds for it.
-                manifest.records_only_in(&manifest.folder_subtree(folder_id))
-            })
-            .unwrap_or_default()
-    }
-
     /// The documents of a person, hidden or not: what the AI helper forgets when they are
     /// hidden. Ids only.
     pub(crate) fn profile_record_ids(&self, profile_id: Uuid) -> Vec<Uuid> {
@@ -4554,8 +4540,8 @@ impl VaultStore {
     /// Hides a whole folder as one thing (#574, the folder twin of `hide_profile`): one flag on the
     /// folder, one manifest commit, one history entry. The folder, every folder below it and every
     /// document filed in any of them leave the library, the lists, search and the AI helper's reach
-    /// at once; nothing is deleted or re-encrypted and no document's own `hidden` changes, so
-    /// restoring brings back exactly what was visible.
+    /// at once if they lose their last visible placement. Return the IDs of those documents so
+    /// the caller can discard their pending AI work. Restoring brings back what the hide covered.
     ///
     /// A folder that is out of reach (hidden already, beneath a hidden folder, of a hidden person,
     /// or not there) is `NotFound`: it is not named to the caller (the screen cannot offer it, and
@@ -4563,7 +4549,7 @@ impl VaultStore {
     /// is read-only for any reason, as `hide_profile` is.
     ///
     /// Hiding is tidiness, not secrecy: anyone with the passphrase can restore the folder.
-    pub fn hide_folder(&self, folder_id: Uuid, now_ms: u64) -> Result<(), VaultError> {
+    pub fn hide_folder(&self, folder_id: Uuid, now_ms: u64) -> Result<Vec<Uuid>, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
         if unlocked.recovery.is_some() {
@@ -4587,7 +4573,7 @@ impl VaultStore {
         entry.how = Some("patient".to_owned());
         // The documents that leave the library, to stop any video playing from them once the hide
         // is committed (one also filed in a folder that stays visible stays visible, #574).
-        let their_records = manifest.records_only_in(&manifest.folder_subtree(folder_id));
+        let their_records = manifest.records_hidden_by_folder(folder_id);
         let mut next = unlocked.manifest.clone();
         for folder in &mut next.folders {
             if folder.id == folder_id {
@@ -4608,7 +4594,7 @@ impl VaultStore {
         // A video already playing from one of them stops being served, as when a single document is
         // hidden (the session is held, then the tokens: the order the lock takes).
         self.end_playback_for_records(&their_records);
-        Ok(())
+        Ok(their_records)
     }
 
     /// Brings a hidden folder back (#574): exactly what was visible is visible again, since no
