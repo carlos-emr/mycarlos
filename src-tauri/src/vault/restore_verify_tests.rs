@@ -542,22 +542,24 @@ mod notification_status {
         store.collection.set_paused(true);
         assert!(store.notification_status(None).automatic_checks_paused);
         store.collection.set_paused(false);
-        // Only where this build has no operating-system notices to turn on (everything but
-        // Windows): the runtime says so, and a change is refused as a storage failure, never
-        // as success. On Windows the runtime is the real one, what it reports is the machine's,
+        // Where this build has no operating-system notices to turn on (everything but Windows) the
+        // runtime says so: the checks are still available, the notices cannot be turned on, and
+        // that change is refused as a storage failure, never as success. Turning them off is
+        // always fine. On Windows the runtime is the real one, what it reports is the machine's,
         // and a change would write the registry, so that half is not run there.
         #[cfg(not(windows))]
         {
-            assert!(!status.available);
+            assert!(status.available && status.automatic_checks_supported);
+            assert!(!status.notices_supported);
             assert!(matches!(
                 store.set_notifications(true),
                 Err(VaultError::Storage)
             ));
-            assert!(matches!(
-                store.set_notifications(false),
-                Err(VaultError::Storage)
-            ));
+            assert!(store.set_notifications(false).is_ok());
+            // The automatic check is its own choice and needs no notices.
             assert!(!store.automatic_collection_allowed());
+            assert!(store.set_automatic_checks(true).is_ok());
+            assert!(store.automatic_collection_allowed());
         }
         #[cfg(windows)]
         let _ = status;

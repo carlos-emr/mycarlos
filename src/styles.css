@@ -56,6 +56,8 @@
   --thumb-shadow: rgb(0 0 0 / 15%);
   --backdrop: rgb(8 28 25 / 48%);
   --camera-view: #000;
+  --picture-chip-bg: rgb(0 0 0 / 65%);
+  --picture-chip-text: #fff;
   --dialog-shadow: rgb(8 28 25 / 28%);
   --metadata-line: #edf0ef;
   --disabled-ink: #4a5f5c;
@@ -119,6 +121,8 @@
   --thumb-shadow: rgb(0 0 0 / 30%);
   --backdrop: rgb(0 0 0 / 62%);
   --camera-view: #000;
+  --picture-chip-bg: rgb(0 0 0 / 65%);
+  --picture-chip-text: #fff;
   --dialog-shadow: rgb(0 0 0 / 48%);
   --metadata-line: #3b5148;
   --disabled-ink: #b8cbc5;
@@ -3676,6 +3680,36 @@ p {
   cursor: not-allowed;
 }
 /* Recording a video, and playing one (#359). */
+.record-video-dialog .record-device-note {
+  margin: 0;
+}
+.record-video-dialog .record-device-note:empty {
+  min-height: 0;
+}
+.record-video-dialog .record-devices {
+  display: grid;
+  gap: 8px;
+}
+.record-video-dialog .record-device {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.record-video-dialog .record-device select {
+  min-height: 44px;
+  max-width: 100%;
+}
+.record-video-dialog .record-mic-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.record-video-dialog .record-mic-test meter {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  height: 1.25rem;
+}
 .record-video-dialog .record-quality {
   margin: 0;
   padding: 0;
@@ -3689,6 +3723,116 @@ p {
   display: block;
   color: var(--ink-soft);
   font-size: 0.875rem;
+}
+/* The Record video dialog (the RestRecord design): a title bar with Close, the picture and its
+   controls in one column and the settings in a column of their own. The settings sit beside the
+   picture on a wide window and below it on a narrow one (a phone, 200% zoom); in the markup they
+   come after the picture and its controls, so the reading and Tab order is the same either way.
+   The picture and Start are centred in their own column. */
+.record-video-dialog {
+  width: min(980px, 100%);
+}
+.record-video-dialog .record-head {
+  align-items: center;
+}
+.record-video-dialog .record-head h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.record-video-dialog .record-close {
+  flex: none;
+  min-height: 44px;
+}
+.record-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.record-main {
+  align-content: start;
+}
+.record-preview {
+  position: relative;
+}
+/* The elapsed time on the camera picture: white on a dark chip in every theme (it sits on the
+   picture, not on the page); the two colours are theme variables like every other. */
+.record-preview .record-clock {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--picture-chip-bg);
+  color: var(--picture-chip-text);
+  font-size: 0.875rem;
+}
+.record-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.record-controls .button {
+  min-height: 44px;
+}
+/* The one red Start pill of the design: --red is dark on a light page and light on a dark one,
+   and --on-accent the opposite, so the label is at least 4.5:1 in both. */
+.record-controls .record-start {
+  min-height: 52px;
+  padding: 0 26px;
+  border-color: var(--red);
+  border-radius: 26px;
+  background: var(--red);
+  color: var(--on-accent);
+  font-size: 1.0625rem;
+}
+.record-start-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.record-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+.record-video-dialog .record-settings .record-devices {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.record-video-dialog .record-settings .record-device select {
+  width: 100%;
+}
+.record-video-dialog .record-mic-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.record-settings-note {
+  margin: auto 0 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+@media (min-width: 52em) {
+  .record-layout.has-settings {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .record-layout.has-settings .record-settings {
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
 }
 .record-state {
   display: grid;
@@ -4096,12 +4240,18 @@ p {
 }
 .appearance-choice .appearance-option input {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   min-height: 0;
   margin: 0;
   padding: 0;
   border: 0;
+}
+/* Every Settings tick box is drawn in the app's own colour (it is a native box: its tick and its
+   focus ring stay the system's). */
+.appearance-choice .appearance-option input[type="checkbox"] {
+  accent-color: var(--teal);
+  cursor: pointer;
 }
 /* Appearance and Language: real radio buttons (one group, arrow keys, the name
    and the checked state read as before) drawn as buttons. The radio itself is
@@ -4994,6 +5144,18 @@ button:disabled,
 .language-button .icon {
   flex: none;
 }
+/* The language dialog's title may be long in some languages: it folds onto more lines (the general
+   .dialog-head h2 cuts it to one) and Close stays at the top right of the head, as in the document
+   details. */
+.native-language-dialog .dialog-head h2 {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.native-language-dialog .dialog-head > div {
+  flex: 1 1 auto;
+}
 /* In the language dialog the list lines up with the title above it: the same
    20px as .dialog-head. */
 .native-language-dialog .language-compact {
@@ -5106,4 +5268,31 @@ button:disabled,
 }
 .more-about-body p:first-child {
   margin-top: 2px;
+}
+
+/* Add a video: the button, its progress and its answer, as one item of the library's button row. */
+.add-video {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-video-progress {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-video-progress progress {
+  width: 10rem;
+  max-width: 100%;
+}
+.add-video-result {
+  margin: 0;
+  max-width: 32rem;
+}
+.add-video-progress > span {
+  display: inline-block;
+  min-width: 3.5ch;
+  text-align: end;
 }

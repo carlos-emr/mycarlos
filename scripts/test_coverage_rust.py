@@ -121,6 +121,37 @@ class FloorTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("regions coverage", err)
 
+    def test_require_floor_refuses_before_anything_is_built_when_no_floor_is_in_force(self):
+        # No floor file, no --fail-under-*: refused at once, with the reason (nothing is built or run;
+        # prerequisites() is not reached).
+        for extra in ((), ("--check",), ("--features", "ai-helper-stub", "--jobs", "2")):
+            with self.subTest(extra=extra):
+                with mock.patch.object(coverage_rust, "prerequisites",
+                                       side_effect=AssertionError("went on without a floor")):
+                    status, _, err = run_main("--require-floor", *extra)
+                self.assertEqual(status, 1)
+                self.assertIn("--require-floor needs --floor-file or --fail-under-lines", err)
+
+    def test_require_floor_goes_on_with_a_floor_from_the_file_or_an_option(self):
+        floor = self.floor_file(80, 80)
+        for floors in (("--floor-file", str(floor)), ("--fail-under-lines", "80"),
+                       ("--fail-under-regions", "70")):
+            with self.subTest(floors=floors):
+                with mock.patch.object(coverage_rust, "prerequisites",
+                                       side_effect=RuntimeError("reached prerequisites")):
+                    status, _, err = run_main("--require-floor", *floors)
+                # It got past the floor check, to the prerequisites (which this test stops).
+                self.assertEqual(status, 1)
+                self.assertIn("reached prerequisites", err)
+                self.assertNotIn("--require-floor needs", err)
+
+    def test_a_run_without_require_floor_may_still_have_no_floor(self):
+        # The measurement-only use stays: nothing is asked of a run that does not say it needs a floor.
+        with mock.patch.object(coverage_rust, "prerequisites", side_effect=RuntimeError("reached prerequisites")):
+            status, _, err = run_main()
+        self.assertEqual(status, 1)
+        self.assertIn("reached prerequisites", err)
+
     def test_out_of_range_options_are_refused(self):
         measured = self.path / "measured.json"
         report(measured, lines=(1, 1), regions=(1, 1))
@@ -185,6 +216,47 @@ class FloorTests(unittest.TestCase):
         report(measured, lines=(1, 1), regions=(1, 1))
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             run_main("--ratchet-report", str(measured))
+
+
+class BuildCommandTests(unittest.TestCase):
+    TOOLS = {"cargo": Path("/fake/cargo")}
+
+    def command(self, **options):
+        args = mock.Mock(features=None, target_dir=None, jobs=1)
+        for name, value in options.items():
+            setattr(args, name, value)
+        return coverage_rust.build_command(self.TOOLS, "x86_64-unknown-linux-gnu", args)
+
+    def test_a_private_run_names_the_host_target_and_the_default_features(self):
+        command = self.command()
+        self.assertEqual(command[:2], ["/fake/cargo", "rustc"])
+        self.assertIn("--target", command)
+        self.assertEqual(command[command.index("--target") + 1], "x86_64-unknown-linux-gnu")
+        self.assertNotIn("--features", command)
+        self.assertEqual(command[-3:], ["--", "-C", "instrument-coverage"])
+
+    def test_a_shared_target_directory_has_no_explicit_target_so_dependencies_are_shared(self):
+        command = self.command(target_dir="/some/target")
+        self.assertNotIn("--target", command)
+
+    def test_the_features_are_passed_through_and_only_to_the_library_build(self):
+        command = self.command(features="ai-helper-stub")
+        self.assertEqual(command[command.index("--features") + 1], "ai-helper-stub")
+        # The instrumentation flag stays after `--`, so it reaches only the selected library unit.
+        self.assertLess(command.index("--features"), command.index("--"))
+        self.assertEqual(command[command.index("--") + 1:], ["-C", "instrument-coverage"])
+
+    def test_features_must_be_names_and_a_shared_target_must_exist(self):
+        for bad in ("a b", "a;b", "--x", "a,,b", ",a"):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                run_main("--check", "--features", bad)
+        # The `=` form reaches the pattern itself (argparse refuses a separate "--x" before it
+        # runs): a name that starts with a hyphen would be handed to Cargo as an option.
+        for bad in ("--x", "-x", "--release", "a,-b", "-a,b"):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                run_main("--check", f"--features={bad}")
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            run_main("--check", "--target-dir", "/no/such/directory/anywhere")
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ pub enum LinkError {
     InvalidDeviceName,
     InvalidResponse,
     Network,
-    // Portal replies to a link request, which Android never sends.
+    // Portal replies to a link request.
     #[cfg_attr(target_os = "android", allow(dead_code))]
     CodeRejected,
     #[cfg_attr(target_os = "android", allow(dead_code))]
@@ -268,6 +268,12 @@ pub struct LinkSummary {
     /// How many of this clinic's documents failed their checks and are
     /// remembered, so not downloaded again (#143). The store adds it.
     pub refused_deliveries: usize,
+    /// A document or reading aid from this clinic is filed in the vault. Its custody proof needs
+    /// this link's private keys, so such a link cannot be removed (#160). The snapshot adds it.
+    pub has_documents: bool,
+    /// Document notices are on for this clinic (a push destination is enrolled, or its revocation
+    /// is queued): the link cannot be removed until they are turned off (#160). The snapshot adds it.
+    pub notices_enrolled: bool,
 }
 
 impl StoredLink {
@@ -365,6 +371,8 @@ impl StoredLink {
             approval_code_submitted: false,
             approval_code_locked: false,
             refused_deliveries: 0,
+            has_documents: false,
+            notices_enrolled: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())
@@ -436,11 +444,11 @@ impl StoredLink {
         Ok(LinkRequest {
             endpoint,
             body,
-            assertion: format!(
+            assertion: Zeroizing::new(format!(
                 "{}.{}",
                 B64.encode(payload),
                 B64.encode(signature.to_bytes())
-            ),
+            )),
         })
     }
 }
@@ -451,7 +459,8 @@ impl StoredLink {
 pub struct LinkRequest {
     pub endpoint: Url,
     pub body: Zeroizing<Vec<u8>>,
-    pub assertion: String,
+    /// The signed assertion (it lives at most a minute): wiped when the request is dropped.
+    pub assertion: Zeroizing<String>,
 }
 
 pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
@@ -767,3 +776,6 @@ mod tests {
         assert_eq!(summary["incomplete"], true);
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "inputs": {"packageLock":"4f18452341c6d94063c469e7136d78df4e5a0245b2d526c24655e407d4dd0fb4","cargoLock":"fbbda01c9a2ea86556f63c3ef14e28bfc29bf87f8c2c5549ba10ba79d8b8fb3c","generator":"4bc7935a00679e283d562ef87ce4e7629cc8ff39f7f3a5c327cf575a1af22aaf"},
+  "inputs": {"packageLock":"4f18452341c6d94063c469e7136d78df4e5a0245b2d526c24655e407d4dd0fb4","cargoLock":"28f3fff32345286ec971391253340a9fa835d065836a30e826a5145f0ad8aaf1","generator":"4bc7935a00679e283d562ef87ce4e7629cc8ff39f7f3a5c327cf575a1af22aaf"},
   "components": [
     {"ecosystem":"npm","name":"@fluent/bundle","version":"0.19.1","license":"Apache-2.0","applied":["Apache-2.0"],"standardText":true,"texts":[{"id":"85ad950cce87","name":"Apache-2.0 (standard text; the package ships no licence file)"}]},
     {"ecosystem":"npm","name":"@tauri-apps/api","version":"2.11.1","license":"Apache-2.0 OR MIT","applied":["Apache-2.0"],"texts":[{"id":"4bf96504d6e8","name":"LICENSE_APACHE-2.0"},{"id":"89ff9689dcf9","name":"LICENSE_MIT"}]},

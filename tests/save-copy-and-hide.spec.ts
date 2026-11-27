@@ -83,7 +83,13 @@ test("Save a copy asks first, then saves the document where the patient chose, a
   );
   expect(await exports()).toEqual(["vault_export_pick", "vault_export_picked"]);
   expect(await fakeCalls(page, "vault_export_pick")).toEqual([
-    { request: { recordId: FAKE_IDS.letter } },
+    {
+      request: {
+        recordId: FAKE_IDS.letter,
+        // The patient's own date, for the neutral name the save dialog suggests.
+        localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      },
+    },
   ]);
   expect(await fakeCalls(page, "vault_export_picked")).toEqual([
     { request: { pickId: FAKE_IDS.exportPick, recordId: FAKE_IDS.letter } },

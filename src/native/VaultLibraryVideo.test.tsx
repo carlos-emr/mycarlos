@@ -180,7 +180,8 @@ describe("video in the library", () => {
       screen.getByRole("button", { name: humanText("Record a video") }),
     );
     expect(
-      screen.getByRole("dialog", { name: humanText("Record a video") }),
+      // The title names whose video it is ("Record a video for <name>") when the library knows.
+      screen.getByRole("dialog", { name: humanText(/^Record a video/) }),
     ).toBeVisible();
     expect(bridge.videoStart).not.toHaveBeenCalled();
   });

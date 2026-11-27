@@ -391,12 +391,15 @@ pub(crate) enum RunnerStatus {
     /// Answering a request.
     Working { model: ModelInfo },
     /// It could not be started, or stopped answering; the next use starts it
-    /// again.
-    Failed { reason: String },
+    /// again. `reason` is a fixed code (`RunnerError::code`), never the words the process or the
+    /// model used (they can hold a path or a piece of the document), so that nothing that is
+    /// serialised carries them.
+    Failed { reason: &'static str },
 }
 
 /// Why a request or a start gave nothing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum RunnerError {
     /// The device budget refused the start.
     Budget {
@@ -419,13 +422,34 @@ pub(crate) enum RunnerError {
     /// shown on their own and never beside the document's text.
     Model(String),
 }
+redact_debug!(RunnerError);
+
+impl RunnerError {
+    /// A fixed name for the kind of failure, with none of the free text some kinds carry (a start's
+    /// operating-system error can hold a path; the model's words can echo the document).
+    pub(crate) fn code(&self) -> &'static str {
+        match self {
+            Self::Budget { .. } => "budget",
+            Self::Start(_) => "start",
+            Self::NotRunning => "not_running",
+            Self::Cancelled => "cancelled",
+            Self::Timeout => "timeout",
+            Self::Protocol(_) => "protocol",
+            Self::SummaryTooLarge => "summary_too_large",
+            Self::Model(_) => "model",
+        }
+    }
+}
 
 /// One page of a document's text, by its index from 0.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,
 }
+redact_debug!(Page);
 
 /// A summary request: the pages in order, as the reader read them.
 #[derive(Debug, Clone, Serialize)]
@@ -438,11 +462,13 @@ pub(crate) struct SummaryRequest {
 
 /// One sentence of a summary: the words, and the words of the document it
 /// rests on, verbatim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Sentence {
     pub(crate) text: String,
     pub(crate) quote: String,
 }
+redact_debug!(Sentence);
 
 /// The stages of a summary as the reader is told them: the helper reads the prompt, then
 /// writes the sentences; then the app checks the answer (the runner's own stage).
@@ -952,17 +978,17 @@ impl Runner {
             Ok(config) => config,
             Err(error) => {
                 self.set_status(RunnerStatus::Failed {
-                    reason: format!("{error:?}"),
+                    reason: error.code(),
                 });
                 return Err(error);
             }
         };
         if !config.command.is_absolute() {
-            let reason = "command must be an absolute path".to_owned();
+            let error = RunnerError::Start("command must be an absolute path".to_owned());
             self.set_status(RunnerStatus::Failed {
-                reason: reason.clone(),
+                reason: error.code(),
             });
-            return Err(RunnerError::Start(reason));
+            return Err(error);
         }
         if let Budget::Refused {
             needed_bytes,
@@ -1023,10 +1049,7 @@ impl Runner {
             }
             Err(error) => {
                 self.set_status(RunnerStatus::Failed {
-                    reason: match &error {
-                        RunnerError::Start(reason) => reason.clone(),
-                        other => format!("{other:?}"),
-                    },
+                    reason: error.code(),
                 });
                 Err(error)
             }
@@ -1558,7 +1581,7 @@ impl Runner {
             Err(error) => {
                 *slot = None;
                 self.set_status(RunnerStatus::Failed {
-                    reason: format!("{error:?}"),
+                    reason: error.code(),
                 });
             }
         }
@@ -2493,6 +2516,69 @@ mod tests {
             ))
         );
         assert!(matches!(runner.status(), RunnerStatus::Failed { .. }));
+    }
+
+    #[test]
+    fn a_failed_status_names_the_kind_of_failure_and_carries_none_of_its_words() {
+        let words =
+            "FAKE /home/jamie/Documents/Lab result for Jamie Patient.pdf: permission denied";
+        for (error, code) in [
+            (RunnerError::Start(words.to_owned()), "start"),
+            (RunnerError::Protocol(words.to_owned()), "protocol"),
+            (RunnerError::Model(words.to_owned()), "model"),
+            (
+                RunnerError::Budget {
+                    needed_bytes: 1,
+                    available_bytes: None,
+                },
+                "budget",
+            ),
+            (RunnerError::NotRunning, "not_running"),
+            (RunnerError::Cancelled, "cancelled"),
+            (RunnerError::Timeout, "timeout"),
+            (RunnerError::SummaryTooLarge, "summary_too_large"),
+        ] {
+            assert_eq!(error.code(), code);
+            let said = serde_json::to_string(&RunnerStatus::Failed {
+                reason: error.code(),
+            })
+            .unwrap();
+            assert_eq!(said, format!(r#"{{"state":"failed","reason":"{code}"}}"#));
+        }
+        // Through the runner itself: a start that fails for a reason with words in it.
+        for failing in [
+            RunnerError::Start(words.to_owned()),
+            RunnerError::Protocol(words.to_owned()),
+            RunnerError::Model(words.to_owned()),
+        ] {
+            let runner = Runner::new(idle_config());
+            let failing_for = failing.clone();
+            assert_eq!(
+                runner.start_with(&Fixed(Some(8 * GIB)), move || Err(failing_for)),
+                Err(failing.clone())
+            );
+            let said = serde_json::to_string(&runner.status()).unwrap();
+            assert!(said.contains(r#""state":"failed""#), "{said}");
+            for leaked in [
+                "FAKE",
+                "jamie",
+                "Jamie",
+                "/home",
+                "Lab result",
+                "permission",
+            ] {
+                assert!(!said.contains(leaked), "{leaked} in {said}");
+            }
+        }
+        // And a process that cannot be started at all (the operating system's own words).
+        let runner = Runner::new(idle_config());
+        let error = runner.start(&Fixed(Some(8 * GIB))).unwrap_err();
+        let said = serde_json::to_string(&runner.status()).unwrap();
+        assert_eq!(
+            said,
+            format!(r#"{{"state":"failed","reason":"{}"}}"#, error.code())
+        );
+        assert!(!said.contains("nonexistent") && !said.contains("FAKE-model"));
     }
 
     #[test]
