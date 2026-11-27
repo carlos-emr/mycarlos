@@ -12,6 +12,7 @@ const allowed = {
   supported: true,
   available: true,
   enabled: false,
+  noticesSupported: true,
   permission: "allowed",
 };
 beforeEach(() => {
@@ -143,9 +144,9 @@ describe("Document notice preference", () => {
     const user = userEvent.setup();
     render(<NotificationSetting />);
     await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
-    // In view: the notice is generic, and automatic checks happen only while open and unlocked.
+    // In view: the notice is generic, and documents are collected only while open and unlocked; locked, it only says something is waiting.
     expect(
       screen.getByText(
         humanText(/Windows can show a generic notice after a clinic document/),
@@ -154,7 +155,7 @@ describe("Document notice preference", () => {
     expect(
       screen.getByText(
         humanText(
-          "Automatic checks run only while myCarlos is open and unlocked.",
+          "myCarlos collects new clinic documents on its own only while it is open and unlocked. While it is locked in the background, it can only tell you that something is waiting.",
         ),
       ),
     ).toBeVisible();
@@ -188,7 +189,7 @@ describe("Document notice preference", () => {
     native.invoke.mockResolvedValue({ ...allowed });
     render(<NotificationSetting />);
     await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     expect(
       screen.queryByText(humanText("More about automatic checks")),
@@ -213,7 +214,7 @@ describe("Document notice preference", () => {
     native.invoke.mockResolvedValue({ ...allowed });
     render(<NotificationSetting />);
     await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     expect(native.invoke).toHaveBeenLastCalledWith(
       "vault_notification_status",
@@ -243,14 +244,14 @@ describe("Document notice preference", () => {
     });
     render(<NotificationSetting />);
     const checkbox = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     expect(checkbox).toBeDisabled();
     expect(checkbox).toHaveHumanAccessibleDescription(
       /Windows is blocking notifications/,
     );
     expect(checkbox).toHaveHumanAccessibleDescription(
-      /Documents are not checked automatically/,
+      /Windows can show a generic notice/,
     );
   });
 
@@ -261,7 +262,7 @@ describe("Document notice preference", () => {
     });
     render(<NotificationSetting />);
     const checkbox = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     // Nothing was refused: the notices can be turned on, and the first one shown makes the setting.
     expect(checkbox).toBeEnabled();
@@ -278,6 +279,32 @@ describe("Document notice preference", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses the macOS words for a refused or not-yet-asked permission, never Windows's", async () => {
+    for (const [permission, line, never] of [
+      [
+        "blocked",
+        /macOS is not allowing notifications from myCarlos/,
+        /Windows/,
+      ],
+      [
+        "not_yet_asked",
+        /macOS has not been asked yet. It will ask when you turn on notices/,
+        /Windows/,
+      ],
+    ] as const) {
+      native.invoke.mockResolvedValue({
+        ...allowed,
+        system: "macos",
+        permission,
+      });
+      const { unmount } = render(<NotificationSetting />);
+      const text = await screen.findByText(humanText(line));
+      expect(text).toBeVisible();
+      expect(text.textContent).not.toMatch(never);
+      unmount();
+    }
+  });
+
   it("keeps consent off until a person acts and bounds the native call to one boolean", async () => {
     const user = userEvent.setup();
     let enabled = false;
@@ -289,7 +316,7 @@ describe("Document notice preference", () => {
     );
     render(<NotificationSetting />);
     const checkbox = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     expect(checkbox).not.toBeChecked();
     expect(
@@ -298,7 +325,7 @@ describe("Document notice preference", () => {
       ),
     ).toBe(true);
     expect(checkbox).toHaveHumanAccessibleDescription(
-      /Documents are not checked automatically/,
+      /Windows can show a generic notice/,
     );
     await user.click(checkbox);
     await waitFor(() => expect(checkbox).toBeChecked());
@@ -347,12 +374,12 @@ describe("Document notice preference", () => {
     );
     render(<NotificationSetting />);
     const checkbox = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     await user.click(checkbox);
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveHumanTextContent(
-        "Notices are off for this session.",
+        "Notices and automatic checks are off for this session.",
       ),
     );
     expect(checkbox).not.toBeChecked();
@@ -367,26 +394,23 @@ describe("Document notice preference", () => {
     native.invoke.mockResolvedValue(allowed);
     render(<NotificationSetting />);
     const checkbox = await screen.findByRole("checkbox", {
-      name: humanText("Autoriser les avis d’arrivée de documents"),
+      name: humanText("Afficher un avis lorsqu’un document arrive"),
     });
     expect(checkbox).toHaveHumanAccessibleDescription(
-      /Les documents ne sont pas vérifiés automatiquement/,
+      /Windows peut afficher un avis générique/,
     );
     expect(checkbox).not.toBeChecked();
     expect(
       (checkbox.closest("label") as HTMLElement).getBoundingClientRect().height,
     ).toBeGreaterThanOrEqual(44);
   });
-  it("requires a separate fresh automatic opt-in and discloses blocked-notice collection", async () => {
+  it("offers the automatic check on its own, with its consent line, whatever the notices are", async () => {
     const user = userEvent.setup();
     let enabled = false;
     let automaticChecksEnabled = false;
     native.invoke.mockImplementation(
       (command: string, request?: { enabled: boolean }) => {
-        if (command === "vault_set_notifications") {
-          enabled = request!.enabled;
-          if (!enabled) automaticChecksEnabled = false;
-        }
+        if (command === "vault_set_notifications") enabled = request!.enabled;
         if (command === "vault_set_automatic_document_checks")
           automaticChecksEnabled = request!.enabled;
         return Promise.resolve({
@@ -399,40 +423,83 @@ describe("Document notice preference", () => {
       },
     );
     render(<NotificationSetting />);
-    const manual = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+    const notice = await screen.findByRole("checkbox", {
+      name: humanText("Show a notice when a document arrives"),
     });
     const automatic = screen.getByRole("checkbox", {
       name: humanText(
         "Check for clinic documents automatically while unlocked",
       ),
     });
+    // Off until a person turns it on, and it does not wait for the notices.
     expect(automatic).not.toBeChecked();
-    expect(automatic).toBeDisabled();
+    expect(automatic).toBeEnabled();
+    // Its own short consent: it contacts the clinic's portal on a schedule.
     expect(automatic).toHaveHumanAccessibleDescription(
-      /Checks can continue if Windows blocks notices/,
+      /contact your clinic's portal on a schedule, at least two minutes apart/,
     );
     expect(automatic).toHaveHumanAccessibleDescription(
       /at least two minutes between attempts/,
+    );
+    expect(automatic).toHaveHumanAccessibleDescription(
+      /Notices are a separate choice and are not needed for this/,
     );
     expect(
       native.invoke.mock.calls.every(
         ([command]) => command === "vault_notification_status",
       ),
     ).toBe(true);
-    await user.click(manual);
-    await waitFor(() => expect(automatic).toBeEnabled());
-    expect(automatic).not.toBeChecked();
     await user.click(automatic);
     await waitFor(() => expect(automatic).toBeChecked());
     expect(native.invoke).toHaveBeenCalledWith(
       "vault_set_automatic_document_checks",
       { enabled: true },
     );
-    await user.click(manual);
+    // The notices stay off, and turning them on and off leaves the automatic check as it was.
+    expect(notice).not.toBeChecked();
+    await user.click(notice);
+    await waitFor(() => expect(notice).toBeChecked());
+    expect(automatic).toBeChecked();
+    await user.click(notice);
+    await waitFor(() => expect(notice).not.toBeChecked());
+    expect(automatic).toBeChecked();
+    expect(automatic).toBeEnabled();
+    // And turning the automatic check off leaves the notice choice as it was.
+    await user.click(notice);
+    await waitFor(() => expect(notice).toBeChecked());
+    await user.click(automatic);
     await waitFor(() => expect(automatic).not.toBeChecked());
-    expect(automatic).toBeDisabled();
+    expect(notice).toBeChecked();
   });
+
+  it("offers only the automatic check where this computer cannot show a notice", async () => {
+    native.invoke.mockResolvedValue({
+      ...allowed,
+      noticesSupported: false,
+      permission: "unavailable",
+      automaticChecksSupported: true,
+      automaticChecksEnabled: false,
+    });
+    render(<NotificationSetting />);
+    const automatic = await screen.findByRole("checkbox", {
+      name: humanText(
+        "Check for clinic documents automatically while unlocked",
+      ),
+    });
+    expect(automatic).toBeEnabled();
+    // No notice switch, no test button, nothing about Windows.
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: humanText("Show a test notice") }),
+    ).toBeNull();
+    expect(
+      screen.queryByText(humanText(/Windows can show a generic notice/)),
+    ).toBeNull();
+    expect(
+      screen.getByText(humanText(/contact your clinic's portal on a schedule/)),
+    ).toBeVisible();
+  });
+
   it("shows a fixed manual-check pause without sending a check or exposing native details", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,

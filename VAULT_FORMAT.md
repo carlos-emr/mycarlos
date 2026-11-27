@@ -392,7 +392,7 @@ input succeeds and the next manifest generation is durable. Duplicate fingerprin
 scoped to a patient profile. A failure before the first manifest commit leaves the prior manifest
 authoritative and immediately removes newly moved ciphertext. A failure after that commit returns a
 successful import in recovery mode because the new manifest is already authoritative. The native
-picker is filtered to PDFs and batches are limited to 100 files so the picker bridge does not hold
+picker offers PDF documents, JPEG and PNG pictures and (where a video can be added) videos, and batches are limited to 100 files so the picker bridge does not hold
 an unbounded number of open handles in one transaction. Individual file size is not capped;
 constant-memory chunking keeps large medical files possible, while available storage and future
 vault-quota policy remain separate concerns. The filter does not validate PDF structure or make a
@@ -871,6 +871,7 @@ state, described in the recovery-key sections above.
 | Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
+| Camera and microphone chosen for a recording | `mycarlos.videoDevices.v1` | The webview's opaque device identifiers (validated and length-capped on read), no device name, person or recording; which hardware this device's user prefers |
 | "Don't show this again" on the AI warning (#351) | `mycarlos.aiLabelShort.v1` | That this device's user chose the short "AI draft" tag for a tool and model (`tool:revision:model-sha256`); no vault, patient or document. A different model or tool revision, or Settings → AI helper, clears it. The tag itself is never removed |
 
 **Waiting keys for tray notices (#230, built with the tray; Portal contract in carlos-portal#88).** To let a
@@ -1304,8 +1305,7 @@ Rule for any code that removes a clinic link: **it must forget that link's remem
 refusals in the same write; a refusal whose link is gone makes the vault read as
 damaged.** The check that enforces it is the "for a saved link" test in
 `validate_manifest_structure` (a refusal whose `linkId` is in no `portalLinks` entry
-is `Corrupt`). The vault has no unlink today (linking again adds a second link with a
-new id, and the old link keeps its refusals), so nothing breaks yet.
+is `Corrupt`). The one code path that unlinks is `remove_portal_link` (format 16, below), which forgets them in the same commit.
 
 A format 1–11 vault opens with no refusals and is upgraded at its next writable
 unlock to the newest format this build writes (a build with only this change writes
@@ -1345,7 +1345,7 @@ A format 1–13 vault opens with none of these and upgrades with its state uncha
 
 ## Format 15 (provisional): hiding a whole person (#360 PR 7)
 
-This build understands manifest formats 1–15. **The number is provisional** and is taken at merge, with no gap (see "Format numbers are taken at merge"). A renumber changes `MANIFEST_FORMAT_HIDDEN_PROFILES` in `vault.rs` (`HIDDEN_PROFILES_FORMAT` and `VAULT_FORMAT` use it), this heading and the tests that name 14 and 15. A vault at 14 or lower upgrades at its next writable unlock in a commit of its own, like any older one, with its state unchanged; an older myCarlos refuses 15 as newer, so none can read a vault that has a hidden person and list that person.
+This build understands manifest formats 1–15. **The number is provisional** and is taken at merge, with no gap (see "Format numbers are taken at merge"). A renumber changes `MANIFEST_FORMAT_HIDDEN_PROFILES` in `vault.rs` (`HIDDEN_PROFILES_FORMAT` uses it), this heading and the tests that name 14 and 15. A vault at 14 or lower upgrades at its next writable unlock in a commit of its own, like any older one, with its state unchanged; an older myCarlos refuses 15 as newer, so none can read a vault that has a hidden person and list that person.
 
 Format 15 adds one thing: **`hidden` on a profile** (the same `{atMs, reason}` a document has; the reason is `patient`, never `damaged`). It is forbidden below 15, never on Shared with me, and a manifest in which every person (Shared with me is a holding folder, not a person) is hidden is refused: the last visible person cannot be hidden.
 
@@ -1360,6 +1360,14 @@ What the flag does, and does not do:
 - **Hiding is tidiness, not secrecy:** anyone with the passphrase can restore. The screens say so.
 
 Tests: the round trip (lists, folders, counts; a document hidden on its own stays hidden after the restore); one commit and one entry each way; the last visible person and Shared with me; every lookup refused and allowed again after the restore; export of a hidden person; a backup and an older backup; the format gate (refused at 14, accepted at 15, damaged reason, nobody visible); a delivery for a hidden person and its restore offer; a process killed at each write boundary of hide and restore leaves the person fully visible or fully hidden.
+## Format 16 (provisional): removing a clinic link (#160)
+
+This build understands manifest formats 1–16. A vault at 15 or lower upgrades to 16 at its next writable unlock, in a commit of its own, like any older one. A format newer than 16 is refused as newer. Format numbers are taken at merge (above): 16 follows the profile handover's 14 and hiding a person's 15, and is provisional until #160 merges. Header, object and backup container formats do not change.
+
+No manifest field changes. The format exists because of one new history event, `portalLinkRemoved`, which an older build cannot read: it would refuse the history as corrupt, so it must refuse the vault as newer instead. The event records `portalLinkId`, the profile id and the clinic name, never keys, device ids or documents.
+
+Removing a link (`vault_portal_remove_link`) is one commit that deletes the `portalLinks` entry, its remembered refusals (`refusedDeliveries`), its waiting reading aids, its remote notices (active and revoked), and appends the event; the in-memory "found gone" marker is dropped after the commit, and so is the link's notice key (a crash between the commit and the wipe is covered by a sweep of this vault's notice keys whose link is gone, at the next open). A link with a push destination enrolled or a revocation still queued is refused with `Invalid` until the patient turns notices off. A link that is not there makes no commit and no history entry. Earlier backups of the vault still hold the removed link's keys. A link with any filed document (a record whose `delivery.linkId` or `readingAid.linkId` names it) is refused with `Invalid`: custody evidence must not be dropped silently. Removing a link that is already gone succeeds without a commit. The call holds the vault-wide portal guard (`Portal(Busy)` while another portal operation runs) and the session ticket (`Portal(Cancelled)` after a lock). Removal is local only: the clinic may still list this device until it is removed there. The rule in format 12 (a link's refusals go with it) is now enforced by this one code path.
+
 ## Video recordings in progress (#359, no format change)
 
 A recording is stored in the existing `MCVO1` object format, one 1 MiB frame at a time, so **header, object, manifest and backup formats do not change** and no format number is taken. It becomes a record only when it ends, in the same commit an import makes (history entry `imported`, how `camera`). Until then it lives in `recordings/`, beside `staging/` and not in it, because every unlock removes `staging/`.

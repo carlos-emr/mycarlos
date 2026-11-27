@@ -249,7 +249,8 @@ pub(crate) struct PackageRecord {
     pub carried: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageAiAnswer {
     pub object: PackageObject,
@@ -263,6 +264,7 @@ pub(crate) struct PackageAiAnswer {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub superseded: bool,
 }
+redact_debug!(PackageAiAnswer);
 
 // A manifest holds names, birth dates and clinic evidence. A `{:?}` of one (an
 // `unwrap` message, a log line, a failed assertion) must never print them, so its
@@ -543,6 +545,14 @@ const PACKAGE_KEY_CHECK_LABEL: &[u8] = b"mycarlos-profile-package-key-check-v1:"
 
 /// Reads a key as typed: case, spaces and dashes do not matter, and the check
 /// characters catch a typo before anything is tried.
+///
+/// The check is 10 bits, so it is a net, not a proof. A typo of a package key reads as a
+/// recovery key about 1 time in 1,024 (the typo's check happens to fit the recovery label), and
+/// about as often passes as a key. The second is harmless: a key that is not the file's fails to
+/// open it as `WrongKey`, and nothing is exposed. The first only words the message wrongly. The
+/// package label is tried first, so a real recovery key typed here reads as one almost always
+/// (about 1,023 times in 1,024); the rest fits the package label too, is read as a package key, and
+/// fails to open the file as `WrongKey`.
 pub(crate) fn parse_package_key(
     text: &str,
 ) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, PackageError> {

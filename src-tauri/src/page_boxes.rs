@@ -480,11 +480,37 @@ pub(crate) fn span_boxes(
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     fn chars(s: &str) -> Vec<char> {
         s.chars().collect()
+    }
+
+    #[test]
+    fn each_reason_a_span_gets_no_box_has_its_own_code_and_name_and_no_other_code_is_one() {
+        let all = [
+            (Absent::NoText, 1, "noText"),
+            (Absent::TextDiffers, 2, "textDiffers"),
+            (Absent::Unaligned, 3, "unaligned"),
+            (Absent::Skewed, 4, "skewed"),
+            (Absent::OutsidePage, 5, "outsidePage"),
+            (Absent::NoWidth, 6, "noWidth"),
+            (Absent::TooManyLines, 7, "tooManyLines"),
+            (Absent::Empty, 8, "empty"),
+        ];
+        for (absent, code, name) in all {
+            assert_eq!(absent.code(), code, "{absent:?}");
+            assert_eq!(Absent::from_code(code), Some(absent), "{code}");
+            assert_eq!(absent.name(), name, "{absent:?}");
+        }
+        // The helper's answer is a byte: 0 and anything past the last reason is not a reason.
+        for code in [0_u8, 9, 10, 255] {
+            assert_eq!(Absent::from_code(code), None, "{code}");
+        }
     }
 
     #[test]

@@ -16,6 +16,8 @@ import {
   declareCamera,
   declareMicrophone,
   keepPageClearOfSystemBars,
+  setNetworkSecurityConfig,
+  writeNetworkSecurityConfig,
 } from "./configure-android-security.mjs";
 
 test("Android backup exclusions are applied exactly once", async () => {
@@ -42,8 +44,12 @@ test("Android backup exclusions are applied exactly once", async () => {
       "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
     );
 
-    await configureAndroidSecurity(manifestPath);
-    await configureAndroidSecurity(manifestPath);
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
     // The page is kept clear of the system bars, once.
     const activity = await readFile(activityPath, "utf8");
     assert.equal(
@@ -116,8 +122,12 @@ test("the camera and the microphone are each declared once, neither required (D9
       join(directory, "java", "ca", "carlos", "mycarlos", "MainActivity.kt"),
       "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
     );
-    await configureAndroidSecurity(manifestPath);
-    await configureAndroidSecurity(manifestPath);
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
     const manifest = await readFile(manifestPath, "utf8");
     assert.equal(
       (
@@ -197,7 +207,7 @@ test("the camera and the microphone are each declared once, neither required (D9
     ]);
     // What was there stays.
     assert.match(manifest, /android\.permission\.INTERNET/);
-    assert.match(manifest, /<application android:allowBackup="false"/);
+    assert.match(manifest, /<application [^>]*android:allowBackup="false"/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -253,6 +263,16 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
   ]) {
     const patched = keepPageClearOfSystemBars(source);
     assert.match(patched, /override fun onWebViewCreate\(webView: WebView\)/);
+    // Page inspection is on only when the app is debuggable (a debug build), never unconditionally.
+    assert.match(
+      patched,
+      /if \(\(applicationInfo\.flags and ApplicationInfo\.FLAG_DEBUGGABLE\) != 0\) \{\s*WebView\.setWebContentsDebuggingEnabled\(true\)\s*\}/,
+    );
+    assert.equal(
+      patched.split("setWebContentsDebuggingEnabled").length - 1,
+      1,
+      "one call, inside the debuggable check",
+    );
     assert.match(patched, /WindowInsetsCompat\.Type\.systemBars\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.ime\(\)/);
@@ -281,6 +301,7 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
       /runOnUiThread \{ setStripColour\(value, darkBackground\) \}/,
     );
     for (const line of [
+      "import android.content.pm.ApplicationInfo",
       "import android.content.res.Configuration",
       "import android.graphics.Color",
       "import android.graphics.drawable.ColorDrawable",
@@ -413,4 +434,188 @@ test("the strip behind the status bar uses the header's colours from styles.css"
   );
   assert.ok(patched.includes(`0xFF${light.toUpperCase()}`), "light colour");
   assert.ok(patched.includes(`0xFF${dark.toUpperCase()}`), "dark colour");
+});
+
+test("the manifest names the network security config and turns cleartext off, once", () => {
+  const before =
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/other" android:label="myCarlos" /></manifest>';
+  const once = setNetworkSecurityConfig(before);
+  assert.equal(setNetworkSecurityConfig(once), once);
+  assert.equal((once.match(/android:networkSecurityConfig=/g) ?? []).length, 1);
+  assert.equal((once.match(/android:usesCleartextTraffic=/g) ?? []).length, 1);
+  assert.match(
+    once,
+    /android:networkSecurityConfig="@xml\/mycarlos_network_security_config"/,
+  );
+  assert.match(once, /android:usesCleartextTraffic="false"/);
+  assert.throws(() => setNetworkSecurityConfig("<manifest />"), /application/);
+});
+
+test("the manifest replaces the network security config of the platform certificate verifier's manifest, once", () => {
+  const tools = 'xmlns:tools="http://schemas.android.com/tools"';
+  // No tools namespace and no tools:replace yet: both are added, once, and a second run is a no-op.
+  const bare =
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:label="myCarlos" /></manifest>';
+  const once = setNetworkSecurityConfig(bare);
+  assert.equal(setNetworkSecurityConfig(once), once);
+  assert.equal((once.match(/xmlns:tools=/g) ?? []).length, 1);
+  assert.ok(once.includes(tools));
+  assert.equal((once.match(/tools:replace=/g) ?? []).length, 1);
+  assert.match(
+    once,
+    /<application[^>]*tools:replace="android:networkSecurityConfig"/,
+  );
+  // The namespace is on <manifest>, the replace on <application>.
+  assert.match(once, /<manifest[^>]*xmlns:tools=/);
+  // An existing namespace and an existing list are kept and added to, never doubled.
+  const listed = `<manifest xmlns:android="http://schemas.android.com/apk/res/android" ${tools}><application tools:replace="android:label" android:label="myCarlos" /></manifest>`;
+  const merged = setNetworkSecurityConfig(listed);
+  assert.equal(setNetworkSecurityConfig(merged), merged);
+  assert.equal((merged.match(/xmlns:tools=/g) ?? []).length, 1);
+  assert.match(
+    merged,
+    /tools:replace="android:label,android:networkSecurityConfig"/,
+  );
+  // Single-quoted attributes are the same XML: nothing is doubled, and the quote style of an
+  // existing list is kept.
+  const single = `<manifest xmlns:android='http://schemas.android.com/apk/res/android' ${tools}><application android:networkSecurityConfig='@xml/other' android:usesCleartextTraffic='true' tools:replace='android:label' android:label='myCarlos' /></manifest>`;
+  const fromSingle = setNetworkSecurityConfig(single);
+  assert.equal(setNetworkSecurityConfig(fromSingle), fromSingle);
+  assert.match(
+    fromSingle,
+    /tools:replace='android:label,android:networkSecurityConfig'/,
+  );
+  assert.equal((fromSingle.match(/tools:replace=/g) ?? []).length, 1);
+  assert.equal(
+    (fromSingle.match(/android:networkSecurityConfig=/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (fromSingle.match(/android:usesCleartextTraffic=/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(fromSingle, /@xml\/other|usesCleartextTraffic='true'/);
+  // A form it cannot make sense of stops the build rather than writes a doubled attribute.
+  assert.throws(
+    () =>
+      setNetworkSecurityConfig(
+        `<manifest ${tools}><application tools:replace="android:label" tools:replace="android:icon" /></manifest>`,
+      ),
+    /2 tools:replace attributes/,
+  );
+  // The values that decide the security are still this app's own, and exactly one each.
+  for (const manifest of [once, merged, fromSingle]) {
+    assert.equal(
+      (
+        manifest.match(
+          /android:networkSecurityConfig="@xml\/mycarlos_network_security_config"/g,
+        ) ?? []
+      ).length,
+      1,
+    );
+    assert.equal(
+      (manifest.match(/android:usesCleartextTraffic="false"/g) ?? []).length,
+      1,
+    );
+  }
+});
+
+test("the release config trusts the system's authorities only; the test root is in the debug source set alone", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-nsc-"));
+  try {
+    const res = join(directory, "main", "res");
+    const debug = join(directory, "debug");
+    await writeNetworkSecurityConfig(res, debug);
+    // Writing again changes nothing.
+    await writeNetworkSecurityConfig(res, debug);
+
+    const release = await readFile(
+      join(res, "xml", "mycarlos_network_security_config.xml"),
+      "utf8",
+    );
+    assert.match(release, /<base-config cleartextTrafficPermitted="false">/);
+    assert.match(release, /<certificates src="system" \/>/);
+    // Nothing else to trust in a release build: no user authorities, no test root, no override.
+    assert.doesNotMatch(
+      release,
+      /src="user"|debug-overrides|@raw|mycarlos_test_ca/,
+    );
+    assert.equal((release.match(/<certificates /g) ?? []).length, 1);
+    // The app also owns the resource name the platform verifier's AAR uses for its own file (which
+    // allows cleartext to a list of CRL hosts): the same system-only config, so the merged APK has
+    // no other `network_security_config` for the release gate to find.
+    const overrides = await readFile(
+      join(res, "xml", "network_security_config.xml"),
+      "utf8",
+    );
+    assert.equal(overrides, release);
+    assert.doesNotMatch(
+      overrides,
+      /domain-config|cleartextTrafficPermitted="true"/,
+    );
+
+    const debugConfig = await readFile(
+      join(debug, "res", "xml", "mycarlos_network_security_config.xml"),
+      "utf8",
+    );
+    assert.match(
+      debugConfig,
+      /<base-config cleartextTrafficPermitted="false">/,
+    );
+    assert.match(debugConfig, /<debug-overrides>/);
+    // Exactly one extra authority, the raw test root; never a user-installed one.
+    assert.equal(
+      (
+        debugConfig.match(/<certificates src="@raw\/mycarlos_test_ca" \/>/g) ??
+        []
+      ).length,
+      1,
+    );
+    assert.doesNotMatch(debugConfig, /src="user"/);
+
+    // The test root is the repository's FAKE CA, as DER, in the debug source set only.
+    const raw = await readFile(
+      join(debug, "res", "raw", "mycarlos_test_ca.der"),
+    );
+    const fixture = await readFile(
+      new URL(
+        "../src-tauri/tests/fixtures/portal-test-pki/ca.der.b64",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    assert.deepEqual(raw, Buffer.from(fixture.trim(), "base64"));
+    assert.equal(raw[0], 0x30);
+    assert.deepEqual(await readdir(join(res)), ["xml"]);
+    // The app's configuration, and the same one under the name the platform verifier's AAR uses.
+    assert.deepEqual(await readdir(join(res, "xml")), [
+      "mycarlos_network_security_config.xml",
+      "network_security_config.xml",
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a missing or damaged test root stops the configuration, loudly", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-nsc-"));
+  try {
+    const res = join(directory, "res");
+    const debug = join(directory, "debug");
+    await assert.rejects(
+      writeNetworkSecurityConfig(res, debug, join(directory, "nowhere")),
+      /test root certificate/,
+    );
+    const pki = join(directory, "pki");
+    await mkdir(pki);
+    await writeFile(join(pki, "ca.der.b64"), "bm90IGEgY2VydGlmaWNhdGU=");
+    await assert.rejects(
+      writeNetworkSecurityConfig(res, debug, pki),
+      /test root certificate/,
+    );
+    // Nothing was written for a debug build that could not reach the test portal.
+    assert.deepEqual(await readdir(directory), ["pki"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

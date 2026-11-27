@@ -46,6 +46,8 @@ pub struct Labels<'a> {
     pub zoom_out: &'a str,
     pub page: &'a str,
     pub page_status: &'a str,
+    /// "Page {page} of {total} could not be shown": the same placeholders.
+    pub page_failed: &'a str,
 }
 
 #[derive(Serialize)]
@@ -81,4 +83,26 @@ pub async fn close<R: Runtime>(app: &tauri::AppHandle<R>, generation: u64) {
         .0
         .run_mobile_plugin_async::<serde::de::IgnoredAny>("close", Cancel { generation })
         .await;
+}
+
+/// The name an Android document provider gives a picked `content://` document
+/// (`OpenableColumns.DISPLAY_NAME`, asked of the `ContentResolver`), or `None` when the provider
+/// has none, does not answer, or the question fails. The id of such a document is often opaque
+/// ("msf:31"); the provider's name is what says it is a video. It is another app's text: the caller
+/// uses it only after checking it (`routing_name`). It never fails the caller.
+pub async fn display_name<R: Runtime>(app: &tauri::AppHandle<R>, url: &str) -> Option<String> {
+    #[derive(Serialize)]
+    struct Request<'a> {
+        url: &'a str,
+    }
+    #[derive(serde::Deserialize)]
+    struct Reply {
+        name: Option<String>,
+    }
+    app.state::<Reader<R>>()
+        .0
+        .run_mobile_plugin_async::<Reply>("displayName", Request { url })
+        .await
+        .ok()
+        .and_then(|reply| reply.name)
 }

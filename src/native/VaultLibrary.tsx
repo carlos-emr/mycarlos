@@ -73,6 +73,7 @@ import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
 import { RecordDialog, type RecordEnd } from "./RecordDialog";
+import { AddVideoButton, AddVideoStatus, type AddVideoApi } from "./AddVideo";
 import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
@@ -167,6 +168,7 @@ export function VaultLibrary({
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
+  addVideo,
   androidPdfReader = false,
   cameraAsking,
   holdMedia,
@@ -226,6 +228,9 @@ export function VaultLibrary({
   /** The platform the camera dialog runs on (a computer, or since D97 a
    * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** Adding a video: its state lives above the library (VaultApp), so leaving the library mid-import
+   * keeps the progress, the Cancel and the answer. */
+  addVideo?: AddVideoApi;
   /** Android alone has a native PdfRenderer reader for stored PDFs (#358). */
   androidPdfReader?: boolean;
   /** On a phone: holds the lock on a hidden app while the system asks
@@ -1203,7 +1208,31 @@ export function VaultLibrary({
   const importFiles = () =>
     run(async () => {
       const folderIds = currentFolderId ? [currentFolderId] : [];
-      const pickId = await bridge.pickImportFiles(profileId, folderIds);
+      // Where a video can be added, one picker takes documents, pictures and videos; a video that
+      // is the whole pick goes to the video import (its progress and Cancel show by the Add a
+      // video button), anything else keeps the document path.
+      let pickId: string | null;
+      if (
+        cameraPlatform !== "ios" &&
+        addVideo?.canAdd &&
+        // A video is being added: a second video could not be taken (one at a time), so the picker
+        // that may hand one over is not opened. Documents and pictures can still be added.
+        !addVideo.working &&
+        bridge.pickImportAny
+      ) {
+        const picked = await bridge.pickImportAny(profileId, folderIds);
+        if (picked?.kind === "videoAlone") {
+          setNotice(message("interface.AddVideo.videoAlone"));
+          return;
+        }
+        if (picked?.kind === "video") {
+          void addVideo.addPicked(picked.pickId, profileId, folderIds);
+          return;
+        }
+        pickId = picked?.pickId ?? null;
+      } else {
+        pickId = await bridge.pickImportFiles(profileId, folderIds);
+      }
       if (!pickId) {
         setNotice(
           deferredText(() =>
@@ -2470,6 +2499,14 @@ export function VaultLibrary({
                             </button>
                           </span>
                         )}
+                      {cameraPlatform !== "ios" && addVideo?.canAdd && (
+                        <AddVideoButton
+                          add={addVideo}
+                          profileId={profileId}
+                          folderIds={currentFolderId ? [currentFolderId] : []}
+                          disabled={busy || readOnly || !profileId}
+                        />
+                      )}
                       <button
                         className="button primary"
                         type="button"
@@ -2493,6 +2530,18 @@ export function VaultLibrary({
                     </div>
                   )}
                 </div>
+                {cameraPlatform !== "ios" && addVideo?.canAdd && (
+                  <AddVideoStatus add={addVideo} />
+                )}
+
+                {!readOnly && profileId && (
+                  <p className="purpose-note native-pictures-note">
+                    <Icon name="info" />
+                    <span>
+                      {translateNow("interface.VaultLibrary.picturesNote")}
+                    </span>
+                  </p>
+                )}
 
                 {inShared && (
                   <p className="purpose-note native-shared-intro">
@@ -3236,6 +3285,7 @@ export function VaultLibrary({
                 platform={cameraPlatform}
                 bridge={bridge}
                 profileId={profileId}
+                profileName={profile?.displayName}
                 folderIds={currentFolderId ? [currentFolderId] : []}
                 whileAsking={cameraAsking}
                 holdLock={holdMedia}

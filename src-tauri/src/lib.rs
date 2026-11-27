@@ -1,9 +1,36 @@
+/// A `Debug` that prints only a type's name, for a type that holds names, document text, an answer,
+/// a token or a code, so that a panic, a `{:?}` or an error chain can never carry them out. Use
+/// `redact_debug!` (below), not this, in the code.
+macro_rules! redact_debug_impl {
+    ($($type:ident),+ $(,)?) => {$(
+        impl ::std::fmt::Debug for $type {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                formatter.write_str(concat!(stringify!($type), " { .. }"))
+            }
+        }
+    )+};
+}
+
+/// The redaction for a release build: a test build derives `Debug` instead (an assertion failure
+/// then shows the values), so write `#[cfg_attr(test, derive(Debug))]` in place of `Debug` in the
+/// type's derive list and `redact_debug!(Type);` after the type. `redact_debug_impl!` is the same
+/// impl with no `cfg`, which a unit test applies to a probe type to show what it prints.
+macro_rules! redact_debug {
+    ($($type:ident),+ $(,)?) => {
+        #[cfg(not(test))]
+        redact_debug_impl!($($type),+);
+    };
+}
+
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
+#[cfg(test)]
+mod redact_debug_tests;
 mod ui_text;
 mod ui_text_ids;
 use ui_text::UiLocale;
 use ui_text_ids::MessageId;
+mod backup_exclusion;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod desktop_background;
@@ -12,7 +39,12 @@ mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection_pickup;
 mod document_identity;
+#[cfg(target_os = "macos")]
+mod document_notification_macos;
 pub mod document_notification_runtime;
+// Compiled on Linux, and in tests on every platform (its bus is a trait, tested with a fake).
+#[cfg(any(test, target_os = "linux"))]
+mod document_notification_linux;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
@@ -21,6 +53,8 @@ pub mod document_notifications;
 // Its tests need the Linux memfd and /proc, so they run on the Linux host only.
 #[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 mod android_pdf;
+#[cfg(target_os = "android")]
+mod android_trust;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -62,6 +96,7 @@ mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod photo_png;
 mod portal_approval;
 mod portal_client;
 mod portal_delivery;
@@ -84,6 +119,7 @@ mod vault;
 mod vault_registry;
 mod vault_slots;
 mod vault_source;
+mod video_import;
 #[cfg(windows)]
 mod windows_navigation;
 
@@ -575,6 +611,10 @@ impl From<VaultError> for PublicText {
                 code: "pdf_view_no_sandbox",
                 message_key: "native.error.33",
             },
+            VaultError::BackupExclusionFailed => Self {
+                code: "backup_exclusion_failed",
+                message_key: "native.backupExclusionFailed",
+            },
             VaultError::NoSpace => Self {
                 code: "no_space",
                 message_key: "native.error.34",
@@ -673,7 +713,7 @@ impl From<VaultError> for PublicError {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PassphraseRulesRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -687,7 +727,7 @@ impl Drop for PassphraseRulesRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -700,7 +740,11 @@ impl Drop for CreateVaultRequest {
     }
 }
 
+// camelCase on the wire, as every other request the renderer sends: without it the renderer's
+// `hiddenPeopleDocuments` was an unknown key, silently ignored, and the count was always 0, so the
+// removal was refused whenever a hidden person had a lost document.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
     /// How many damaged documents of hidden people the patient was told of (#360).
@@ -709,13 +753,14 @@ struct HideUnavailableRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PassphraseRequest {
     passphrase: String,
 }
 
 /// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AddVaultRequest {
     name: String,
     passphrase: String,
@@ -732,6 +777,7 @@ impl Drop for AddVaultRequest {
 
 /// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FindVaultsRequest {
     passphrase: String,
 }
@@ -754,12 +800,14 @@ struct FoundVaultsReply {
 
 /// One found vault and the name its owner now gives it.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedFoundVault {
     id: String,
     name: String,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NameFoundRequest {
     vaults: Vec<NamedFoundVault>,
 }
@@ -774,6 +822,7 @@ impl Drop for NameFoundRequest {
 
 /// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedPassphraseRequest {
     name: String,
     passphrase: String,
@@ -806,7 +855,7 @@ struct BackupWriteRequest {
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoreRequest {
     pick_id: Uuid,
     passphrase: Option<String>,
@@ -843,7 +892,7 @@ impl Drop for RestoreRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoverRequest {
     recovery_key: String,
     new_passphrase: String,
@@ -867,20 +916,20 @@ struct RecoverResponse {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoveryKeyGroup {
     index: usize,
     value: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConfirmRecoveryKeyRequest {
     groups: Vec<RecoveryKeyGroup>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
@@ -895,7 +944,7 @@ impl Drop for ChangePassphraseRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NameRequest {
     display_name: String,
     #[serde(default)]
@@ -919,7 +968,7 @@ struct RenameProfileRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FolderRequest {
     profile_id: Uuid,
     parent_id: Option<Uuid>,
@@ -927,7 +976,7 @@ struct FolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateFolderRequest {
     folder_id: Uuid,
     parent_id: Option<Uuid>,
@@ -935,41 +984,45 @@ struct UpdateFolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersRequest {
     record_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameRecordRequest {
     record_id: Uuid,
     name: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersBatchRequest {
     record_ids: Vec<Uuid>,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImportRequest {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`, for the name the save dialog
+    /// suggests. Optional: an older caller that sends none gets the UTC date.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoRequest {
     record_id: Uuid,
 }
@@ -978,13 +1031,15 @@ struct PhotoRequest {
 /// photo request's body (see `split_photo_request`), as JSON
 /// `{"profileId", "folderIds", "name"}`. Custom headers do not reach the app
 /// on Windows (WebView2), so nothing rides in them.
-#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoTarget {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
     name: String,
 }
+redact_debug!(PhotoTarget);
 
 /// The most a photo request's target may take, before the JPEG.
 const MAX_PHOTO_TARGET_BYTES: usize = 4096;
@@ -1125,11 +1180,11 @@ impl std::io::Write for PhotoBuffer {
             self.bytes = larger;
         }
         self.bytes.extend_from_slice(data);
-        // FF D8 FF, as far as the bytes so far go.
-        let seen = self.bytes.len().min(photo::JPEG_START.len());
-        if self.bytes[..seen] != photo::JPEG_START[..seen] {
+        // FF D8 FF (a JPEG) or the PNG signature, as far as the bytes so far go.
+        let seen = self.bytes.len().min(photo::SNIFF_BYTES);
+        if !photo::could_start_a_picture(&self.bytes[..seen]) {
             self.refused = true;
-            return Err(std::io::Error::other("not a JPEG"));
+            return Err(std::io::Error::other("not a JPEG or a PNG"));
         }
         Ok(data.len())
     }
@@ -1139,38 +1194,8 @@ impl std::io::Write for PhotoBuffer {
     }
 }
 
-/// The first bytes of a record's file, and no more: once it has them, it stops
-/// the export, so only the first chunk is decrypted.
-#[derive(Default)]
-struct FileStart {
-    bytes: [u8; photo::JPEG_START.len()],
-    seen: usize,
-}
-
-impl FileStart {
-    fn complete(&self) -> bool {
-        self.seen == self.bytes.len()
-    }
-}
-
-impl std::io::Write for FileStart {
-    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        let take = data.len().min(self.bytes.len() - self.seen);
-        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
-        self.seen += take;
-        if self.complete() {
-            Err(std::io::Error::other("the first bytes are read"))
-        } else {
-            Ok(data.len())
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-/// The first `N` bytes of a record's file, and no more (as `FileStart`).
+/// The first `N` bytes of a record's file, and no more: once it has them, it stops the export, so
+/// only the first chunk is decrypted.
 struct FileStartN<const N: usize> {
     bytes: [u8; N],
     seen: usize,
@@ -1208,22 +1233,30 @@ impl<const N: usize> std::io::Write for FileStartN<N> {
     }
 }
 
-/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
-/// called. A document's details ask this before offering View photo, so the
-/// photo itself stays here until the patient asks to see it; `view_photo` then
-/// checks the whole file.
-fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
-    let mut start = FileStart::default();
+/// Which picture a record's file starts as (a JPEG: FF D8 FF; a PNG: its 8-byte signature),
+/// whatever it is called. A document's details ask this before offering View photo, so the photo
+/// itself stays here until the patient asks to see it; `view_photo` then checks the whole file.
+fn photo_kind(
+    store: &VaultStore,
+    record_id: Uuid,
+) -> Result<Option<photo::PictureKind>, VaultError> {
+    let mut start = FileStartN::<{ photo::SNIFF_BYTES }>::default();
     let exported = store.read_for_view(record_id, &mut start);
-    if start.complete() {
-        return Ok(start.bytes == photo::JPEG_START);
+    // A file shorter than eight bytes can still be a (too short) JPEG start; `picture_kind` looks
+    // only at what was read.
+    if start.complete() || exported.is_ok() {
+        return Ok(photo::picture_kind(&start.bytes[..start.seen]));
     }
-    // Shorter than three bytes, or not read at all.
-    exported.map(|()| false)
+    exported.map(|()| None)
 }
 
-/// A photo's name must still describe its JPEG bytes. Ordinary PDF renames
-/// retain the vault's existing metadata-only checks.
+/// Whether a record's file starts as a picture does (see `photo_kind`).
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    photo_kind(store, record_id).map(|kind| kind.is_some())
+}
+
+/// A photo's name must still describe its bytes: `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG.
+/// Ordinary PDF renames retain the vault's existing metadata-only checks.
 fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<(), VaultError> {
     let old_name = store
         .snapshot()?
@@ -1235,29 +1268,24 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
     // A failed probe establishes no format. Keep the existing metadata-only
     // rename policy for an unreadable/unknown file, rather than requiring a
     // readable object just to edit its name.
-    if !old_name.trim().to_ascii_lowercase().ends_with(".pdf")
-        && is_photo(store, record_id).unwrap_or(false)
-    {
-        let valid_jpeg_name = name
-            .trim()
-            .rsplit_once('.')
-            .is_some_and(|(stem, extension)| {
-                !stem.trim().is_empty()
-                    && (extension.eq_ignore_ascii_case("jpg")
-                        || extension.eq_ignore_ascii_case("jpeg"))
-            });
-        if !valid_jpeg_name {
+    let kind = if old_name.trim().to_ascii_lowercase().ends_with(".pdf") {
+        None
+    } else {
+        photo_kind(store, record_id).unwrap_or(None)
+    };
+    if let Some(kind) = kind {
+        if !kind.names(name) {
             return Err(VaultError::Invalid);
         }
     }
     store.rename_record(record_id, name)
 }
 
-/// The photo a record holds, as a `data:image/jpeg` URL for the photo view
-/// (the CSP allows `data:` images). The file's own bytes decide: it must start
-/// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
-/// checks as a photo being saved, which also drop any metadata from what is
-/// shown. The record is unchanged.
+/// The picture a record holds, as a `data:image/jpeg` or `data:image/png` URL for the photo view
+/// (the CSP allows `data:` images). The file's own bytes decide: it must start with the JPEG
+/// marker FF D8 FF or the PNG signature, whatever it is called, and pass the same checks as a
+/// picture being imported, which also drop any metadata from what is shown. The record is
+/// unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
     let exported = store.read_for_view(record_id, &mut buffer);
@@ -1265,9 +1293,13 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
         return Err(VaultError::NotPhoto);
     }
     exported?;
-    let cleaned = photo::clean_jpeg(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    // `clean_any`: a picture the patient brought keeps what draws it (a JPEG also its orientation
+    // and a plain colour profile; the camera's own photos have neither, so they are shown as
+    // stored).
+    let (kind, cleaned) = photo::clean_any(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
     Ok(format!(
-        "data:image/jpeg;base64,{}",
+        "data:{};base64,{}",
+        kind.media_type(),
         BASE64.encode(&*cleaned)
     ))
 }
@@ -1306,12 +1338,14 @@ fn locked_original_name(name: &str) -> String {
 }
 
 /// What unlocking a PDF did: the unlocked copy, and the original's new name.
-#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UnlockedPdf {
     record_id: Uuid,
     original_name: String,
 }
+redact_debug!(UnlockedPdf);
 
 /// Unlocks a stored PDF with the password the patient typed (#54). The
 /// document is opened by the PDF helper (`unlock`, `pdf_unlock::unlock_in_helper`
@@ -1404,7 +1438,7 @@ impl std::io::Write for LimitedBuffer {
 /// Finishes an import or export whose picker already closed. The paths the
 /// picker returned stay native, under `pick_id`; the renderer never sees them.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedImportRequest {
     pick_id: Uuid,
     profile_id: Uuid,
@@ -1412,7 +1446,7 @@ struct PickedImportRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedExportRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -1460,6 +1494,13 @@ struct PendingPicks {
     /// document's save to take: gone once saved, at lock, and when the
     /// document is hidden.
     ai_answers: KeptAnswers,
+    /// The picked video being added, if one is: its progress and the patient's Cancel. At most
+    /// one at a time (a copy of up to 2 GiB is not run twice at once).
+    video_import: Mutex<Option<Arc<vault::VideoImportJob>>>,
+    /// The text of pages the reader was shown (#240), so an explanation kept for a document can
+    /// only be of a sentence that document's pages gave: gone at lock and when the document is
+    /// hidden.
+    shown_pages: ShownPages,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1499,6 +1540,128 @@ impl TextTicket {
     /// not), covers only part of the document.
     fn partial(&self, last_page: u32, last_page_cut: bool) -> bool {
         self.truncated || last_page_cut || self.last_index.is_some_and(|last| last_page < last)
+    }
+}
+
+/// The text of the pages `vault_view_page` showed, as native read it from the document (#240):
+/// what a sentence given to `ai_explain` for a document is checked against. Whitespace is
+/// collapsed on both sides, since the page's line breaks and spacing are not the reader's.
+/// A page shown again replaces its earlier entry; the oldest go past the caps below, and every
+/// entry is bound to the session it was shown in. The texts are the document's (PHI): held
+/// zeroizing, so they are overwritten when an entry goes.
+#[derive(Default)]
+struct ShownPages(Mutex<Vec<ShownPage>>);
+
+struct ShownPage {
+    session: u64,
+    record_id: Uuid,
+    page: u32,
+    /// The page's text and its readable text, each with whitespace collapsed.
+    texts: [zeroize::Zeroizing<String>; 2],
+}
+
+/// Pages kept at most, and bytes of text across them: well above the six pages the reader itself
+/// keeps drawn, so a page it shows again from its own cache is still known here.
+const MAX_SHOWN_PAGES: usize = 32;
+const MAX_SHOWN_BYTES: usize = 8 * 1024 * 1024;
+
+/// `text` with every run of whitespace as one space and none at either end.
+fn collapse_whitespace(text: &str) -> zeroize::Zeroizing<String> {
+    zeroize::Zeroizing::new(text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// `text` in lower case, character by character, into a buffer that is overwritten when it goes.
+/// Per character, as the reader folds: `str::to_lowercase` reads a Greek capital sigma at the end
+/// of a word as a final sigma, which would refuse a term the reader found. The buffer is sized
+/// for the longest expansion (one character to three bytes from two), so it never moves.
+fn fold_case(text: &str) -> zeroize::Zeroizing<String> {
+    let mut folded = zeroize::Zeroizing::new(String::with_capacity(text.len() * 2));
+    for char in text.chars() {
+        folded.extend(char.to_lowercase());
+    }
+    folded
+}
+
+impl ShownPages {
+    fn list(&self) -> std::sync::MutexGuard<'_, Vec<ShownPage>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Notes a page shown in `session`, unless `current()` says that session is over: the check
+    /// is made under the same lock as the insert, and a lock's `clear` takes that lock after it
+    /// has ended the session, so a page shown during a lock is never remembered after it.
+    fn note(
+        &self,
+        current: &dyn Fn() -> u64,
+        session: u64,
+        record_id: Uuid,
+        page: u32,
+        text: &str,
+        readable_text: &str,
+    ) {
+        let texts = [
+            collapse_whitespace(text),
+            collapse_whitespace(readable_text),
+        ];
+        let mut list = self.list();
+        if current() != session {
+            return;
+        }
+        // Nothing from an earlier session stays, and a page shown again replaces itself.
+        list.retain(|held| {
+            held.session == session && !(held.record_id == record_id && held.page == page)
+        });
+        list.push(ShownPage {
+            session,
+            record_id,
+            page,
+            texts,
+        });
+        let size = |held: &ShownPage| held.texts[0].len() + held.texts[1].len();
+        while list.len() > MAX_SHOWN_PAGES
+            || (list.len() > 1 && list.iter().map(size).sum::<usize>() > MAX_SHOWN_BYTES)
+        {
+            list.remove(0);
+        }
+    }
+
+    /// The sentence to keep an explanation of `term` with, or `None` when it must be refused:
+    /// `context` with whitespace collapsed (so what is filed is exactly the document's own text),
+    /// if it is inside a page shown for `record_id` in `session` and, not being empty, holds the
+    /// term (case aside). An empty context says nothing about the document, so it passes.
+    fn accept(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        let wanted = collapse_whitespace(context);
+        if wanted.is_empty() {
+            return Some(wanted);
+        }
+        let term = collapse_whitespace(term);
+        if !term.is_empty() && !fold_case(&wanted).contains(fold_case(&term).as_str()) {
+            return None;
+        }
+        self.list()
+            .iter()
+            .any(|held| {
+                held.session == session
+                    && held.record_id == record_id
+                    && held.texts.iter().any(|text| text.contains(wanted.as_str()))
+            })
+            .then_some(wanted)
+    }
+
+    fn forget_record(&self, record_id: Uuid) {
+        self.list().retain(|held| held.record_id != record_id);
+    }
+
+    fn clear(&self) {
+        self.list().clear();
     }
 }
 
@@ -1661,6 +1824,39 @@ impl<T> PickTable<T> {
 }
 
 impl PendingPicks {
+    /// Starts the one picked-video import, or refuses (`Invalid`) while another is running.
+    fn start_video_import(&self) -> Result<Arc<vault::VideoImportJob>, VaultError> {
+        let mut slot = self
+            .video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_some() {
+            return Err(VaultError::Invalid);
+        }
+        let job = vault::VideoImportJob::new();
+        *slot = Some(Arc::clone(&job));
+        Ok(job)
+    }
+
+    /// Ends the import that `job` was, on every path.
+    fn end_video_import(&self, job: &Arc<vault::VideoImportJob>) {
+        let mut slot = self
+            .video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.as_ref().is_some_and(|held| Arc::ptr_eq(held, job)) {
+            *slot = None;
+        }
+    }
+
+    /// The running import's job, for its progress and its Cancel.
+    fn video_import_job(&self) -> Option<Arc<vault::VideoImportJob>> {
+        self.video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// Issues a preview ticket for a text read; any earlier ticket for the
     /// same record ends.
     fn store_text(&self, session: u64, ticket: TextTicket) -> Uuid {
@@ -1715,8 +1911,34 @@ impl PendingPicks {
         self.ai_answers.forget(kept_id);
     }
 
+    /// The reader was shown this page of `record_id` in `session` (#240): not remembered if the
+    /// vault has locked since.
+    fn note_shown_page(&self, session: u64, record_id: Uuid, page: u32, shown: &ViewedPage) {
+        self.shown_pages.note(
+            &|| self.session(),
+            session,
+            record_id,
+            page,
+            &shown.text,
+            &shown.readable_text,
+        );
+    }
+
+    /// The sentence an explanation of `term` for `record_id` is kept with (collapsed), if it is
+    /// from pages shown for that document in `session` (#240).
+    fn explain_context(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        self.shown_pages.accept(session, record_id, term, context)
+    }
+
     /// The document was hidden: its tickets end, and its kept answers.
     fn forget_texts_for(&self, record_id: Uuid) {
+        self.shown_pages.forget_record(record_id);
         self.ai_answers.forget_record(record_id);
         self.texts.retain(|held| held.record_id != record_id);
     }
@@ -1820,17 +2042,18 @@ impl PendingPicks {
         self.texts.clear();
         self.text_exports.clear();
         self.ai_answers.clear();
+        self.shown_pages.clear();
     }
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordIdRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProfileIdRequest {
     profile_id: Uuid,
 }
@@ -1859,13 +2082,14 @@ struct AiAnswer<T> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AiResultRequest {
     record_id: Uuid,
     result_id: Uuid,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ResetRequest {
     confirmation: String,
 }
@@ -1893,7 +2117,15 @@ fn now_ms() -> u64 {
 /// segment is percent-encoded, and for Android document providers it is a
 /// document id that either embeds the storage path ("primary:Documents/labs.pdf")
 /// or is opaque ("msf:31").
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+/// The name given to a picked document whose Android id holds no file name.
+const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
+
+/// What a picked file is called before any stand-in is chosen: a desktop path as it is, a file
+/// URL's decoded final segment, and for an Android document the tail of its id
+/// ("primary:Movies/clip.mp4" gives "clip.mp4"; an opaque id such as "msf:31" gives "31").
+/// Only the first colon of a document id separates the root from the path; a later one belongs
+/// to the file name ("primary:Documents/Scan 10:30.pdf").
+fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
     };
@@ -1907,21 +2139,185 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
-    // The picker offers only PDFs, so a tail that does not end in ".pdf" is
-    // part of an opaque id rather than a name. The fallback keeps the extension
-    // so that an export still suggests a file the platform can open.
-    // A document id is "<root>:<path>". Only the first colon separates them; a
-    // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
     let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
-    let name = path.rsplit('/').next().unwrap_or_default();
-    let is_pdf_name = name
-        .rsplit_once('.')
-        .is_some_and(|(stem, extension)| !stem.is_empty() && extension.eq_ignore_ascii_case("pdf"));
-    if is_pdf_name {
+    path.rsplit('/').next().unwrap_or_default().to_owned()
+}
+
+/// The longest display name an Android provider is believed (characters). A longer one is
+/// not used: the id's own tail is, as before.
+const MAX_PROVIDED_NAME_CHARS: usize = 255;
+
+/// The name a pick is routed and stored under: the one the document provider reported
+/// (`OpenableColumns.DISPLAY_NAME`) when it is a plain file name, otherwise the tail of the id
+/// (`picked_name_tail`). An opaque Android id (`msf:31`) says nothing about the file, while the
+/// provider's name ("clip.mp4") does. The provider's name is another app's text, so it is used
+/// only when it is one path-free line with a stem and an extension, of a bounded length; anything
+/// else is as if the provider had given none. "Plain" is the vault's own rule for what a stored
+/// name keeps: no character `vault::is_hidden_name_char` names (controls, zero-width and direction
+/// characters, line and paragraph separators, the word joiner, the byte order mark), the same
+/// predicate `sanitize_basename` drops, so nothing the routing accepts is later changed by the store.
+fn routing_name(tail: &str, provided: Option<&str>) -> String {
+    let usable = provided.map(str::trim).filter(|name| {
+        has_stem_and_extension(name)
+            && name.chars().count() <= MAX_PROVIDED_NAME_CHARS
+            && !name
+                .chars()
+                .any(|c| vault::is_hidden_name_char(c) || c == '/' || c == '\\')
+    });
+    usable.unwrap_or(tail).to_owned()
+}
+
+/// Whether `name` ends in `.extension` after a stem (`clip.mp4`, not `31`, `.pdf` or `name.`). A
+/// tail of an Android document id that does not is **opaque** (`msf:31`): it says nothing about the
+/// file, so only then is the provider asked what it calls it.
+fn has_stem_and_extension(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+}
+
+/// How long one file's provider is given to say its name (Android). Asking only reads a column,
+/// but a provider backed by a cloud service may fetch first.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How long a whole pick may spend asking providers, however many files it holds: a slow provider
+/// is given at most this much in all, not 3 seconds for each of up to 100 files. Once it is spent
+/// the rest are not asked and keep the tail of their ids, as if the provider had given no name.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAMES_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Asks for the names of the files `askable` says to ask about, one after another, within ONE
+/// time budget: each question gets at most `each`, and at most what is left of `budget`; when
+/// nothing is left a file is not asked. An unanswered, late or refused question is `None`. The
+/// asking itself is `ask` (the Android plugin call), so the rule is the same, and testable, on
+/// every platform.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+async fn ask_names_within<F, Fut>(
+    count: usize,
+    askable: impl Fn(usize) -> bool,
+    budget: std::time::Duration,
+    each: std::time::Duration,
+    mut ask: F,
+) -> Vec<Option<String>>
+where
+    F: FnMut(usize) -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let deadline = std::time::Instant::now() + budget;
+    let mut names = Vec::with_capacity(count);
+    for index in 0..count {
+        if !askable(index) {
+            names.push(None);
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            names.push(None);
+            continue;
+        }
+        names.push(
+            tokio::time::timeout(left.min(each), ask(index))
+                .await
+                .ok()
+                .flatten(),
+        );
+    }
+    names
+}
+
+/// What each picked file's provider calls it. Only an Android `content://` pick is asked
+/// (`ContentResolver`, through the plugin); every other pick, and any answer that is missing or
+/// fails, is `None`, which `routing_name` treats as "use the tail of the id".
+async fn provider_display_names(
+    _app: &tauri::AppHandle,
+    paths: &[tauri_plugin_fs::FilePath],
+) -> Vec<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        // Only an opaque `content://` id is asked (a tail that already names a file needs no
+        // question), and the whole pick shares one time budget.
+        let tails: Vec<String> = paths.iter().map(picked_name_tail).collect();
+        let urls: Vec<Option<String>> = paths
+            .iter()
+            .map(|path| match path {
+                tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content" => {
+                    Some(url.as_str().to_owned())
+                }
+                _ => None,
+            })
+            .collect();
+        ask_names_within(
+            paths.len(),
+            |index| urls[index].is_some() && !has_stem_and_extension(&tails[index]),
+            PROVIDER_NAMES_BUDGET,
+            PROVIDER_NAME_TIMEOUT,
+            |index| {
+                let url = urls[index].clone().unwrap_or_default();
+                async move { tauri_plugin_android_pdf::display_name(_app, &url).await }
+            },
+        )
+        .await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        vec![None; paths.len()]
+    }
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
+    if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
+        return name;
+    }
+    // The picker offers only PDFs and pictures, so a tail that does not end in
+    // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
+    // so that an export still suggests a file the platform can open.
+    let name = name.as_str();
+    let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && ["pdf", "jpg", "jpeg", "png"]
+                .iter()
+                .any(|accepted| extension.eq_ignore_ascii_case(accepted))
+    });
+    if is_file_name {
         name.to_owned()
     } else {
-        "Imported document.pdf".to_owned()
+        IMPORTED_DOCUMENT_NAME.to_owned()
     }
+}
+
+/// The name given to a picked video whose Android id holds no file name.
+const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
+
+/// Name recorded for an imported video: the name it came with, or for an Android document id that
+/// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
+/// "Imported document.pdf", which a video must never be named.
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
+    let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
+    if content && !is_video_name(&name) {
+        IMPORTED_VIDEO_NAME.to_owned()
+    } else {
+        name
+    }
+}
+
+/// The name an imported picture is stored under: the name it came with when that already ends
+/// the way its kind does (`.jpg` or `.jpeg` for a JPEG, `.png` for a PNG), otherwise with the
+/// suffix of what it is added, so the stored name always describes the stored bytes (a rename
+/// keeps it that way, `rename_document`). The stand-in name an opaque Android document id gets
+/// (`Imported document.pdf`) is replaced, so that a picture is never named as a PDF.
+fn picture_import_name(name: String, kind: Option<photo::PictureKind>) -> String {
+    let Some(kind) = kind else {
+        return name;
+    };
+    if kind.names(&name) {
+        return name;
+    }
+    if name == IMPORTED_DOCUMENT_NAME {
+        return format!("Imported picture{}", kind.extension());
+    }
+    format!("{name}{}", kind.extension())
 }
 
 #[tauri::command]
@@ -2226,7 +2622,7 @@ async fn ai_model_add_picked(
     let _open = ActivityHold::new(store.idle());
     let picker = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        let dialog = picker.dialog().file();
+        let dialog = file_dialog(&picker);
         #[cfg(desktop)]
         let dialog = dialog.add_filter(&filter, &["gguf"]);
         #[cfg(not(desktop))]
@@ -2554,13 +2950,14 @@ fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_ch
 }
 
 /// What a term means in its sentence, from the model on this computer (#72). With the
-/// document, which must be a readable PDF, the answer is also kept for that document's save.
+/// document, which must be a readable PDF, the answer is also kept for that document's save,
+/// and its sentence must then be from the pages the reader was shown for that document (#240).
 #[tauri::command]
 async fn ai_explain(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::ExplainRequest,
+    mut request: model_runtime::ExplainRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
     let store = store.pin();
@@ -2571,6 +2968,15 @@ async fn ai_explain(
     let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
+        // The sentence an explanation is kept with must be from this document's own pages, as
+        // native showed them to the reader (#240): the model's words are never filed on a
+        // document under a sentence it does not contain. What is asked and filed is that
+        // sentence with its whitespace collapsed, exactly the document's own words; a sentence
+        // that has anything must hold the term.
+        let mut sentence = picks
+            .explain_context(session, record_id, request.term.trim(), &request.context)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        request.context = std::mem::take(&mut *sentence);
         // Validation may outlive its originating session. It must not count
         // as unowned activity in whichever session is open when it returns.
         let store = Arc::clone(store.arc());
@@ -3026,6 +3432,9 @@ async fn vault_create(
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -3054,6 +3463,9 @@ async fn vault_unlock(
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -3073,7 +3485,7 @@ async fn vault_unlock(
     )
     .await?;
     refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
-    after_open(store.arc());
+    after_open(store.arc(), &store.all());
     run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
@@ -3291,15 +3703,64 @@ async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> Co
     Ok(())
 }
 
+/// The ids of the vaults on this device other than `store`'s, as their notice keys carry them (an
+/// open vault's own, a locked one's from its header), or `None` when one of them cannot be read:
+/// the caller then wipes nothing, because a key is kept rather than guessed about (#357).
+fn other_vault_ids(
+    store: &Arc<VaultStore>,
+    vaults: &[Arc<VaultStore>],
+) -> Option<std::collections::HashSet<Uuid>> {
+    let mut ids = std::collections::HashSet::new();
+    for other in vaults.iter().filter(|other| !Arc::ptr_eq(other, store)) {
+        match other.notice_key_vault() {
+            vault::NoticeKeyVault::Id(id) => {
+                ids.insert(id);
+            }
+            // A slot with no vault made in it holds no keys.
+            vault::NoticeKeyVault::None => {}
+            vault::NoticeKeyVault::Unknown => return None,
+        }
+    }
+    Some(ids)
+}
+
+/// After a vault is reset: its notice keys go, and every key of a vault the device does not hold;
+/// another vault's keys stay (#357). On a device with the one vault, that is every key.
+/// `reset_id` is the id the vault had before the reset (`NoticeKeyVault::id`), so its own keys go
+/// even when another vault's id cannot be read.
+async fn wipe_notice_keys_of_reset_vault(
+    store: &Arc<VaultStore>,
+    vaults: Vec<Arc<VaultStore>>,
+    reset_id: Option<Uuid>,
+) {
+    let store = Arc::clone(store);
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        notice_key::after_reset(reset_id, other_vault_ids(&store, &vaults).as_ref());
+    })
+    .await;
+}
+
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
 /// asked for) runs in the background, so opening never waits on the network.
-fn after_open(store: &Arc<VaultStore>) {
+fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
     let store = Arc::clone(store);
+    let vaults = vaults.to_vec();
     tauri::async_runtime::spawn_blocking(move || {
-        // Notice keys of any other vault go (#230).
+        // Notice keys of a vault this device no longer holds go (#230); another vault's stay, so
+        // switching between vaults keeps each one's keys (#357). With the one vault, `held` is just
+        // it and every other key goes, as before. If another vault's id cannot be read, nothing is
+        // wiped now.
         if let Some(vault_id) = store.open_vault_id() {
-            notice_key::after_open(vault_id);
+            if let Some(held) =
+                notice_key::held_with_open(vault_id, other_vault_ids(&store, &vaults))
+            {
+                notice_key::after_open(&held);
+            }
         }
+        // Keys whose link was removed before their wipe finished (#160). One read of the vault id
+        // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
+        // an empty link set.
+        store.sweep_notice_keys();
         store.after_open();
         // The notices switch is kept in the vault: read it now it is open, then bring the notice
         // keys in line with the two switches (#230).
@@ -3428,6 +3889,7 @@ fn vault_touch(store: State<'_, StoreHandle>) {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AutoLockRequest {
     minutes: u64,
 }
@@ -3772,6 +4234,20 @@ async fn vault_forget_refused_deliveries(
 }
 
 #[tauri::command]
+async fn vault_portal_remove_link(
+    store: State<'_, StoreHandle>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.remove_portal_link(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 async fn vault_check_documents(
     store: State<'_, StoreHandle>,
 ) -> CommandResult<portal_pickup::CheckResult> {
@@ -3967,6 +4443,22 @@ fn confirmed_natively<R: tauri::Runtime>(
 #[cfg(desktop)]
 const MAIN_WINDOW: &str = "main";
 
+/// A native file dialog owned by the app's window. Every file picker and save dialog of the app
+/// is opened through this and never through `app.dialog().file()`: with no owner, Windows shows
+/// the picker as a separate top-level window that is not modal to the app, so the patient can
+/// carry on in the app behind it, lose it behind the window or in the taskbar, and leave the
+/// operation waiting on a dialog that looks closed. Owned, it stays above the window and
+/// blocks it. No timeout is added: a patient may leave a dialog open as long as they like.
+fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().file();
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    };
+    dialog
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -4084,9 +4576,7 @@ async fn vault_recovery_kit_save(
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        dialog
-            .dialog()
-            .file()
+        file_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -4137,6 +4627,9 @@ async fn vault_recover(
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -4155,7 +4648,7 @@ async fn vault_recover(
     )
     .await?;
     refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
-    after_open(store.arc());
+    after_open(store.arc(), &store.all());
     Ok(RecoverResponse {
         passphrase_replaced,
         snapshot: run_blocking(store.arc(), VaultStore::snapshot).await?,
@@ -4163,7 +4656,7 @@ async fn vault_recover(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BackupPickRequest {
     /// Today's date on the patient's own calendar, `YYYY-MM-DD`.
     #[serde(default)]
@@ -4179,6 +4672,32 @@ fn is_plain_date(text: &str) -> bool {
             4 | 7 => *byte == b'-',
             _ => byte.is_ascii_digit(),
         })
+}
+
+/// The name a single-document export suggests in the save dialog: "Document <date>" plus the
+/// document's own extension, never the document's name, which can be a person's, a clinic's or a
+/// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
+/// so a patient who wants the original name can type it. The date is the patient's own day where
+/// the renderer gives one that reads as a date, else the UTC date. The suffix is kept, with its
+/// own case, only when it is a kind the vault stores (`EXPORT_NAME_KINDS`): any other dotted end
+/// of a name is part of the name ("Dr.Smith", "J.Lopez", "Lab results 14.30"), not a kind, and
+/// would put it back in the file name.
+fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    /// The kinds of document the vault stores, as file name suffixes (case does not matter).
+    const EXPORT_NAME_KINDS: [&str; 5] = ["pdf", "jpg", "jpeg", "png", "mp4"];
+    let date = local_date
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
+    match display_name.rsplit_once('.') {
+        Some((_, extension))
+            if EXPORT_NAME_KINDS
+                .iter()
+                .any(|kind| extension.eq_ignore_ascii_case(kind)) =>
+        {
+            format!("Document {date}.{extension}")
+        }
+        _ => format!("Document {date}"),
+    }
 }
 
 /// What a saved backup was: the name of the file written, where the
@@ -4315,7 +4834,7 @@ async fn vault_backup_pick(
     let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4601,7 +5120,7 @@ async fn vault_profile_export_pick(
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4718,7 +5237,7 @@ async fn vault_profile_import_pick(
     let _open = ActivityHold::new(store.idle());
     // No filter: a phone's picker filters by file type, and a handover file has none it knows.
     let source =
-        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_file())
+        tauri::async_runtime::spawn_blocking(move || file_dialog(&app).blocking_pick_file())
             .await
             .map_err(|_| PublicError::from(VaultError::Storage))?;
     let Some(source) = source else {
@@ -5024,7 +5543,7 @@ async fn vault_restore_pick(
     .await?;
     let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
-        let picker = app.dialog().file();
+        let picker = file_dialog(&app);
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
@@ -5130,6 +5649,8 @@ async fn vault_restore(
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
     let store = store.pin();
+    // A restore writes a vault into the data folder: the same refusal as creating one.
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
@@ -5384,10 +5905,17 @@ async fn vault_import_pick(
     .await?;
     let _open = ActivityHold::new(store.idle());
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        // The combined filter is first because the first filter is what the dialog shows by default
+        // (on Windows it is the one selected, and pictures stayed hidden behind a PDF-only list until
+        // the patient switched it by hand); PDF documents and pictures alone are one choice away,
+        // PDF first. JPEG and PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -5413,6 +5941,9 @@ async fn vault_import_picked(
         folder_ids: request.folder_ids.clone(),
     };
     let paths = picks.take_import(request.pick_id, &picked_for)?;
+    // The names the providers give (Android), asked before the blocking work: a stored name is a
+    // real one even where the id is opaque.
+    let provided = provider_display_names(&app, &paths).await;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.arc(), move |store| {
@@ -5421,8 +5952,8 @@ async fn vault_import_picked(
             // A provider may download a whole document before the open returns,
             // with no progress to report meanwhile.
             let _opening = Opening::new(store.idle());
-            for path in paths {
-                sources.push(open_import_source(&app, path)?);
+            for (path, provided) in paths.into_iter().zip(provided) {
+                sources.push(open_import_source(&app, path, provided.as_deref())?);
             }
         }
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
@@ -5430,14 +5961,232 @@ async fn vault_import_picked(
     .await
 }
 
+/// What "+ New" picked: documents and pictures (added by `vault_import_picked`), one video (added
+/// by `vault_import_video_picked`), or a choice no import takes. A refusal is an answer, not an
+/// error, and nothing is kept for it: the page says why in a fixed sentence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum AnyPick {
+    Documents {
+        pick_id: Uuid,
+    },
+    Video {
+        pick_id: Uuid,
+    },
+    /// A video is added on its own, with its own progress and Cancel: it was chosen with other
+    /// files, or with another video.
+    VideoAlone,
+}
+
+/// Whether a picked file's name says it is a video (the import checks the bytes, as ever).
+fn is_video_name(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        ["mp4", "m4v", "mov"]
+            .iter()
+            .any(|video| extension.eq_ignore_ascii_case(video))
+    })
+}
+
+/// How a pick is routed: no video is documents and pictures; exactly one file that is a video is
+/// that video; a video among others, or two videos, is refused (`None`).
+fn route_pick(names: &[String]) -> Option<bool> {
+    let videos = names.iter().filter(|name| is_video_name(name)).count();
+    match (videos, names.len()) {
+        (0, _) => Some(false),
+        (1, 1) => Some(true),
+        _ => None,
+    }
+}
+
+/// Opens the one picker "+ New" uses: PDF documents, pictures and videos (one combined choice
+/// first, then each kind alone). Returns what was picked, or `None` when it was cancelled.
+#[tauri::command]
+async fn vault_import_any_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<AnyPick>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let all_filter = locale.text(MessageId::NativeFilterPdfPicturesAndVideos)?;
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    // The picker takes `app`; the providers' names are asked afterwards.
+    let names_app = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
+        // PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(
+                &all_filter,
+                &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"],
+            )
+            .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&video_filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(paths) = picked else {
+        return Ok(None);
+    };
+    vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
+    // The name the provider gave, not the display name: an Android document id that does not end in
+    // a known extension is shown as "Imported document.pdf", which would send a video down the
+    // document path. An opaque id ("msf:31") is routed by what the provider calls the file.
+    let provided = provider_display_names(&names_app, &paths).await;
+    let names: Vec<String> = paths
+        .iter()
+        .zip(&provided)
+        .map(|(path, provided)| routing_name(&picked_name_tail(path), provided.as_deref()))
+        .collect();
+    Ok(Some(match route_pick(&names) {
+        None => AnyPick::VideoAlone,
+        Some(video) => {
+            let pick_id = picks.store_import(session, request, paths);
+            if video {
+                AnyPick::Video { pick_id }
+            } else {
+                AnyPick::Documents { pick_id }
+            }
+        }
+    }))
+}
+
+/// Opens the picker for one video. Returns the id of the chosen file, or `None` when the picker
+/// was cancelled. Adding it is `vault_import_video_picked`.
+#[tauri::command]
+async fn vault_import_video_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    // Refuse before the picker opens, as for documents.
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let filter = locale.text(MessageId::NativeFilterVideo)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // The owned helper, like every other picker (a bare dialog is a separate window on Windows).
+        file_dialog(&app)
+            .add_filter(&filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    Ok(Some(picks.store_import(session, request, vec![path])))
+}
+
+/// Adds the picked video: checked, cleaned of the places and devices it names, and sealed, or
+/// refused with a reason (an answer, not an error). The patient can watch it with
+/// `vault_video_import_progress` and stop it with `vault_video_import_cancel`.
+#[tauri::command]
+async fn vault_import_video_picked(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickedImportRequest,
+) -> CommandResult<vault::PickedVideoOutcome> {
+    let store = store.pin();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let picked_for = ImportRequest {
+        profile_id: request.profile_id,
+        folder_ids: request.folder_ids.clone(),
+    };
+    let mut paths = picks.take_import(request.pick_id, &picked_for)?;
+    let (Some(path), true) = (paths.pop(), paths.is_empty()) else {
+        return Err(VaultError::ImportBatchLimit.into());
+    };
+    let provided = provider_display_names(&app, std::slice::from_ref(&path))
+        .await
+        .pop()
+        .flatten();
+    let job = picks.start_video_import()?;
+    let running = Arc::clone(&job);
+    let result = run_blocking(store.arc(), move |store| {
+        let name = video_import_display_name(&path, provided.as_deref());
+        let idle = Arc::clone(store.idle());
+        // Opening a source can block (a network path, or a provider that fetches the file first).
+        let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+            let _opening = Opening::new(&idle);
+            open_source_reader(&app, path.clone())
+        };
+        store.import_picked_video(
+            vault::PickedVideoRequest {
+                profile_id: request.profile_id,
+                folder_ids: request.folder_ids,
+                display_name: name,
+                max_bytes: video_import::max_video_bytes(),
+                now_ms: now_ms(),
+            },
+            &open,
+            &running,
+        )
+    })
+    .await;
+    picks.end_video_import(&job);
+    result
+}
+
+/// How far the picked video's import has come: `idle` when none is running.
+#[tauri::command]
+fn vault_video_import_progress(picks: State<'_, Arc<PendingPicks>>) -> vault::VideoImportProgress {
+    picks.video_import_job().map_or(
+        vault::VideoImportProgress {
+            stage: vault::VideoImportStage::Idle,
+            done_bytes: 0,
+            total_bytes: 0,
+        },
+        |job| job.progress(),
+    )
+}
+
+/// The patient's Cancel: stops the running import at its next read, and nothing is stored.
+#[tauri::command]
+fn vault_video_import_cancel(picks: State<'_, Arc<PendingPicks>>) {
+    if let Some(job) = picks.video_import_job() {
+        job.cancel();
+    }
+}
+
 fn open_import_source(
     app: &tauri::AppHandle,
     path: tauri_plugin_fs::FilePath,
+    provided: Option<&str>,
 ) -> Result<ImportSource, VaultError> {
-    let display_name = import_display_name(&path);
+    let display_name = import_display_name(&path, provided);
+    let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
-        display_name,
-        reader: require_pdf(open_source_reader(app, path)?)?,
+        display_name: picture_import_name(display_name, kind),
+        reader,
     })
 }
 
@@ -5446,9 +6195,10 @@ fn open_received_source(
     app: &tauri::AppHandle,
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
+    let (kind, reader) = open_supported_file(open_received_reader(app, &file)?)?;
     Ok(ImportSource {
-        reader: require_pdf(open_received_reader(app, &file)?)?,
-        display_name: file.name,
+        reader,
+        display_name: picture_import_name(file.name, kind),
     })
 }
 
@@ -5483,18 +6233,50 @@ fn open_source_reader(
     Ok(Box::new(file))
 }
 
-/// Refuses a file that does not start the way a PDF does. The start is read while the file is
-/// opened, so a refused file stops the import before anything is staged.
-fn require_pdf(
+/// Says what an importable file is and gives its bytes: a PDF streams in as it is (it was checked
+/// while it was opened, so a refused file stops the import before anything is staged); a JPEG is
+/// read whole (at most a photo's size) and **cleaned first** (`photo::clean_picture`): place, time,
+/// device, thumbnail and every other block are gone, and only the orientation and a plain colour
+/// profile are kept. What is stored is already clean, whatever app made the picture. Anything else
+/// is refused (`NotPdf`, worded for both kinds). A JPEG that is damaged, not a baseline or
+/// progressive image, or too large is refused as a picture (`NotPhoto`).
+#[cfg(test)]
+fn require_supported_file(
     reader: Box<dyn std::io::Read + Send>,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
-    received::require_pdf_header(reader).map_err(|error| {
+    open_supported_file(reader).map(|(_, reader)| reader)
+}
+
+/// `require_supported_file`, also saying which picture it was (`None` for a PDF), so that the
+/// import can name the picture for what it is (`picture_import_name`).
+fn open_supported_file(
+    reader: Box<dyn std::io::Read + Send>,
+) -> Result<(Option<photo::PictureKind>, Box<dyn std::io::Read + Send>), VaultError> {
+    let (kind, reader) = received::classify(reader).map_err(|error| {
         if received::is_not_pdf(&error) {
             VaultError::NotPdf
         } else {
             VaultError::from(error)
         }
-    })
+    })?;
+    match kind {
+        received::FileKind::Pdf => Ok((None, reader)),
+        received::FileKind::Jpeg | received::FileKind::Png => {
+            use std::io::Read as _;
+            // Room for the most a picture may be (and one byte over, which is enough to say it is
+            // too large) from the start: a buffer that grows leaves outgrown copies of a health
+            // picture behind, which nothing wipes.
+            let mut bytes = Zeroizing::new(Vec::with_capacity(photo::MAX_PHOTO_BYTES + 1));
+            // One byte over the cap is enough to say it is too large.
+            reader
+                .take(photo::MAX_PHOTO_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(VaultError::from)?;
+            let (picture, cleaned) = photo::clean_any(&bytes).map_err(|_| VaultError::NotPhoto)?;
+            drop(bytes);
+            Ok((Some(picture), Box::new(std::io::Cursor::new(cleaned))))
+        }
+    }
 }
 
 /// A picked file that cannot be opened is a problem with that file, not with
@@ -5519,7 +6301,7 @@ struct ReceivedState {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MoveToPersonRequest {
     record_ids: Vec<Uuid>,
     profile_id: Uuid,
@@ -5668,14 +6450,14 @@ fn accept_received_batch(
 
 /// The files the patient confirmed adding (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedAcceptRequest {
     ids: Vec<Uuid>,
 }
 
 /// The files the patient said No to (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedDiscardRequest {
     ids: Vec<Uuid>,
 }
@@ -5738,7 +6520,7 @@ async fn received_accept(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ViewPageRequest {
     record_id: Uuid,
     page: u32,
@@ -5799,6 +6581,7 @@ impl ViewedPage {
 #[tauri::command]
 async fn vault_view_page(
     store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
     let store = store.pin();
@@ -5816,14 +6599,20 @@ async fn vault_view_page(
     drop(request);
     // Taken now: a newer page request, a lock or the reader closing stops this one.
     let ticket = pdf_view::ViewTicket::new();
+    let session = picks.session();
     let result = run_blocking(store.arc(), move |store| {
-        let size = store
-            .snapshot()?
+        let snapshot = store.snapshot()?;
+        let record = snapshot
             .records
             .iter()
             .find(|record| record.id == record_id)
-            .ok_or(VaultError::NotFound)?
-            .plaintext_size;
+            .ok_or(VaultError::NotFound)?;
+        // A hidden document is not shown, so a view that began before it was hidden cannot note
+        // its page afterwards (#240).
+        if record.hidden.is_some() {
+            return Err(VaultError::NotFound);
+        }
+        let size = record.plaintext_size;
         if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
             return Err(VaultError::PdfTooLarge);
         }
@@ -5855,6 +6644,11 @@ async fn vault_view_page(
     if !ticket.is_current() {
         return Err(VaultError::Cancelled.into());
     }
+    // What the reader is shown is what an explanation's sentence is checked against (#240), in
+    // the session it was shown in: a lock since makes `session` a stale one.
+    if let Ok(shown) = &result {
+        picks.note_shown_page(session, record_id, page, shown);
+    }
     result
 }
 
@@ -5881,7 +6675,7 @@ fn cancel_native_pdf(_app: &tauri::AppHandle) {
 /// none of its own. Short, with no control characters.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfLabels {
     close: String,
     previous: String,
@@ -5892,6 +6686,9 @@ struct AndroidPdfLabels {
     page: String,
     /// "Page {page} of {total}".
     page_status: String,
+    /// "Page {page} of {total} could not be shown": said, and set as the page's description, where
+    /// a page fails to render (it used to be dropped here, so the reader showed nothing).
+    page_failed: String,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -5905,6 +6702,7 @@ impl AndroidPdfLabels {
             &self.zoom_out,
             &self.page,
             &self.page_status,
+            &self.page_failed,
         ]
         .into_iter()
         .all(|label| {
@@ -5915,7 +6713,7 @@ impl AndroidPdfLabels {
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfRequest {
     record_id: Uuid,
     labels: AndroidPdfLabels,
@@ -5998,6 +6796,7 @@ async fn vault_read_android_pdf(
                     zoom_out: &request.labels.zoom_out,
                     page: &request.labels.page,
                     page_status: &request.labels.page_status,
+                    page_failed: &request.labels.page_failed,
                 },
                 activity,
             },
@@ -6033,7 +6832,7 @@ fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
 
 /// Where a quoted span of a page's text is on the page picture (#292).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PageBoxesRequest {
     record_id: Uuid,
     page: u32,
@@ -6151,7 +6950,7 @@ async fn vault_page_boxes(
 
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentTextRequest {
     record_id: Uuid,
     /// Who asks: the screen's own id, so that its cancel ends only this read.
@@ -6379,7 +7178,7 @@ async fn vault_document_text(
 
 /// Which text read to stop: the id the screen gave when it asked.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextReadCancelRequest {
     read_id: Uuid,
 }
@@ -6408,7 +7207,7 @@ async fn vault_record_known_details(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -6434,8 +7233,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -6448,7 +7246,7 @@ async fn vault_export_text_pick(
 const MAX_EXPORT_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickedRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -6570,7 +7368,7 @@ async fn vault_export_text_picked(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportCopyRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -6660,8 +7458,8 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
     received.receive(urls.len(), sources);
 }
 
-/// Opens the save picker with the record's name. Returns the id of the chosen
-/// destination, or `None` when the picker was cancelled. The copy itself is
+/// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
+/// id of the chosen destination, or `None` when the picker was cancelled. The copy itself is
 /// written by `vault_export_picked`.
 #[tauri::command]
 async fn vault_export_pick(
@@ -6672,13 +7470,18 @@ async fn vault_export_pick(
 ) -> CommandResult<Option<Uuid>> {
     let store = store.pin();
     let record_id = request.record_id;
+    let local_date = request.local_date;
     let session = picks.session();
-    let suggested_name =
-        run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
+    // `export_name` still refuses a lost or hidden record before a picker opens; only its answer
+    // (the document's own name) is not what the dialog is given.
+    let suggested_name = export_suggested_name(
+        &run_blocking(store.arc(), move |store| store.export_name(record_id)).await?,
+        local_date.as_deref(),
+        now_ms(),
+    );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -6740,10 +7543,17 @@ async fn vault_export_picked(
 #[tauri::command]
 async fn vault_hide_unavailable_records(
     store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     let store = store.pin();
-    run_blocking(store.arc(), move |store| {
+    // As when one document is hidden: its tickets, kept answers and shown pages end, and a page
+    // being drawn for it stops.
+    for record_id in &request.confirmed {
+        picks.forget_texts_for(*record_id);
+    }
+    pdf_view::cancel_views();
+    let hidden = run_blocking(store.arc(), move |store| {
         store.hide_unavailable_records_covering(
             &request.confirmed,
             request.hidden_people_documents,
@@ -6754,7 +7564,12 @@ async fn vault_hide_unavailable_records(
     .map_err(|error| match error.code {
         "recovery_mode" => PublicError::removal_not_possible(),
         _ => error,
-    })
+    })?;
+    // Pages drawn while it ran were of documents that are hidden now.
+    for record_id in &hidden {
+        picks.forget_texts_for(*record_id);
+    }
+    Ok(hidden)
 }
 
 /// Saves a photo taken with the camera dialog. The request's body is its
@@ -7060,7 +7875,7 @@ async fn vault_is_locked_pdf(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UnlockPdfRequest {
     record_id: Uuid,
     password: String,
@@ -7111,7 +7926,7 @@ async fn vault_unlock_named(
         .map_err(Into::into)
     })
     .await?;
-    after_open(&opened);
+    after_open(&opened, &store.all());
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
@@ -7165,7 +7980,7 @@ async fn vault_add_vault(
     .map_err(PublicError::from)?;
     // The vault is made and stays registered; it is locked again and the screen is told no.
     refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
-    after_open(&opened);
+    after_open(&opened, &store.all());
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
@@ -7258,12 +8073,18 @@ async fn vault_hide_record(
     request: RecordIdRequest,
 ) -> CommandResult<()> {
     let store = store.pin();
-    // A hidden document's text can no longer be saved (#72, AI-02).
+    // A hidden document's text can no longer be saved (#72, AI-02), and a page being drawn for
+    // it stops.
     picks.forget_texts_for(request.record_id);
-    run_blocking(store.arc(), move |store| {
+    pdf_view::cancel_views();
+    let record_id = request.record_id;
+    let hidden = run_blocking(store.arc(), move |store| {
         store.hide_record(request.record_id, now_ms())
     })
-    .await
+    .await;
+    // A page drawn while it ran was of a document that is hidden now.
+    picks.forget_texts_for(record_id);
+    hidden
 }
 
 /// Keeps the AI helper's answer with its document, encrypted (#72 part D).
@@ -7445,9 +8266,11 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    // The id the vault has now, for its notice keys after it is gone (#357).
+    let reset_id = run_blocking(store.arc(), |vault| Ok(vault.notice_key_vault().id())).await?;
     run_blocking(store.arc(), VaultStore::reset).await?;
-    // Its notice keys go with it (#230).
-    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
+    // Its notice keys go with it (#230); another vault's stay (#357).
+    wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
@@ -7628,6 +8451,8 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_trust::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -7714,12 +8539,22 @@ pub fn run() {
             // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
             // nothing is written, so this is what it was. Each slot has its own notification ledger
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            // iOS: the whole data folder stays out of iCloud and computer backups (#422, guideline
+            // 5.1.3(ii)). Ben decided the exclusion is kept, so a failure refuses vault work.
+            if let Err(error) = backup_exclusion::configure(app.path().app_local_data_dir()?) {
+                // Not fatal to start: creating, unlocking and recovering a vault refuse until it
+                // can be set (and try again each time), so no health data is ever written first.
+                #[cfg(debug_assertions)]
+                eprintln!("could not exclude the data folder from backups: {error}");
+                #[cfg(not(debug_assertions))]
+                let _ = error;
+            }
             let slots = Arc::new(vault_slots::VaultSlots::open(
                 app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),
             ));
             // One worker for the app, ticking whichever vault the screen is on.
-            #[cfg(windows)]
+            #[cfg(desktop)]
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
             app.manage(StoreHandle::from_source(slots));
@@ -7864,6 +8699,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_portal_remove_link,
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
@@ -7905,6 +8741,11 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            vault_import_any_pick,
+            vault_import_video_pick,
+            vault_import_video_picked,
+            vault_video_import_progress,
+            vault_video_import_cancel,
             received_list,
             received_accept,
             received_discard,
@@ -7987,6 +8828,63 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_name_is_a_video_by_its_extension_in_any_case() {
+        for name in ["a.mp4", "A.MP4", "clip.M4V", "x.y.mov", "Scan 10:30.MoV"] {
+            assert!(is_video_name(name), "{name}");
+        }
+        for name in [
+            "a.pdf",
+            "mp4",
+            ".mp4x",
+            "a.mp4.pdf",
+            "movie",
+            "a.jpeg",
+            "",
+            "a.",
+        ] {
+            // ".mp4x" and "mp4" are not videos; "a.mp4.pdf" ends in pdf
+            assert!(!is_video_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pick_goes_to_documents_to_one_video_or_is_refused() {
+        // No video: documents and pictures, as before.
+        assert_eq!(
+            route_pick(&names(&["a.pdf", "b.png", "c.jpg"])),
+            Some(false)
+        );
+        assert_eq!(route_pick(&names(&[])), Some(false));
+        // Exactly one file, and it is a video.
+        assert_eq!(route_pick(&names(&["Clip.MP4"])), Some(true));
+        // A video among others, or two videos, is one the video import does not take.
+        assert_eq!(route_pick(&names(&["a.pdf", "b.mp4"])), None);
+        assert_eq!(route_pick(&names(&["b.mov", "a.png"])), None);
+        assert_eq!(route_pick(&names(&["a.mp4", "b.m4v"])), None);
+    }
+
+    #[test]
+    fn a_pick_answer_names_its_kind_and_carries_no_path() {
+        let pick_id = Uuid::nil();
+        let documents = serde_json::to_value(AnyPick::Documents { pick_id }).unwrap();
+        assert_eq!(
+            documents,
+            serde_json::json!({"kind": "documents", "pickId": pick_id})
+        );
+        let video = serde_json::to_value(AnyPick::Video { pick_id }).unwrap();
+        assert_eq!(
+            video,
+            serde_json::json!({"kind": "video", "pickId": pick_id})
+        );
+        let refused = serde_json::to_value(AnyPick::VideoAlone).unwrap();
+        assert_eq!(refused, serde_json::json!({"kind": "videoAlone"}));
+    }
 
     #[test]
     fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
@@ -8405,6 +9303,71 @@ mod tests {
     }
 
     #[test]
+    fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+                                     // The document's name never reaches the dialog, whoever it names.
+        for (own, expected) in [
+            ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
+            ("Photo.jpg", "Document 2026-11-26.jpg"),
+            ("Holiday.JPEG", "Document 2026-11-26.JPEG"),
+            ("scan.final.png", "Document 2026-11-26.png"),
+            (".jpg", "Document 2026-11-26.jpg"),
+            ("no extension at all", "Document 2026-11-26"),
+            ("ends with a dot.", "Document 2026-11-26"),
+            ("odd.é", "Document 2026-11-26"),
+            ("long.extensions9", "Document 2026-11-26"),
+            ("slash.p/f", "Document 2026-11-26"),
+            ("clip.MP4", "Document 2026-11-26.MP4"),
+            ("Letter.Pdf", "Document 2026-11-26.Pdf"),
+            // A dotted end that is part of a name is not a kind of file: nothing of it is kept.
+            ("dots.p.d.f", "Document 2026-11-26"),
+            ("Dr.Smith", "Document 2026-11-26"),
+            ("J.Lopez", "Document 2026-11-26"),
+            ("Lab results 14.30", "Document 2026-11-26"),
+            ("Dr.Smith referral.pdf", "Document 2026-11-26.pdf"),
+        ] {
+            let name = export_suggested_name(own, Some("2026-11-26"), utc);
+            assert_eq!(name, expected, "{own}");
+            assert!(!name.to_lowercase().contains("ana"), "{own}");
+            assert!(!name.contains("Smith") && !name.contains("Lopez"), "{own}");
+        }
+    }
+
+    #[test]
+    fn a_single_document_export_names_the_patients_own_day_or_else_the_utc_day() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        assert_eq!(
+            export_suggested_name("a.pdf", Some("2026-09-27"), utc),
+            "Document 2026-09-27.pdf"
+        );
+        // A date that does not read as a date is never put in a file name.
+        for text in ["../2026-09-27", "2026-9-27", "2026-09-27\\x", ""] {
+            assert_eq!(
+                export_suggested_name("a.pdf", Some(text), utc),
+                "Document 2026-09-28.pdf",
+                "{text}"
+            );
+        }
+        assert_eq!(
+            export_suggested_name("a.pdf", None, utc),
+            "Document 2026-09-28.pdf"
+        );
+    }
+
+    #[test]
+    fn an_export_request_without_a_date_still_reads() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let without: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
+        assert!(without.local_date.is_none());
+        let with: ExportRequest = serde_json::from_str(&format!(
+            r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#
+        ))
+        .unwrap();
+        assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
+    }
+
+    #[test]
     fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
         use portal_link::LinkError;
         let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
@@ -8526,7 +9489,7 @@ mod tests {
                 "async fn vault_reset(",
                 concat!(
                     "VaultStore::reset).await?; ",
-                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await; ",
                     "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
@@ -8583,7 +9546,7 @@ mod tests {
         let refused = code
             .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
             .unwrap();
-        let shown = code.find("after_open(&opened)").unwrap();
+        let shown = code.find("after_open(&opened,").unwrap();
         assert!(started < work && work < refused && refused < shown);
     }
 
@@ -8605,6 +9568,64 @@ mod tests {
         assert!(other_vault_exists(&this, &all));
         // The vault asking is never counted as "another".
         assert!(!other_vault_exists(&other, std::slice::from_ref(&other)));
+    }
+
+    /// What an open of one vault keeps of the others (#357): the ids come from the open vault's own
+    /// manifest and a locked vault's header, a slot with no vault holds none, and an id that cannot
+    /// be read means "cannot tell" (the wipe is then skipped), never "no keys".
+    #[test]
+    fn the_other_vaults_ids_are_the_locked_ones_headers_and_an_unreadable_one_is_unknown() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = Arc::new(VaultStore::new(temp.path().join("this")));
+        let other = Arc::new(VaultStore::new(temp.path().join("other")));
+        let empty = Arc::new(VaultStore::new(temp.path().join("empty")));
+        let all = vec![Arc::clone(&this), Arc::clone(&other), Arc::clone(&empty)];
+        this.create("river-azimuth-cobalt-sparrow-934", "FAKE Person", 1)
+            .unwrap();
+        other
+            .create("harbor-quartz-meadow-lantern-512", "FAKE Other", 1)
+            .unwrap();
+        let other_id = other.open_vault_id().unwrap();
+        assert_ne!(this.open_vault_id().unwrap(), other_id);
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(empty.notice_key_vault(), vault::NoticeKeyVault::None);
+        // The other vault open: its own id. Locked: its header's. A slot with no vault: none.
+        assert_eq!(
+            other_vault_ids(&this, &all),
+            Some(std::collections::HashSet::from([other_id]))
+        );
+        other.lock();
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(
+            other_vault_ids(&this, &all),
+            Some(std::collections::HashSet::from([other_id]))
+        );
+        // The one vault alone on the device has no other.
+        assert_eq!(
+            other_vault_ids(&this, std::slice::from_ref(&this)),
+            Some(std::collections::HashSet::new())
+        );
+        // A vault whose header cannot be read is unknown, not absent: nothing may be guessed.
+        // Every header file there is is made unreadable in place (a removal goes only through
+        // remove_owned_file, #71, which a test in this module cannot reach).
+        let mut damaged = 0;
+        for name in ["header-0.json", "header-1.json", "header.json"] {
+            let path = temp.path().join("other").join(name);
+            if path.exists() {
+                std::fs::write(path, b"{").unwrap();
+                damaged += 1;
+            }
+        }
+        // The case is only this one if a header was there to damage.
+        assert!(damaged > 0, "the other vault has no header file to damage");
+        assert_eq!(other.notice_key_vault(), vault::NoticeKeyVault::Unknown);
+        assert_eq!(other_vault_ids(&this, &all), None);
     }
 
     #[test]
@@ -9157,15 +10178,19 @@ mod tests {
     }
 
     #[test]
-    fn a_file_that_is_not_a_pdf_is_refused_and_named() {
+    fn a_file_that_is_not_a_pdf_or_a_jpeg_is_refused_and_named() {
         let text = std::io::Cursor::new(b"FAKE plain text".to_vec());
         assert!(matches!(
-            require_pdf(Box::new(text)),
+            require_supported_file(Box::new(text)),
             Err(VaultError::NotPdf)
         ));
         let pdf = std::io::Cursor::new(b"%PDF-1.7 FAKE".to_vec());
         let mut kept = Vec::new();
-        std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(pdf)).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
         assert_eq!(kept, b"%PDF-1.7 FAKE");
         let json = serde_json::to_value(PublicError::from(VaultError::NotPdf)).unwrap();
         assert_eq!(json["code"], "not_pdf");
@@ -9597,6 +10622,923 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    /// The automatic document check is a desktop feature, not a Windows one: the worker, its tick
+    /// and the arrival notice all sit behind `desktop`, so Mac and Linux run the check and the
+    /// notice runtime says "nothing to show" there. A `cfg(windows)` on any of them stops the check
+    /// from ever running there while the consent is saved and shown (#473 review).
+    #[test]
+    fn the_automatic_document_check_is_gated_by_desktop_not_by_windows() {
+        let gated = |source: &str, item: &str| {
+            let at = source
+                .find(item)
+                .unwrap_or_else(|| panic!("missing {item}"));
+            let before = source[..at].trim_end_matches(' ');
+            let attributes: Vec<&str> = before
+                .lines()
+                .rev()
+                .take_while(|line| {
+                    let line = line.trim();
+                    line.starts_with("#[") || line.starts_with("///") || line.starts_with("//")
+                })
+                .filter(|line| line.trim().starts_with("#["))
+                .collect();
+            attributes
+                .iter()
+                .map(|line| line.trim().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let checks: [(&str, &str, &str); 4] = [
+            (
+                include_str!("vault_slots.rs"),
+                "pub(crate) fn start_document_collection(",
+                "start_document_collection",
+            ),
+            (
+                include_str!("vault.rs"),
+                "fn automatic_document_tick(&self)",
+                "automatic_document_tick",
+            ),
+            (
+                include_str!("vault/delivery.rs"),
+                "impl VaultStore {\n    /// Only a freshly committed local custody record",
+                "notify_local_arrival",
+            ),
+            (
+                include_str!("lib.rs"),
+                "slots.start_document_collection()?;",
+                "setup start",
+            ),
+        ];
+        for (source, item, name) in checks {
+            let attributes = gated(source, item);
+            assert!(
+                attributes.iter().any(|a| a == "#[cfg(desktop)]"),
+                "{name} must be #[cfg(desktop)], found {attributes:?}"
+            );
+            assert!(
+                !attributes.iter().any(|a| a.contains("windows")),
+                "{name} must not be gated by windows: {attributes:?}"
+            );
+        }
+        // The tick calls the check on every desktop, and the pickup calls the notice on every
+        // desktop; neither may be reached only on Windows.
+        let tick = include_str!("vault.rs");
+        let call = tick.find("self.automatic_document_tick();").unwrap();
+        assert!(tick[..call].trim_end().ends_with("#[cfg(desktop)]"));
+        let manual = include_str!("portal_pickup.rs");
+        let call = manual.find("store.notify_local_arrival(").unwrap();
+        let near = &manual[call.saturating_sub(120)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+        let pickup = include_str!("document_collection_pickup.rs");
+        let call = pickup
+            .find("store.notify_local_arrival_controlled(")
+            .unwrap();
+        let near = &pickup[call.saturating_sub(160)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+    }
+
+    /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
+    /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
+    /// top-level window that can be lost behind the app while its command waits for it. The rules,
+    /// over every source file (not only this one), in non-test code:
+    ///   - the plugin's dialog extension (`DialogExt`) is imported in this file and nowhere else;
+    ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
+    ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
+    ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
+    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
+    ///     here on purpose, and a lost one is noticed).
+    #[test]
+    fn every_file_dialog_is_opened_through_the_owned_helper() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        /// The code before the file's own `mod tests {` (its tests may name anything), comment lines
+        /// dropped, and every space and line break removed (so a call split over lines or spaced
+        /// oddly still matches). A file with no such module is read whole.
+        fn code(text: &str) -> String {
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            text[..end]
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .split_whitespace()
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let (mut dialog_ext, mut calls, mut file_calls, mut builders, mut sites) = (0, 0, 0, 0, 0);
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let code = code(&text);
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let imports = code.matches("DialogExt").count();
+            if name != "lib.rs" {
+                assert_eq!(imports, 0, "{name} imports DialogExt");
+            }
+            dialog_ext += imports;
+            calls += code.matches(".dialog()").count();
+            file_calls += code.matches(".dialog().file()").count();
+            builders += code.matches("FileDialogBuilder::new").count();
+            sites += code.matches("file_dialog(&").count();
+        }
+        assert_eq!(dialog_ext, 1, "DialogExt is imported once, in lib.rs");
+        assert_eq!(
+            calls, 2,
+            ".dialog() is called in the helper and the native confirmation only"
+        );
+        assert_eq!(file_calls, 1, "only the helper builds a file dialog");
+        assert_eq!(builders, 0, "a file dialog builder is made directly");
+        assert_eq!(
+            sites, 11,
+            "the eleven file dialog sites go through file_dialog"
+        );
+        // The helper keeps its owner.
+        let source = include_str!("lib.rs");
+        let helper = source.split("fn file_dialog(").nth(1).unwrap();
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("app.dialog().file()"));
+        assert!(helper.contains("set_parent(&window)"));
+        assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
+    }
+
+    /// The renderer sends `hiddenPeopleDocuments` (src/vault.ts). A snake_case field without a
+    /// camelCase rename read it as an unknown key and used 0, which made the removal fail whenever
+    /// a hidden person had a lost document.
+    #[test]
+    fn hide_unavailable_request_reads_the_renderers_camel_case_count() {
+        let id = Uuid::new_v4();
+        let sent = format!(r#"{{"confirmed":["{id}"],"hiddenPeopleDocuments":3}}"#);
+        let request: HideUnavailableRequest = serde_json::from_str(&sent).unwrap();
+        assert_eq!(request.confirmed, vec![id]);
+        assert_eq!(request.hidden_people_documents, 3);
+        // Left out, it is 0 (a vault with no hidden people sends none).
+        let none: HideUnavailableRequest =
+            serde_json::from_str(&format!(r#"{{"confirmed":["{id}"]}}"#)).unwrap();
+        assert_eq!(none.hidden_people_documents, 0);
+        // A key the struct does not know is refused, not ignored: the old snake_case spelling (or
+        // any other slip) fails loudly instead of leaving a field at its default.
+        assert!(serde_json::from_str::<HideUnavailableRequest>(
+            r#"{"confirmed":[],"hidden_people_documents":3}"#
+        )
+        .is_err());
+    }
+
+    /// What the renderer sends reaches a command through serde, which by default IGNORES a key it
+    /// does not know and fills a field it does not receive from its default: a spelling slip
+    /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
+    /// it did for the recovery of a hidden person's lost document. So, for every Tauri command
+    /// (a function under the command attribute) in any source file, each parameter type that is a
+    /// struct this crate deserializes must:
+    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
+    ///     every struct such a request holds); and
+    ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
+    ///     renderer does.
+    ///
+    /// Every struct such a request holds in a field is held to the same two rules. The attribute is
+    /// not spelled out here: `production_webview_configuration_has_no_development_network_access`
+    /// counts its exact text in this file, and a quoted copy would add one to the count.
+    #[test]
+    fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
+        use std::collections::{BTreeMap, BTreeSet};
+        struct Definition {
+            attributes: String,
+            fields: Vec<(String, String)>,
+            field_attributes: Vec<String>,
+            file: String,
+        }
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        fn words(text: &str) -> Vec<&str> {
+            text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        // The file system's order is not the same on every machine, and a struct name defined in
+        // two files must be read the same way on all of them.
+        files.sort();
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let mut definitions: BTreeMap<String, Definition> = BTreeMap::new();
+        // Struct names defined more than once with different contents (the first one, in file
+        // order, is the one read), and the enums commands may reach.
+        let mut conflicts: BTreeSet<String> = BTreeSet::new();
+        let mut enums: BTreeSet<String> = BTreeSet::new();
+        // The other copies of a conflicting name: each is checked on its own below, since the
+        // contract can only name one.
+        let mut conflict_copies: Vec<(String, Definition)> = Vec::new();
+        // Types with a hand-written `impl Deserialize`: what it accepts is not in the source's
+        // attributes, so a command may not take one.
+        let mut manual_impls: BTreeSet<String> = BTreeSet::new();
+        let mut command_parameters: Vec<(String, String)> = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            let code = &text[..end];
+            let mut attributes = String::new();
+            let mut lines = code.lines().peekable();
+            while let Some(line) = lines.next() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("#[") {
+                    attributes.push_str(trimmed);
+                    attributes.push('\n');
+                    continue;
+                }
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                let declaration = trimmed
+                    .strip_prefix("pub(crate) ")
+                    .or_else(|| trimmed.strip_prefix("pub "))
+                    .unwrap_or(trimmed);
+                if attributes.contains("tauri::command") {
+                    // The parameter list, however many lines it takes.
+                    let mut signature = declaration.to_owned();
+                    while !signature.contains("->") && !signature.contains('{') {
+                        match lines.next() {
+                            Some(next) => {
+                                signature.push(' ');
+                                signature.push_str(next.trim());
+                            }
+                            None => break,
+                        }
+                    }
+                    if let Some(open) = signature.find('(') {
+                        let function = signature[..open]
+                            .rsplit(' ')
+                            .next()
+                            .unwrap()
+                            .trim_end_matches(['<', '>'])
+                            .to_owned();
+                        let parameters = &signature[open..];
+                        command_parameters.push((function, parameters.to_owned()));
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("struct ") {
+                    if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                        let struct_name = rest
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .next()
+                            .unwrap()
+                            .to_owned();
+                        let mut fields = Vec::new();
+                        let mut field_attributes = Vec::new();
+                        let mut pending_attributes = String::new();
+                        for field in lines.by_ref() {
+                            let field = field.trim();
+                            if field == "}" {
+                                break;
+                            }
+                            if field.starts_with('#') {
+                                pending_attributes.push_str(field);
+                                pending_attributes.push('\n');
+                                continue;
+                            }
+                            if field.starts_with("//") {
+                                continue;
+                            }
+                            let field = field
+                                .strip_prefix("pub(crate) ")
+                                .or_else(|| field.strip_prefix("pub "))
+                                .unwrap_or(field);
+                            if let Some((field_name, field_type)) = field.split_once(':') {
+                                fields.push((
+                                    field_name.trim().trim_start_matches("r#").to_owned(),
+                                    field_type.trim().trim_end_matches(',').to_owned(),
+                                ));
+                                field_attributes.push(std::mem::take(&mut pending_attributes));
+                            }
+                        }
+                        let definition = Definition {
+                            attributes: attributes.clone(),
+                            fields,
+                            field_attributes,
+                            file: name.clone(),
+                        };
+                        let differs = definitions.get(&struct_name).map(|first| {
+                            first.attributes != definition.attributes
+                                || first.fields != definition.fields
+                                || first.field_attributes != definition.field_attributes
+                        });
+                        match differs {
+                            None => {
+                                definitions.insert(struct_name, definition);
+                            }
+                            Some(true) => {
+                                conflicts.insert(struct_name.clone());
+                                conflict_copies.push((struct_name, definition));
+                            }
+                            Some(false) => {}
+                        }
+                    }
+                } else if declaration.starts_with("impl") && declaration.contains("Deserialize<") {
+                    // Whatever the lifetime is called (`'de`, `'a`, `'__de`, `'_`) and however the
+                    // trait is named (`Deserialize`, `serde::Deserialize`, `serde::de::Deserialize`).
+                    for part in declaration.split("Deserialize<").skip(1) {
+                        if let Some((_, rest)) = part.split_once("> for ") {
+                            manual_impls.insert(
+                                rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .next()
+                                    .unwrap()
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("enum ") {
+                    if attributes.contains("Deserialize") {
+                        enums.insert(
+                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .next()
+                                .unwrap()
+                                .to_owned(),
+                        );
+                    }
+                }
+                attributes.clear();
+            }
+        }
+        // The structs a command takes, and (for the camelCase rule only) every struct they hold.
+        let mut at_the_command = BTreeSet::new();
+        for (_, parameters) in &command_parameters {
+            for word in words(parameters) {
+                if definitions.contains_key(word) && !conflicts.contains(word) {
+                    at_the_command.insert(word.to_owned());
+                }
+            }
+        }
+        assert!(
+            at_the_command.len() >= 40,
+            "only {} command argument structs found: the scan is not reading the commands",
+            at_the_command.len()
+        );
+        let mut every = at_the_command.clone();
+        let mut pending: Vec<String> = at_the_command.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            for (_, field_type) in &definitions[&name].fields {
+                for word in words(field_type) {
+                    if definitions.contains_key(word)
+                        && !conflicts.contains(word)
+                        && every.insert(word.to_owned())
+                    {
+                        pending.push(word.to_owned());
+                    }
+                }
+            }
+        }
+        let mut problems = Vec::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let multi_word = definition
+                .fields
+                .iter()
+                .any(|(field, _)| field.contains('_'));
+            if multi_word && !definition.attributes.contains("rename_all = \"camelCase\"") {
+                problems.push(format!(
+                    "{name} ({}) needs rename_all = \"camelCase\"",
+                    definition.file
+                ));
+            }
+            if !definition.attributes.contains("deny_unknown_fields") {
+                problems.push(format!(
+                    "{name} ({}) needs deny_unknown_fields",
+                    definition.file
+                ));
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
+
+        // The contract the renderer's calls are checked against (src/commandArgumentContract.test.ts):
+        // every command's arguments and every struct they reach, written sorted to a checked-in
+        // file. A change to a command or a struct fails here until the file is regenerated, so
+        // the renderer's check never reads an out-of-date list.
+        #[derive(serde::Serialize, PartialEq)]
+        struct ArgumentContract {
+            optional: bool,
+            #[serde(rename = "struct")]
+            struct_name: Option<String>,
+        }
+        #[derive(serde::Serialize, PartialEq)]
+        struct CommandContract {
+            arguments: BTreeMap<String, ArgumentContract>,
+            raw: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct StructContract {
+            /// Defined more than once with different contents: read as `open`.
+            ambiguous: bool,
+            #[serde(rename = "denyUnknown")]
+            deny_unknown: bool,
+            fields: BTreeMap<String, ArgumentContract>,
+            open: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct Contract {
+            /// Where a key cannot be checked (the elements of a list of structs, an enum's
+            /// variants), by command: this list is for the reviewer of a change to read.
+            #[serde(rename = "blindSpots")]
+            blind_spots: BTreeMap<String, Vec<String>>,
+            commands: BTreeMap<String, CommandContract>,
+            #[serde(rename = "generatedBy")]
+            generated_by: &'static str,
+            structs: BTreeMap<String, StructContract>,
+        }
+        fn camel(name: &str) -> String {
+            let mut out = String::new();
+            let mut upper = false;
+            for c in name.chars() {
+                if c == '_' {
+                    upper = true;
+                } else if upper {
+                    out.extend(c.to_uppercase());
+                    upper = false;
+                } else {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        // Whether a `#[serde(..)]` attribute in `attributes` names `word` (as a whole word).
+        fn serde_has(attributes: &str, word: &str) -> bool {
+            attributes
+                .lines()
+                .filter(|line| line.contains("serde("))
+                .any(|line| words(line).contains(&word))
+        }
+        fn split_top_level(list: &str) -> Vec<String> {
+            let mut parts = Vec::new();
+            let mut depth = 0_i32;
+            let mut current = String::new();
+            let mut previous = ' ';
+            for c in list.chars() {
+                match c {
+                    '(' | '<' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    '>' if previous != '-' => depth -= 1,
+                    _ => {}
+                }
+                if c == ',' && depth == 0 {
+                    parts.push(current.trim().to_owned());
+                    current.clear();
+                } else {
+                    current.push(c);
+                }
+                previous = c;
+            }
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_owned());
+            }
+            parts
+        }
+        let struct_in = |ty: &str| -> Option<String> {
+            words(ty)
+                .into_iter()
+                .find(|word| definitions.contains_key(*word))
+                .map(str::to_owned)
+        };
+        // What the list of a struct's or a command's arguments cannot say about the values it takes.
+        let unchecked = |ty: &str| -> Option<String> {
+            let words = words(ty);
+            if let Some(name) = words.iter().find(|word| enums.contains(**word)) {
+                return Some(format!("enum {name}"));
+            }
+            let several = ty.contains("Vec<") || ty.contains("Map<") || ty.contains('[');
+            if several {
+                return struct_in(ty).map(|name| format!("the elements of {name}"));
+            }
+            None
+        };
+        let mut contract = Contract {
+            blind_spots: BTreeMap::new(),
+            commands: BTreeMap::new(),
+            generated_by: "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
+            structs: BTreeMap::new(),
+        };
+        let mut command_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (function, parameters) in &command_parameters {
+            let mut depth = 0_i32;
+            let mut close = None;
+            for (index, c) in parameters.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let close = close.unwrap_or_else(|| panic!("{function}: no closing parenthesis"));
+            let mut command = CommandContract {
+                arguments: BTreeMap::new(),
+                raw: false,
+            };
+            for parameter in split_top_level(&parameters[1..close]) {
+                let (name, ty) = parameter
+                    .split_once(':')
+                    .unwrap_or_else(|| panic!("{function}: parameter {parameter:?}"));
+                // A leading underscore (an unused argument) is not part of the wire name.
+                let name = name
+                    .trim()
+                    .trim_start_matches("mut ")
+                    .trim()
+                    .trim_start_matches('_');
+                let ty = ty.trim().trim_start_matches('&').trim();
+                let injected = [
+                    "State<",
+                    "tauri::State<",
+                    "AppHandle",
+                    "tauri::AppHandle",
+                    "Window",
+                    "tauri::Window",
+                    "WebviewWindow",
+                    "tauri::WebviewWindow",
+                ]
+                .iter()
+                .any(|prefix| ty.starts_with(prefix));
+                if injected {
+                    continue;
+                }
+                if ty.starts_with("tauri::ipc::Request") {
+                    command.raw = true;
+                    continue;
+                }
+                if let Some(kind) = unchecked(ty) {
+                    command_blind
+                        .entry(function.clone())
+                        .or_default()
+                        .insert(format!("{}: {kind}", camel(name)));
+                }
+                command.arguments.insert(
+                    camel(name),
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            match contract.commands.get(function) {
+                // The same command written once for each platform (`#[cfg]`) takes the same
+                // arguments in each.
+                Some(existing) => assert!(
+                    *existing == command,
+                    "the command {function} is defined twice with different arguments"
+                ),
+                None => {
+                    contract.commands.insert(function.clone(), command);
+                }
+            }
+        }
+        // A custom deserializer (or a conversion through another type) decides what is accepted
+        // where the list cannot see it. The few that only validate a list or accept a null are
+        // named here; any other is refused until it is modelled and named.
+        const REVIEWED_DESERIALIZERS: [(&str, &str, &str, &str); 3] = [
+            (
+                "Page",
+                "document_collection_pickup.rs",
+                "next_cursor",
+                "nullable",
+            ),
+            (
+                "ProfileDetails",
+                "vault.rs",
+                "previous_full_names",
+                "present_previous_names",
+            ),
+            (
+                "SaveAiResultRequest",
+                "lib.rs",
+                "sources",
+                "summary_contract::deserialize_sources",
+            ),
+        ];
+        let custom_deserializers = |name: &str, definition: &Definition| -> Vec<String> {
+            let mut found = Vec::new();
+            for word in ["from", "try_from", "remote"] {
+                if serde_has(&definition.attributes, word) {
+                    found.push(format!("{name}: serde({word}) on the struct"));
+                }
+            }
+            // `flatten` defeats `deny_unknown_fields` (serde does not enforce it on a struct that
+            // flattens another), and `serde_as` / `serde_with` change what is accepted where the
+            // list cannot see it: a command argument may use none of them.
+            for attributes in
+                std::iter::once(&definition.attributes).chain(&definition.field_attributes)
+            {
+                if attributes.contains("#[serde_as") || attributes.contains("#[serde_with") {
+                    found.push(format!("{name}: serde_as or serde_with"));
+                }
+            }
+            for ((field, _), attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(attributes, "flatten") {
+                    found.push(format!(
+                        "{name}.{field}: serde(flatten) defeats deny_unknown_fields"
+                    ));
+                }
+                for word in ["with", "deserialize_with", "from", "try_from", "remote"] {
+                    if !serde_has(attributes, word) {
+                        continue;
+                    }
+                    let function = attributes
+                        .split("deserialize_with = \"")
+                        .nth(1)
+                        .and_then(|rest| rest.split('"').next());
+                    let reviewed = word == "deserialize_with"
+                        && function.is_some_and(|f| {
+                            REVIEWED_DESERIALIZERS.contains(&(
+                                name,
+                                definition.file.as_str(),
+                                field.as_str(),
+                                f,
+                            ))
+                        });
+                    if !reviewed {
+                        found.push(format!("{name}.{field}: serde({word}) on a field"));
+                    }
+                }
+            }
+            for (field, ty) in &definition.fields {
+                if let Some(word) = words(ty).into_iter().find(|w| manual_impls.contains(*w)) {
+                    found.push(format!(
+                        "{name}.{field}: {word} has a hand-written Deserialize"
+                    ));
+                }
+            }
+            found
+        };
+        // What the list cannot model is refused, so that nobody adds it unseen.
+        let mut unmodelled = Vec::new();
+        let mut struct_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let camel_case = definition.attributes.contains("rename_all = \"camelCase\"");
+            if serde_has(&definition.attributes, "rename_all") && !camel_case {
+                unmodelled.push(format!("{name}: a rename_all other than camelCase"));
+            }
+            if serde_has(&definition.attributes, "alias") {
+                unmodelled.push(format!("{name}: an alias"));
+            }
+            unmodelled.extend(custom_deserializers(name, definition));
+            let mut fields = BTreeMap::new();
+            let mut open = conflicts.contains(name);
+            for ((field, ty), field_attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(field_attributes, "skip")
+                    || serde_has(field_attributes, "skip_deserializing")
+                {
+                    continue;
+                }
+                if serde_has(field_attributes, "flatten") {
+                    open = true;
+                }
+                if field_attributes.contains("rename(") || serde_has(field_attributes, "alias") {
+                    unmodelled.push(format!("{name}.{field}: a rename(..) or an alias"));
+                }
+                let key = match field_attributes.split("rename = \"").nth(1) {
+                    Some(rest) => rest.split('"').next().unwrap().to_owned(),
+                    None if camel_case => camel(field),
+                    None => field.clone(),
+                };
+                if let Some(kind) = unchecked(ty) {
+                    struct_blind
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(format!("{name}.{key}: {kind}"));
+                }
+                fields.insert(
+                    key,
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<")
+                            || serde_has(field_attributes, "default")
+                            || serde_has(&definition.attributes, "default"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            contract.structs.insert(
+                name.clone(),
+                StructContract {
+                    ambiguous: conflicts.contains(name),
+                    deny_unknown: definition.attributes.contains("deny_unknown_fields"),
+                    fields,
+                    open,
+                },
+            );
+        }
+        // A command that takes a type with a hand-written `impl Deserialize` itself.
+        for (function, parameters) in &command_parameters {
+            if let Some(word) = words(parameters)
+                .into_iter()
+                .find(|w| manual_impls.contains(*w))
+            {
+                unmodelled.push(format!("{function}: {word} has a hand-written Deserialize"));
+            }
+        }
+        // A struct name defined twice with different contents cannot be told apart by name: what
+        // a command or a struct reaches under that name is listed as an open, ambiguous struct,
+        // and its keys are not checked (a reviewer reads these in the file). So that it is not an
+        // escape from the rules, EVERY copy is held to them here.
+        let referenced: BTreeSet<String> = contract
+            .commands
+            .values()
+            .flat_map(|command| command.arguments.values())
+            .chain(contract.structs.values().flat_map(|s| s.fields.values()))
+            .filter_map(|argument| argument.struct_name.clone())
+            .filter(|name| conflicts.contains(name))
+            .collect();
+        // A copy of a conflicting name that is not what a command takes but the portal's own
+        // answer, which arrives in the portal's snake_case: it is held to `deny_unknown_fields`
+        // like the others but not to camelCase.
+        const PORTAL_ANSWERS: [(&str, &str); 1] = [("Page", "document_collection_pickup.rs")];
+        for name in &referenced {
+            let copies = std::iter::once(&definitions[name]).chain(
+                conflict_copies
+                    .iter()
+                    .filter(|(copy, _)| copy == name)
+                    .map(|(_, definition)| definition),
+            );
+            for copy in copies {
+                let multi_word = copy.fields.iter().any(|(field, _)| field.contains('_'));
+                let camel_case = copy.attributes.contains("rename_all = \"camelCase\"");
+                if !copy.attributes.contains("deny_unknown_fields") {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs deny_unknown_fields",
+                        copy.file
+                    ));
+                }
+                let portal_answer = PORTAL_ANSWERS.contains(&(name.as_str(), copy.file.as_str()));
+                if (multi_word && !camel_case && !portal_answer)
+                    || (serde_has(&copy.attributes, "rename_all") && !camel_case)
+                {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs rename_all = \"camelCase\" or none",
+                        copy.file
+                    ));
+                }
+                if serde_has(&copy.attributes, "alias")
+                    || copy
+                        .field_attributes
+                        .iter()
+                        .any(|a| a.contains("rename(") || serde_has(a, "alias"))
+                {
+                    unmodelled.push(format!("{name} ({}): a rename(..) or an alias", copy.file));
+                }
+                unmodelled.extend(custom_deserializers(name, copy));
+            }
+        }
+        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
+        for name in referenced {
+            contract.structs.entry(name).or_insert(StructContract {
+                ambiguous: true,
+                deny_unknown: false,
+                fields: BTreeMap::new(),
+                open: true,
+            });
+        }
+        // For each command: what its own arguments and every struct they reach cannot check.
+        for (function, command) in &contract.commands {
+            let mut reached: BTreeSet<String> = command
+                .arguments
+                .values()
+                .filter_map(|argument| argument.struct_name.clone())
+                .collect();
+            let mut pending: Vec<String> = reached.iter().cloned().collect();
+            while let Some(name) = pending.pop() {
+                for field in contract.structs[&name].fields.values() {
+                    if let Some(inner) = &field.struct_name {
+                        if reached.insert(inner.clone()) {
+                            pending.push(inner.clone());
+                        }
+                    }
+                }
+            }
+            let mut blind = command_blind.get(function).cloned().unwrap_or_default();
+            for name in &reached {
+                blind.extend(struct_blind.get(name).cloned().unwrap_or_default());
+            }
+            if !blind.is_empty() {
+                contract
+                    .blind_spots
+                    .insert(function.clone(), blind.into_iter().collect());
+            }
+        }
+        let generated = serde_json::to_string_pretty(&contract).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/command-args.json");
+        if std::env::var_os("UPDATE_COMMAND_ARGS").is_some() {
+            // CI must never rewrite the file and then pass: it compares.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "UPDATE_COMMAND_ARGS is refused when CI is set: regenerate the file locally and commit it"
+            );
+            std::fs::write(&path, &generated).unwrap();
+        }
+        let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            checked_in == generated,
+            "src-tauri/tests/fixtures/command-args.json is out of date with the commands: \
+             regenerate it with `UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys` \
+             and commit it"
+        );
+    }
+
+    /// The Android reader's labels cross three layers: the renderer's `AndroidReaderLabels`
+    /// (src/vault.ts), this struct, and the plugin's own. `pageFailed` was sent by the renderer and
+    /// dropped by this struct, so the reader showed nothing for a page it could not draw. The
+    /// struct now takes exactly the renderer's labels: no more, no fewer.
+    #[test]
+    fn the_android_reader_labels_are_exactly_the_renderers_eight() {
+        let renderer = include_str!("../../src/vault.ts");
+        let interface = renderer
+            .split("export interface AndroidReaderLabels {")
+            .nth(1)
+            .unwrap();
+        let interface = &interface[..interface.find('}').unwrap()];
+        let mut sent: Vec<&str> = interface
+            .lines()
+            .filter_map(|line| line.trim().split_once(':').map(|(name, _)| name.trim()))
+            .collect();
+        sent.sort_unstable();
+        assert_eq!(
+            sent,
+            [
+                "close",
+                "next",
+                "page",
+                "pageFailed",
+                "pageStatus",
+                "previous",
+                "zoomIn",
+                "zoomOut"
+            ]
+        );
+        let all = sent
+            .iter()
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let labels: AndroidPdfLabels = serde_json::from_str(&format!("{{{all}}}")).unwrap();
+        assert!(labels.valid());
+        assert_eq!(labels.page_failed, "A label");
+        // One fewer is refused (a missing label would be shown as nothing), and so is one more.
+        let fewer = sent
+            .iter()
+            .filter(|name| **name != "pageFailed")
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(serde_json::from_str::<AndroidPdfLabels>(&format!("{{{fewer}}}")).is_err());
+        assert!(
+            serde_json::from_str::<AndroidPdfLabels>(&format!(r#"{{{all},"extra":"x"}}"#)).is_err()
+        );
+        // A label that is blank or has a control character is not valid.
+        let blank: AndroidPdfLabels = serde_json::from_str(
+            &format!("{{{all}}}").replace(r#""pageFailed":"A label""#, r#""pageFailed":"""#),
+        )
+        .unwrap();
+        assert!(!blank.valid());
     }
 
     #[test]
@@ -10097,7 +12039,10 @@ mod tests {
     #[test]
     fn mobile_imports_are_named_after_the_file_not_the_uri() {
         let named = |value: &str| {
-            import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
         };
         assert_eq!(
             named("file:///private/var/mobile/Inbox/My%20Report.pdf"),
@@ -10128,11 +12073,305 @@ mod tests {
             "Imported document.pdf"
         );
         assert_eq!(
-            import_display_name(&tauri_plugin_fs::FilePath::Path(
-                "/home/jamie/FAKE.pdf".into()
-            )),
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+                None
+            ),
             "/home/jamie/FAKE.pdf"
         );
+    }
+
+    #[test]
+    fn a_picked_video_is_recognised_from_the_name_the_provider_gave_not_the_display_name() {
+        let tail =
+            |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
+        // An Android document id that ends in a video extension is a video, though the document
+        // import would call it "Imported document.pdf".
+        let clip =
+            "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
+        assert_eq!(tail(clip), "clip.mp4");
+        assert_eq!(
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap()), None),
+            "Imported document.pdf"
+        );
+        assert!(is_video_name(&tail(clip)));
+        // A video among documents is therefore refused, not sent down the document path.
+        let pdf = "content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf";
+        assert_eq!(route_pick(&[tail(clip), tail(pdf)]), None);
+        assert_eq!(route_pick(&[tail(clip)]), Some(true));
+        // An opaque id says nothing: it is not a video, so it stays on the document path as before.
+        let opaque = "content://com.android.providers.downloads.documents/document/msf%3A31";
+        assert_eq!(tail(opaque), "31");
+        assert_eq!(route_pick(&[tail(opaque)]), Some(false));
+        // Desktop paths and file URLs are their own names.
+        assert!(is_video_name(&picked_name_tail(
+            &tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into())
+        )));
+        assert!(is_video_name(&tail(
+            "file:///private/var/mobile/Inbox/My%20Clip.m4v"
+        )));
+    }
+
+    #[test]
+    fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
+        let named = |value: &str| {
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
+        };
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
+            "clip.mp4"
+        );
+        assert_eq!(
+            named("content://com.android.providers.downloads.documents/document/msf%3A31"),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/My%20Clip.mov"),
+            "My Clip.mov"
+        );
+        assert_eq!(
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into()),
+                None
+            ),
+            "/home/x/clip.mp4"
+        );
+    }
+
+    #[test]
+    fn the_providers_own_name_routes_and_names_an_opaque_android_pick() {
+        let url = |value: &str| tauri_plugin_fs::FilePath::Url(value.parse().unwrap());
+        let opaque = url("content://com.android.providers.downloads.documents/document/msf%3A31");
+        let tail = picked_name_tail(&opaque);
+        assert_eq!(tail, "31");
+        // The provider's name wins over the tail of the id.
+        assert_eq!(routing_name(&tail, Some("clip.mp4")), "clip.mp4");
+        // No answer, or none that can be used, is as before.
+        assert_eq!(routing_name(&tail, None), "31");
+        for unusable in [
+            "",
+            "   ",
+            "noextension",
+            ".pdf",
+            "trailing.",
+            "a/b.mp4",
+            "a\\b.mp4",
+            "line\nbreak.mp4",
+            "nul\0.mp4",
+            // Direction controls that make a name read as another one.
+            "clip\u{202E}4pm.mp4",
+            "clip\u{202A}.mp4",
+            "clip\u{202D}.mp4",
+            "clip\u{2066}.mp4",
+            "clip\u{2069}.mp4",
+            "clip\u{200E}.mp4",
+            "clip\u{200F}.mp4",
+            "clip\u{061C}.mp4",
+            // The invisible characters the vault's stored names drop too (one predicate): the
+            // zero-width ones, the byte order mark, the line and paragraph separators and the word
+            // joiner.
+            "clip\u{200B}.mp4",
+            "clip\u{200C}.mp4",
+            "clip\u{200D}.mp4",
+            "\u{FEFF}clip.mp4",
+            "clip\u{2028}.mp4",
+            "clip\u{2029}.mp4",
+            "clip\u{2060}.mp4",
+        ] {
+            assert_eq!(routing_name(&tail, Some(unusable)), "31", "{unusable:?}");
+        }
+        let too_long = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS));
+        assert_eq!(routing_name(&tail, Some(&too_long)), "31");
+        let longest = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS - 4));
+        assert_eq!(routing_name(&tail, Some(&longest)), longest);
+        // Surrounding space is not part of the name; a space or a dot inside it is.
+        assert_eq!(
+            routing_name(&tail, Some("  FAKE Scan 10.30.pdf ")),
+            "FAKE Scan 10.30.pdf"
+        );
+
+        // The routing: an opaque id that the provider calls a video is that video, and a PDF
+        // beside it is a refused mix, as for ids that carry their names.
+        let route = |picks: &[(&tauri_plugin_fs::FilePath, Option<&str>)]| {
+            let names: Vec<String> = picks
+                .iter()
+                .map(|(path, provided)| routing_name(&picked_name_tail(path), *provided))
+                .collect();
+            route_pick(&names)
+        };
+        assert_eq!(route(&[(&opaque, Some("clip.mp4"))]), Some(true));
+        assert_eq!(route(&[(&opaque, None)]), Some(false));
+        let other = url("content://com.android.providers.downloads.documents/document/msf%3A32");
+        assert_eq!(
+            route(&[(&opaque, Some("clip.mp4")), (&other, Some("labs.pdf"))]),
+            None
+        );
+        assert_eq!(
+            route(&[(&opaque, Some("movie.mov")), (&other, Some("b.m4v"))]),
+            None
+        );
+        assert_eq!(route(&[(&opaque, Some("labs.pdf"))]), Some(false));
+
+        // The stored name is the provider's, not a stand-in.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("clip.mp4")),
+            "clip.mp4"
+        );
+        assert_eq!(
+            video_import_display_name(&opaque, None),
+            "Imported video.mp4"
+        );
+        // A name that is not a video's still gets the stand-in for a video import.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("labs.pdf")),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            import_display_name(&opaque, Some("FAKE labs.pdf")),
+            "FAKE labs.pdf"
+        );
+        assert_eq!(import_display_name(&opaque, None), "Imported document.pdf");
+        // Only what the picker offers is kept as a document's name.
+        assert_eq!(
+            import_display_name(&opaque, Some("photo.heic")),
+            "Imported document.pdf"
+        );
+        // A desktop path is its own name (only an Android `content://` pick is ever asked).
+        assert_eq!(
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/FAKE.pdf".into()),
+                None
+            ),
+            "/home/x/FAKE.pdf"
+        );
+    }
+
+    #[test]
+    fn the_routing_and_the_stored_name_drop_exactly_the_same_hidden_characters() {
+        // Every character there is: the routing accepts a provider's name that holds it exactly
+        // when the vault's one predicate does not name it (a path separator never), and the store
+        // drops it exactly when that predicate names it. So a character the routing lets through
+        // is never one the store then silently drops (the two filters used to differ).
+        for code in 0..=0x10_FFFF_u32 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let name = format!("a{c}b.mp4");
+            let routed = routing_name("31", Some(&name));
+            if vault::is_hidden_name_char(c) || c == '/' || c == '\\' {
+                assert_eq!(routed, "31", "U+{code:04X} must not route");
+            } else {
+                assert_eq!(routed, name, "U+{code:04X} must route");
+            }
+            if vault::is_hidden_name_char(c) {
+                assert_eq!(
+                    vault::sanitize_basename(&name),
+                    "ab.mp4",
+                    "U+{code:04X} must be dropped from a stored name"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_an_opaque_id_is_asked_what_its_file_is_called() {
+        // An id's tail that already names a file (a stem and an extension) needs no question; the
+        // tail of an opaque document id ("msf:31" leaves "31") does.
+        for named in ["clip.mp4", "FAKE Scan 10.30.pdf", "a.b", "photo.jpeg"] {
+            assert!(has_stem_and_extension(named), "{named}");
+        }
+        for opaque in ["31", "", ".pdf", "name.", "msf", "raw:", "noextension"] {
+            assert!(!has_stem_and_extension(opaque), "{opaque:?}");
+        }
+    }
+
+    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+        tauri::async_runtime::block_on(future)
+    }
+
+    #[test]
+    fn a_whole_pick_asks_its_providers_within_one_budget_not_one_each() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Six files, a provider that needs 250 ms for each, and a budget of 400 ms in all: the old
+        // rule (a limit per file) would spend 6 x 250 ms; the budget spends about 400 ms and the
+        // files after it are not asked at all.
+        let asked = AtomicUsize::new(0);
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            6,
+            |_| true,
+            Duration::from_millis(400),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    Some(format!("clip{index}.mp4"))
+                }
+            },
+        ));
+        let spent = started.elapsed();
+        assert_eq!(names.len(), 6);
+        // The first answered in time; the second ran out of budget; the rest were never asked.
+        assert_eq!(names[0].as_deref(), Some("clip0.mp4"));
+        assert!(names[1..].iter().all(Option::is_none), "{names:?}");
+        assert!(asked.load(Ordering::SeqCst) <= 3, "asked {asked:?}");
+        assert!(spent < Duration::from_millis(1200), "spent {spent:?}");
+    }
+
+    #[test]
+    fn one_slow_question_is_cut_at_its_own_limit_and_a_spent_budget_asks_nothing() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Each question is cut at `each`, however much of the budget is left.
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            3,
+            |_| true,
+            Duration::from_secs(30),
+            Duration::from_millis(60),
+            |_| async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Some("never.mp4".to_owned())
+            },
+        ));
+        assert_eq!(names, vec![None, None, None]);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        // A budget that is already spent asks nobody.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |_| true,
+            Duration::ZERO,
+            Duration::from_secs(3),
+            |_| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async { Some("late.mp4".to_owned()) }
+            },
+        ));
+        assert_eq!(names, vec![None, None, None, None]);
+        assert_eq!(asked.load(Ordering::SeqCst), 0);
+        // Only the files `askable` says are asked, and each one only once.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |index| index % 2 == 1,
+            Duration::from_secs(5),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move { Some(format!("n{index}.mp4")) }
+            },
+        ));
+        assert_eq!(
+            names,
+            vec![None, Some("n1.mp4".into()), None, Some("n3.mp4".into())]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
     }
 
     #[cfg(all(unix, desktop))]
@@ -11450,6 +13689,266 @@ mod photo_command_tests {
         );
     }
 
+    /// A phone picture, as a test sample: the canvas JPEG (FAKE) with, after its JFIF header, an
+    /// Exif block holding a make, an orientation of 6 (turned a quarter) and a pointer to a GPS
+    /// block, and a comment with text.
+    fn phone_picture() -> Vec<u8> {
+        let mut tiff = b"MM\0\x2a\0\0\0\x08".to_vec();
+        // IFD0 at 8: Make (ASCII, at 50), Orientation (SHORT) 6, GPSInfo (LONG, at 62).
+        tiff.extend_from_slice(&[0, 3]);
+        tiff.extend_from_slice(&[0x01, 0x0f, 0, 2, 0, 0, 0, 12, 0, 0, 0, 50]);
+        tiff.extend_from_slice(&[0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0]);
+        tiff.extend_from_slice(&[0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 62]);
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"FAKE Phone\0\0");
+        // The GPS IFD: LatitudeRef "N".
+        tiff.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0, 0, 0, 0, 0]);
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend_from_slice(&tiff);
+        let segment = |code: u8, payload: &[u8]| {
+            let mut bytes = vec![0xff, code];
+            bytes.extend_from_slice(&(payload.len() as u16 + 2).to_be_bytes());
+            bytes.extend_from_slice(payload);
+            bytes
+        };
+        // Past the JFIF header (20 bytes with the start marker) and before the rest.
+        let mut bytes = CANVAS[..20].to_vec();
+        bytes.extend(segment(0xe1, &exif));
+        bytes.extend(segment(0xfe, b"FAKE comment: taken at home %PDF-1.7"));
+        bytes.extend_from_slice(&CANVAS[20..]);
+        bytes
+    }
+
+    #[test]
+    fn a_picture_the_patient_picks_is_cleaned_on_import_and_stored_clean() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = phone_picture();
+        assert!(picture.windows(10).any(|w| w == b"FAKE Phone"));
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: "IMG_0042.jpg".to_owned(),
+                    reader: require_supported_file(Box::new(std::io::Cursor::new(picture)))
+                        .unwrap(),
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "IMG_0042.jpg");
+        assert_eq!(record.media_type, "application/octet-stream");
+        let stored = exported(&store, record.id);
+        // Place, device, comment (and the "%PDF-" in it, which must not make this a PDF) are gone;
+        // the orientation is kept, in a block built here.
+        for gone in [&b"FAKE Phone"[..], b"FAKE comment", b"%PDF-", b"\x88\x25"] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert!(stored
+            .windows(8)
+            .any(|w| w == [b'E', b'x', b'i', b'f', 0, 0, b'M', b'M']));
+        assert_eq!(&stored[..2], [0xff, 0xd8]);
+        // What the picture view shows is the same cleaned picture.
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/jpeg;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        assert_eq!(record.plaintext_size, stored.len() as u64);
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_clean_jpeg_is_refused_before_anything_is_staged() {
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        // Not a picture or a PDF at all: a GIF (even named .jpg), HEIC, a truncated file of
+        // nothing, plain text.
+        for other in [
+            b"GIF89a FAKE".to_vec(),
+            b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec(),
+            Vec::new(),
+            b"FAKE".to_vec(),
+        ] {
+            assert!(matches!(refused(other), Some(VaultError::NotPdf)));
+        }
+        // Starts as a JPEG but is not a whole baseline or progressive picture: cut short, or
+        // only the start.
+        let whole = phone_picture();
+        for bad in [
+            whole[..whole.len() - 2].to_vec(),
+            whole[..200].to_vec(),
+            vec![0xff, 0xd8, 0xff],
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size: refused, however it starts.
+        let mut huge = vec![0xff, 0xd8, 0xff, 0xe0];
+        huge.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(huge), Some(VaultError::NotPhoto)));
+    }
+
+    /// A PNG as a patient might bring it, as a test sample: a 2 by 2 picture with, after its
+    /// header, text with a FAKE place, time and camera, an Exif block and a time chunk, and bytes
+    /// after its end.
+    fn dirty_png() -> Vec<u8> {
+        use crate::photo_png::tests::{chunk, file, header, pixels};
+        let mut bytes = file(&[
+            header(2, 2, 8, 2),
+            chunk(b"tEXt", b"Location\0FAKE place 51.05,-114.07"),
+            chunk(b"zTXt", b"Comment\0\0FAKE camera Phone X"),
+            chunk(b"eXIf", b"MM\0*\0\0\0\x08FAKE Make GPS"),
+            chunk(b"tIME", &[7, 234, 11, 25, 12, 30, 0]),
+            chunk(b"IDAT", &pixels()),
+            chunk(b"IEND", &[]),
+        ]);
+        bytes.extend_from_slice(b"FAKE hidden after the end");
+        bytes
+    }
+
+    #[test]
+    fn a_png_the_patient_picks_is_cleaned_on_import_stored_clean_and_named_png() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = dirty_png();
+        let (kind, reader) =
+            open_supported_file(Box::new(std::io::Cursor::new(picture.clone()))).unwrap();
+        assert_eq!(kind, Some(photo::PictureKind::Png));
+        // A name with no suffix of its own gets the one of what it is, and a name that has it
+        // keeps it.
+        let (a, b) = (
+            picture_import_name("Screenshot 2026-11-25".to_owned(), kind),
+            picture_import_name("Screenshot.PNG".to_owned(), kind),
+        );
+        assert_eq!(
+            (a.as_str(), b.as_str()),
+            ("Screenshot 2026-11-25.png", "Screenshot.PNG")
+        );
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: a,
+                    reader,
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "Screenshot 2026-11-25.png");
+        let stored = exported(&store, record.id);
+        for gone in [
+            &b"FAKE"[..],
+            b"Location",
+            b"tEXt",
+            b"zTXt",
+            b"eXIf",
+            b"tIME",
+            b"hidden",
+        ] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert_eq!(&stored[..8], &crate::photo_png::PNG_SIGNATURE);
+        // The vault knows it is a picture, which kind, and shows exactly what it stored.
+        assert_eq!(
+            photo_kind(&store, record.id).unwrap(),
+            Some(photo::PictureKind::Png)
+        );
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/png;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        // A rename keeps a PNG a `.png`, and refuses a suffix that says another kind.
+        rename_document(&store, record.id, "Letter.png").unwrap();
+        for wrong in ["Letter.jpg", "Letter.jpeg", "Letter", ".png", "Letter.pdf"] {
+            assert!(
+                matches!(
+                    rename_document(&store, record.id, wrong),
+                    Err(VaultError::Invalid)
+                ),
+                "{wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_png_that_is_damaged_animated_or_too_large_is_refused_before_anything_is_staged() {
+        use crate::photo_png::tests::{chunk, file, header, plain};
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        let whole = dirty_png();
+        let mut animated = plain();
+        animated.insert(1, chunk(b"acTL", &[0, 0, 0, 2, 0, 0, 0, 0]));
+        let mut huge = plain();
+        huge[0] = header(60_000, 60_000, 8, 2);
+        let mut no_data = plain();
+        no_data.remove(1);
+        for bad in [
+            whole[..whole.len() - 30].to_vec(),
+            whole[..20].to_vec(),
+            b"\x89PNG\r\n\x1a\n".to_vec(),
+            file(&animated),
+            file(&huge),
+            file(&no_data),
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size, however it starts.
+        let mut over = file(&plain());
+        over.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(over), Some(VaultError::NotPhoto)));
+    }
+
+    #[test]
+    fn a_picture_is_named_for_what_it_is_and_never_as_a_pdf() {
+        use photo::PictureKind::{Jpeg, Png};
+        let named = |name: &str, kind| picture_import_name(name.to_owned(), kind);
+        // A PDF's name is not touched.
+        assert_eq!(named("Scan", None), "Scan");
+        assert_eq!(named("Letter.pdf", None), "Letter.pdf");
+        for (name, kind, want) in [
+            ("IMG_1.jpg", Some(Jpeg), "IMG_1.jpg"),
+            ("IMG_1.JPEG", Some(Jpeg), "IMG_1.JPEG"),
+            ("IMG_1", Some(Jpeg), "IMG_1.jpg"),
+            ("shot.png", Some(Jpeg), "shot.png.jpg"),
+            ("shot.png", Some(Png), "shot.png"),
+            ("shot.jpg", Some(Png), "shot.jpg.png"),
+            ("shot", Some(Png), "shot.png"),
+            (".png", Some(Png), ".png.png"),
+            ("Imported document.pdf", Some(Png), "Imported picture.png"),
+            ("Imported document.pdf", Some(Jpeg), "Imported picture.jpg"),
+        ] {
+            assert_eq!(named(name, kind), want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pdf_still_streams_in_as_it_is_and_a_jpeg_is_never_taken_for_one() {
+        // A picture with "%PDF-" in its first bytes is a picture (cleaned), never a PDF kept raw.
+        let mut sneaky = vec![0xff, 0xd8, 0xff, 0xfe, 0, 12];
+        sneaky.extend_from_slice(b"%PDF-1.7 FA");
+        assert!(matches!(
+            require_supported_file(Box::new(std::io::Cursor::new(sneaky))).err(),
+            Some(VaultError::NotPhoto)
+        ));
+        // A PDF whose own bytes include a JPEG later on is still a PDF, unchanged.
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        pdf.extend_from_slice(CANVAS);
+        let mut kept = Vec::new();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(std::io::Cursor::new(pdf.clone()))).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
+        assert_eq!(kept, pdf);
+    }
+
     #[test]
     fn native_localization_generated_photo_names_survive_store_reopen_exactly() {
         for locale in [
@@ -11657,7 +14156,10 @@ mod photo_command_tests {
         let shown = BASE64
             .decode(url.strip_prefix("data:image/jpeg;base64,").unwrap())
             .unwrap();
-        assert_eq!(shown, *photo::clean_jpeg(CANVAS).unwrap());
+        // Shown as a picture the patient brought is: the canvas photo's plain colour profile
+        // stays, the tagged Exif (place) does not.
+        assert_eq!(shown, *photo::clean_picture(CANVAS).unwrap());
+        assert!(!shown.windows(3).any(|w| w == b"GPS"));
         // What is stored is not changed by viewing it.
         assert_eq!(exported(&store, ids[0]), tagged());
 
@@ -11716,7 +14218,7 @@ mod photo_command_tests {
         assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
 
         // It stops the export once it has three bytes.
-        let mut start = FileStart::default();
+        let mut start = FileStartN::<3>::default();
         assert_eq!(start.write(&[0xff]).unwrap(), 1);
         assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
         assert!(start.complete());
@@ -11791,6 +14293,208 @@ mod photo_command_tests {
                     .code,
                 "photo_body"
             );
+        }
+    }
+
+    #[test]
+    fn an_explained_sentence_must_be_from_pages_shown_for_that_document() {
+        let shown = ShownPages::default();
+        let (here, other, session) = (Uuid::from_u128(1), Uuid::from_u128(2), 7);
+        let accepts = |session: u64, record: Uuid, term: &str, context: &str| {
+            shown
+                .accept(session, record, term, context)
+                .map(|sentence| sentence.to_string())
+        };
+        shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE Patient\n  has a   fake\tcondition. Next sentence.",
+            "FAKE Patient has a fake condition. Next sentence.",
+        );
+        // As the reader cuts it from the page, with the page's own line breaks and spacing: what
+        // comes back is the sentence collapsed, which is what is asked and filed.
+        assert_eq!(
+            accepts(session, here, "fake", "has a fake condition.").as_deref(),
+            Some("has a fake condition.")
+        );
+        assert_eq!(
+            accepts(
+                session,
+                here,
+                "FAKE condition",
+                "FAKE Patient\nhas a   fake condition."
+            )
+            .as_deref(),
+            Some("FAKE Patient has a fake condition.")
+        );
+        assert_eq!(
+            accepts(session, here, "next", "  Next sentence.  ").as_deref(),
+            Some("Next sentence.")
+        );
+        // The term may be typed in another case, or across the page's line break.
+        assert!(accepts(session, here, "HAS A FAKE", "has a fake condition.").is_some());
+        assert!(accepts(session, here, "fake\n condition", "has a fake condition.").is_some());
+        // Nothing to mislead with: an empty sentence, whatever the term.
+        assert_eq!(accepts(session, here, "anything", "").as_deref(), Some(""));
+        assert_eq!(
+            accepts(session, here, "anything", " \n ").as_deref(),
+            Some("")
+        );
+        // A Greek capital sigma at the end of a word folds as the reader folds it (to σ), so a
+        // term found on the page is not refused for the context's final-sigma form.
+        shown.note(
+            &|| session,
+            session,
+            other,
+            0,
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+        );
+        assert!(accepts(session, other, "οδυσσεασ", "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.").is_some());
+        shown.forget_record(other);
+        // A sentence that does not hold the term is refused, though it is the page's own.
+        assert!(accepts(session, here, "pneumonia", "has a fake condition.").is_none());
+        // Words the pages never held, a sentence stitched from two, another document's pages, and
+        // another session's.
+        assert!(accepts(session, here, "fake", "has a different fake condition.").is_none());
+        assert!(accepts(session, here, "fake", "fake condition. Another sentence.").is_none());
+        assert!(accepts(
+            session,
+            here,
+            "fake",
+            "has a fake condition. Next sentence. And more."
+        )
+        .is_none());
+        assert!(accepts(session, other, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session + 1, here, "fake", "has a fake condition.").is_none());
+        // The page's text is checked as it is: case matters in the sentence.
+        assert!(accepts(session, here, "fake", "HAS A FAKE CONDITION.").is_none());
+        // A page shown again replaces itself; another session's pages go on a new note.
+        shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE changed page.",
+            "FAKE changed page.",
+        );
+        assert!(accepts(session, here, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_some());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE next session.",
+            "FAKE next session.",
+        );
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_none());
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_some());
+        // A document hidden, and a lock, forget what was shown.
+        shown.forget_record(here);
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_none());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE again.",
+            "FAKE again.",
+        );
+        shown.clear();
+        assert!(accepts(session + 1, here, "again", "FAKE again.").is_none());
+    }
+
+    #[test]
+    fn a_page_shown_after_a_lock_has_ended_its_session_is_not_remembered() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(4);
+        // The page was drawn in session 5; by the time it is noted the vault is in session 6.
+        shown.note(&|| 6, 5, record, 0, "FAKE late page.", "FAKE late page.");
+        assert!(shown.list().is_empty());
+        assert!(shown.accept(5, record, "late", "FAKE late page.").is_none());
+        assert!(shown.accept(6, record, "late", "FAKE late page.").is_none());
+        // Through the real path: a clear ends the session first, so a note after it is dropped.
+        let picks = PendingPicks::default();
+        let before = picks.session();
+        picks.clear();
+        let page = ViewedPage {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            image: String::new(),
+            text: "FAKE page text".into(),
+            readable_text: "FAKE page text".into(),
+        };
+        picks.note_shown_page(before, record, 0, &page);
+        assert!(picks
+            .explain_context(before, record, "page", "FAKE page text")
+            .is_none());
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+        picks.note_shown_page(picks.session(), record, 0, &page);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_some());
+        // Hiding the document forgets its pages.
+        picks.forget_texts_for(record);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+    }
+
+    #[test]
+    fn the_pages_shown_are_bounded_and_the_oldest_go_first() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(3);
+        for page in 0..(MAX_SHOWN_PAGES as u32 + 5) {
+            let text = format!("FAKE page number {page}.");
+            shown.note(&|| 1, 1, record, page, &text, &text);
+        }
+        assert_eq!(shown.list().len(), MAX_SHOWN_PAGES);
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 0.")
+            .is_none());
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 36.")
+            .is_some());
+        // Size is bounded too (in bytes), and the page just shown always stays.
+        let big = "x".repeat(MAX_SHOWN_BYTES);
+        shown.note(&|| 1, 1, record, 99, &big, "");
+        assert_eq!(shown.list().len(), 1);
+        assert!(shown.accept(1, record, "xx", "xxxx").is_some());
+    }
+
+    #[test]
+    fn explaining_for_a_document_checks_its_sentence_against_the_pages_shown_first() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        // Before the model is asked anything, and before anything is kept, and what is asked
+        // is the collapsed sentence.
+        let explain = body("async fn ai_explain(");
+        let checked = explain.find("explain_context(").unwrap();
+        assert!(checked < explain.find("run_ai(").unwrap());
+        assert!(explain.contains("request.context = std::mem::take(&mut *sentence)"));
+        // What the reader is shown is noted only from a page native really drew.
+        let view = body("async fn vault_view_page(");
+        assert!(view.contains("note_shown_page("));
+        assert!(view.find("note_shown_page(").unwrap() > view.find("ticket.is_current()").unwrap());
+        // A hidden document is not drawn at all.
+        assert!(view.contains("record.hidden.is_some()"));
+        // Hiding a document, one or several, forgets its pages and stops a page being drawn.
+        for command in [
+            "async fn vault_hide_record(",
+            "async fn vault_hide_unavailable_records(",
+        ] {
+            let hide = body(command);
+            assert!(hide.contains("forget_texts_for("), "{command}");
+            assert!(hide.contains("pdf_view::cancel_views()"), "{command}");
         }
     }
 

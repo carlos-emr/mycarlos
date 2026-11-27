@@ -657,9 +657,9 @@ impl VaultSlots {
         self.current().document_tick()
     }
 
-    /// Starts the app's one document worker (Windows): a thread that ticks the current store once a
+    /// Starts the app's one document worker (desktop): a thread that ticks the current store once a
     /// second, holding the source only weakly, until the collection is stopped at exit.
-    #[cfg(windows)]
+    #[cfg(desktop)]
     pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
         let weak = Arc::downgrade(self);
         std::thread::Builder::new()

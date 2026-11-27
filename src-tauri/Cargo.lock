@@ -3189,6 +3189,7 @@ dependencies = [
  "hmac 0.12.1",
  "hpke",
  "image",
+ "jni 0.22.4",
  "landlock",
  "libc",
  "llama-cpp-2",
@@ -3212,6 +3213,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-android-pdf",
+ "tauri-plugin-android-trust",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-single-instance",
@@ -3225,6 +3227,7 @@ dependencies = [
  "windows",
  "x25519-dalek",
  "x509-cert",
+ "zbus",
  "zeroize",
  "zxcvbn",
 ]
@@ -5287,6 +5290,16 @@ name = "tauri-plugin-android-pdf"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "tauri",
+ "tauri-plugin",
+]
+
+[[package]]
+name = "tauri-plugin-android-trust"
+version = "0.1.0"
+dependencies = [
+ "jni 0.22.4",
+ "rustls-platform-verifier",
  "tauri",
  "tauri-plugin",
 ]

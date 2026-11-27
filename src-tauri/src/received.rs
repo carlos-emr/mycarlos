@@ -148,12 +148,22 @@ pub(crate) fn is_not_pdf(error: &io::Error) -> bool {
     error.get_ref().is_some_and(|source| source.is::<NotPdf>())
 }
 
-/// Reads the start of `reader` and refuses it unless "%PDF-" begins within the first
-/// `PDF_HEADER_WINDOW` bytes. The bytes read are put back in front, so the whole file still
-/// streams into the vault.
-pub(crate) fn require_pdf_header(
+/// What a file that may be imported is, decided from its own first bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileKind {
+    Pdf,
+    Jpeg,
+    Png,
+}
+
+/// Reads the start of `reader` and says what it is: a JPEG when it starts FF D8 FF, a PNG when it
+/// starts with the PNG signature, a PDF when
+/// "%PDF-" begins within the first `PDF_HEADER_WINDOW` bytes, and refused (`NotPdf`) otherwise.
+/// A picture is decided first, so a picture that merely carries the text "%PDF-" in its metadata is
+/// still cleaned as a picture and never kept as it came. The bytes read are put back in front.
+pub(crate) fn classify(
     mut reader: Box<dyn Read + Send>,
-) -> io::Result<Box<dyn Read + Send>> {
+) -> io::Result<(FileKind, Box<dyn Read + Send>)> {
     let mut head = Vec::with_capacity(PDF_HEADER_WINDOW);
     let mut chunk = [0_u8; PDF_HEADER_WINDOW];
     while head.len() < PDF_HEADER_WINDOW {
@@ -163,10 +173,16 @@ pub(crate) fn require_pdf_header(
         }
         head.extend_from_slice(&chunk[..read]);
     }
-    if !head.windows(5).any(|window| window == b"%PDF-") {
+    let kind = if crate::photo::looks_like_jpeg(&head) {
+        FileKind::Jpeg
+    } else if crate::photo_png::looks_like_png(&head) {
+        FileKind::Png
+    } else if head.windows(5).any(|window| window == b"%PDF-") {
+        FileKind::Pdf
+    } else {
         return Err(io::Error::new(io::ErrorKind::InvalidData, NotPdf));
-    }
-    Ok(Box::new(Cursor::new(head).chain(reader)))
+    };
+    Ok((kind, Box::new(Cursor::new(head).chain(reader))))
 }
 
 /// Why a share was refused as a whole.
@@ -179,11 +195,13 @@ pub(crate) enum ShareRefused {
 }
 
 /// One file waiting for the patient's decision.
-#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone)]
 pub(crate) struct ReceivedFile {
     pub(crate) source: ReceivedSource,
     pub(crate) name: String,
 }
+redact_debug!(ReceivedFile);
 
 /// What the app could not take since the page last asked, so the patient is told. It holds
 /// counts only, never a name or address.
@@ -198,7 +216,8 @@ pub(crate) struct ReceiveNotice {
 }
 
 /// What the page may see of a waiting file.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceivedSummary {
     pub(crate) id: Uuid,
@@ -209,6 +228,7 @@ pub(crate) struct ReceivedSummary {
     /// rather than shared by another app: the renderer asks the patient before it is added.
     pub(crate) needs_confirm: bool,
 }
+redact_debug!(ReceivedSummary);
 
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
 /// received while the vault is locked is lost if the app closes first (the sealed inbox is
@@ -576,7 +596,9 @@ mod tests {
 
     fn sniff(bytes: Vec<u8>) -> io::Result<Vec<u8>> {
         let mut out = Vec::new();
-        require_pdf_header(Box::new(Cursor::new(bytes)))?.read_to_end(&mut out)?;
+        classify(Box::new(Cursor::new(bytes)))?
+            .1
+            .read_to_end(&mut out)?;
         Ok(out)
     }
 
@@ -773,5 +795,21 @@ mod tests {
         );
         // An id that is not waiting takes nothing at all.
         assert!(files.take(&[Uuid::new_v4()]).is_none());
+    }
+}
+
+#[cfg(test)]
+mod not_pdf_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_is_not_a_pdf_says_so_and_is_told_apart_from_any_other_failure() {
+        assert_eq!(NotPdf.to_string(), "the file is not a PDF");
+        let marked = io::Error::new(io::ErrorKind::InvalidData, NotPdf);
+        assert!(is_not_pdf(&marked));
+        assert!(marked.to_string().contains("not a PDF"));
+        // Any other failure, with or without a source, is not that answer.
+        assert!(!is_not_pdf(&io::Error::other("FAKE read failed")));
+        assert!(!is_not_pdf(&io::Error::from(io::ErrorKind::UnexpectedEof)));
     }
 }

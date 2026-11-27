@@ -45,6 +45,9 @@ mod notice_keys;
 mod remote_notices;
 pub use backup_video::{BackupPlan, BackupSize};
 pub(crate) use delivery::AidFiling;
+pub use picked_video::{
+    PickedVideoOutcome, PickedVideoRequest, VideoImportJob, VideoImportProgress, VideoImportStage,
+};
 #[allow(unused_imports)]
 pub use playback::PlaybackOpened;
 #[cfg(test)]
@@ -72,6 +75,10 @@ mod profile_export;
 mod profile_import;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
+#[cfg(test)]
+mod refusal_tests;
+#[cfg(test)]
+mod save_stage_tests;
 // Backups that carry the videos or leave them out (#359 PR 6).
 mod backup_video;
 // Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
@@ -79,6 +86,8 @@ mod backup_video;
 mod playback;
 // Recording into the vault (#359): the video commands call it.
 mod recording;
+// A video the patient picks from their own files: checked, cleaned and sealed.
+mod picked_video;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
@@ -97,8 +106,8 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// a newer manifest.
 /// Format 13 (previous full names) follows 12 (remembered refusals, #143). Its number was
 /// taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"); the numbers
-/// after it are the profile handover's 14 and hiding a person's 15 (#360), the cloud AI key
-/// draft's 16 (#389) and #418's 17. A renumber changes this
+/// after it are the profile handover's 14 and hiding a person's 15 (#360), link removal's 16
+/// (#160), the cloud AI key draft's 17 (#389) and #418's 18. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 /// Format 14 (provisional, #360) is the profile handover: a profile can be hidden, can say
@@ -118,7 +127,11 @@ const MANIFEST_FORMAT_HIDDEN_PROFILES: u32 = 15;
 /// The first format that can hold a hidden profile. The library, the lists, search, the AI
 /// helper, the notices and delivery filing all honour `hidden` on a profile from here.
 const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES);
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_HIDDEN_PROFILES;
+/// Format 16 (removing a clinic link, #160) adds the `portalLinkRemoved` history event. No
+/// manifest field changed; an older build refuses the vault because it cannot read the event.
+/// The number is taken at merge, after the profile handover's 14 and hiding a person's 15.
+const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 16;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_LINK_REMOVAL;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
 /// And at most this many across every imported profile of a vault, so that handing over many
@@ -236,6 +249,9 @@ const ARGON_ITERATIONS: u32 = 3;
 const ARGON_LANES: u32 = 4;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+/// Windows Search leaves a file with this attribute out of its content index.
+#[cfg(any(windows, test))]
+const FILE_ATTRIBUTE_NOT_CONTENT_INDEXED: u32 = 0x0000_2000;
 #[cfg(windows)]
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
@@ -381,6 +397,10 @@ pub enum VaultError {
     AlreadyExists,
     #[error("the vault has not been created")]
     Missing,
+    /// iOS: the app's data folder could not be kept out of iCloud and computer backups
+    /// (`backup_exclusion.rs`), so no vault is created or opened until it can.
+    #[error("this phone could not keep the vault out of device backups")]
+    BackupExclusionFailed,
     #[error("the vault is locked")]
     Locked,
     #[error("the vault is open in another app instance")]
@@ -922,7 +942,8 @@ struct HistorySegment {
     entry_count: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultRecord {
     pub id: Uuid,
@@ -965,6 +986,7 @@ pub struct VaultRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reading_aid: Option<crate::portal_delivery::ReadingAidView>,
 }
+redact_debug!(VaultRecord);
 
 // JSON numbers must remain exact when the renderer compares capture order.
 const MAX_SNAPSHOT_SEQUENCE: u64 = (1_u64 << 53) - 1;
@@ -1013,15 +1035,18 @@ pub(crate) const HOW_PERSON_HIDDEN: &str = "personHidden";
 
 /// A document that arrived for a person while they were hidden and now waits in Shared with
 /// me (#360): offered back to them when they are restored.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArrivedWhileHidden {
     pub record_id: Uuid,
     pub display_name: String,
 }
+redact_debug!(ArrivedWhileHidden);
 
 /// The clinic's own words for the patient of a document (#340): as the signed delivery says them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClinicPatient {
     pub name: String,
@@ -1039,9 +1064,11 @@ pub struct ClinicPatient {
     /// with me, so filing under one of them does not make the next documents file themselves.
     pub matching_people: Vec<Uuid>,
 }
+redact_debug!(ClinicPatient);
 
 /// A hidden person as Security's Hidden people list shows them (#360).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HiddenProfile {
     pub id: Uuid,
@@ -1050,12 +1077,14 @@ pub struct HiddenProfile {
     /// All the person's documents, those hidden one by one included.
     pub documents: usize,
 }
+redact_debug!(HiddenProfile);
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
 /// What the vault knows about a document's patient (#72 part B). Names and
 /// birth dates feed the native re-check; the provider and the clinic feed
 /// the remover in page code.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KnownIdentifiers {
     pub names: Vec<String>,
@@ -1064,6 +1093,7 @@ pub struct KnownIdentifiers {
     pub doctor_names: Vec<String>,
     pub clinic_names: Vec<String>,
 }
+redact_debug!(KnownIdentifiers);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1080,6 +1110,27 @@ pub enum RecoveryReason {
     /// A redundant write or a repair failed. Storage is not reliable enough
     /// to commit; a later unlock retries the repair.
     WriteFailed,
+}
+
+/// What a store's folder says about the vault its notice keys belong to (#357).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NoticeKeyVault {
+    /// The vault's id, from the open vault or a locked one's header.
+    Id(Uuid),
+    /// No vault is made here (the folder is not there): it holds no keys.
+    None,
+    /// A vault is here but its id cannot be read: the caller must not guess.
+    Unknown,
+}
+
+impl NoticeKeyVault {
+    /// The id, when there is one.
+    pub(crate) fn id(self) -> Option<Uuid> {
+        match self {
+            Self::Id(id) => Some(id),
+            Self::None | Self::Unknown => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -1448,12 +1499,12 @@ impl VaultStore {
         enabled: bool,
     ) -> Result<crate::document_notification_runtime::Status, VaultError> {
         if !enabled {
-            // Revoke final OS acceptance before even an in-memory cache lock.
+            // Revoke final OS acceptance before even an in-memory cache lock. Only the notices
+            // stop: the automatic document checks are their own choice (a check that is running
+            // goes on, and its documents are filed as before).
             if let Some(runtime) = self.notifications.get() {
                 runtime.suspend_notices();
             }
-            self.collection.suspend();
-            self.drop_idle_collection_cache();
         }
         self.notifications
             .get()
@@ -1471,7 +1522,7 @@ impl VaultStore {
         let stamp = self.collection.suspend();
         self.drop_idle_collection_cache();
         run_at_test_boundary("notifications.after-automatic-suspend");
-        if !cfg!(any(test, windows)) {
+        if !cfg!(any(test, desktop)) {
             return Err(VaultError::Invalid);
         }
         let status = self
@@ -1495,13 +1546,14 @@ impl VaultStore {
     /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
     /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
     /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
-    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
-    /// there is nothing to run).
+    /// while this vault is unlocked and its owner turned automatic checks on (desktop; a phone has
+    /// no worker). The notice at the end of a check goes through the runtime, which on a system
+    /// with no notices records nothing.
     pub(crate) fn document_tick(&self) -> bool {
         if self.collection.is_shutdown() {
             return false;
         }
-        #[cfg(windows)]
+        #[cfg(desktop)]
         self.automatic_document_tick();
         true
     }
@@ -1522,7 +1574,7 @@ impl VaultStore {
         }
     }
 
-    #[cfg(windows)]
+    #[cfg(desktop)]
     fn automatic_document_tick(&self) {
         if !self.automatic_collection_allowed() {
             return;
@@ -2463,6 +2515,20 @@ impl VaultStore {
                     let mut summary = self.link_summary(link);
                     summary.refused_deliveries =
                         refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary.notices_enrolled = unlocked
+                        .manifest
+                        .remote_notices
+                        .has_destination_for(link.id);
+                    summary.has_documents = unlocked.manifest.records.iter().any(|record| {
+                        record
+                            .delivery
+                            .as_ref()
+                            .is_some_and(|c| c.link_id == link.id)
+                            || record
+                                .reading_aid
+                                .as_ref()
+                                .is_some_and(|a| a.link_id == link.id)
+                    });
                     summary
                 })
                 .collect(),
@@ -2737,6 +2803,95 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .contains(&link_id)
+    }
+
+    /// Removes a clinic link that has never delivered a document (#160): the link with its
+    /// private keys (zeroized on drop), its remembered refusals, its waiting reading aids and its
+    /// push registration, and one history entry, in one commit. A link with a filed document or
+    /// reading aid is refused (`Invalid`): its custody proof is checked with the link's keys at
+    /// every unlock, so the keys must stay. Nobody is told: the clinic may still list the device.
+    /// Removing a link that is already gone is not an error. Refused while a document check or
+    /// other portal work holds the portal guard (`Portal(Busy)`), and when the session changed
+    /// since the caller took `session` (`Portal(Cancelled)`).
+    pub fn remove_portal_link(&self, link_id: Uuid, session: u64) -> Result<(), VaultError> {
+        use portal_link::LinkError;
+        let _work = self.start_portal_work()?;
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        {
+            // Already gone is not a write: look under the session lock and return early, as
+            // `forget_refusals` does, so a double click makes no commit and no history entry.
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if open.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+            if !open.manifest.portal_links.iter().any(|l| l.id == link_id) {
+                return Ok(());
+            }
+        }
+        let removed = self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            // Gone between the early check above and this commit (a second removal won the
+            // race): nothing to do, and `false` makes this commit write nothing of its own.
+            let Some(index) = manifest.portal_links.iter().position(|l| l.id == link_id) else {
+                return Ok(false);
+            };
+            let has_custody = manifest.records.iter().any(|record| {
+                record
+                    .delivery
+                    .as_ref()
+                    .is_some_and(|c| c.link_id == link_id)
+                    || record
+                        .reading_aid
+                        .as_ref()
+                        .is_some_and(|a| a.link_id == link_id)
+            });
+            if has_custody {
+                return Err(VaultError::Invalid);
+            }
+            // A push destination or a queued revocation means the portal still holds a
+            // subscription for this device: removing the link would strand it. Refused until the
+            // patient turns notices off and the revocation has gone out.
+            if manifest.remote_notices.has_destination_for(link_id) {
+                return Err(VaultError::Invalid);
+            }
+            let link = manifest.portal_links.remove(index);
+            manifest.refused_deliveries.retain(|r| r.link_id != link_id);
+            manifest.waiting_aids.retain(|a| a.link_id != link_id);
+            manifest.remote_notices.drop_link(link_id);
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkRemoved, crate::now_ms());
+            entry.portal_link_id = Some(link_id);
+            entry.profile_id = link.profile_id;
+            entry.name = link
+                .clinic
+                .as_ref()
+                .map(|clinic| clinic.clinic_name.clone());
+            entries.push(entry);
+            Ok(true)
+        })?;
+        if removed {
+            // After the commit: the vault is the source of truth, and this state only caches it.
+            self.forget_link_state(link_id);
+            // The link's notice key goes too; a crash before this is covered by the sweep when
+            // the vault is next opened (`notice_key::after_open`).
+            crate::notice_key::after_link_removed(link_id);
+        }
+        Ok(())
+    }
+
+    /// Drops what this run remembers about a link that is no longer in the vault.
+    fn forget_link_state(&self, link_id: Uuid) {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&link_id);
+        // Also clears the approval polling progress.
+        self.invalidate_collection_cache();
     }
 
     pub(crate) fn mark_link_gone(&self, link_id: Uuid) {
@@ -4532,9 +4687,27 @@ impl VaultStore {
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         options.mode(0o600);
-        AtomicFile::new(destination, AllowOverwrite)
-            .write_with_options(|file| file.write_all(kit.as_bytes()), options)
+        // The key is in this file in the clear: ask Windows Search not to read it into its index
+        // (best effort). Asked twice: at creation, and again on the saved file. `CreateFile` does
+        // not apply this attribute to a new file (the GitHub Windows runner read it back as
+        // unset on a file created with it, #533), so the saved file is given it explicitly.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.attributes(FILE_ATTRIBUTE_NOT_CONTENT_INDEXED);
+        }
+        let stage = SaveStage::begin_journaled(&self.root, destination)?;
+        AtomicFile::new_with_tmpdir(destination, AllowOverwrite, stage.dir())
+            .write_with_options(
+                |file| {
+                    run_at_test_boundary("save.kit.during");
+                    file.write_all(kit.as_bytes())
+                },
+                options,
+            )
             .map_err(io::Error::from)?;
+        #[cfg(windows)]
+        keep_out_of_windows_search(destination);
         Ok(())
     }
 
@@ -5087,16 +5260,21 @@ impl VaultStore {
         #[cfg(unix)]
         options.mode(0o600);
         let mut outcome = Ok(());
-        let written = AtomicFile::new(destination, AllowOverwrite).write_with_options(
-            |file| {
-                outcome = self.backup_planned(BufWriter::new(&mut *file), now_ms, &plan);
-                match &outcome {
-                    Ok(()) => file.sync_all(),
-                    Err(_) => Err(io::Error::other("backup failed")),
-                }
-            },
-            options,
-        );
+        let stage = SaveStage::begin(&self.root, destination)?;
+        let written = AtomicFile::new_with_tmpdir(destination, AllowOverwrite, stage.dir())
+            .write_with_options(
+                |file| {
+                    run_at_test_boundary("save.backup.during");
+                    outcome = self.backup_planned(BufWriter::new(&mut *file), now_ms, &plan);
+                    match &outcome {
+                        Ok(()) => file.sync_all(),
+                        Err(_) => Err(io::Error::other("backup failed")),
+                    }
+                },
+                options,
+            );
+        // The stage goes before anything is noted, as an export's does.
+        drop(stage);
         outcome?;
         written.map_err(io::Error::from)?;
         self.record_backup_saved(&destination.to_string_lossy());
@@ -5686,20 +5864,36 @@ fn file_extension(name: &str) -> &str {
     }
 }
 
+/// The characters a file name never keeps: the control characters (`char::is_control`, which
+/// leaves out the Unicode line and paragraph separators and the format characters) and the
+/// invisible ones that show nothing or change how the text around them reads: the Arabic letter
+/// mark, the zero-width characters and direction marks (U+200B to U+200F), the line and paragraph
+/// separators (U+2028, U+2029), the embeddings and overrides (U+202A to U+202E), the word joiner
+/// (U+2060), the isolates (U+2066 to U+2069) and the byte order mark (U+FEFF). **The one predicate**
+/// of `sanitize_basename` (what is stored) and of the routing of a provider's own file name
+/// (`routing_name` in `lib.rs`), so that a character the routing lets through is never one the store then drops.
+pub(crate) fn is_hidden_name_char(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{061c}'
+                | '\u{200b}'..='\u{200f}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{feff}'
+        )
+}
+
 pub(crate) fn sanitize_basename(value: &str) -> String {
     let raw = value.rsplit(['/', '\\']).next().unwrap_or("Imported file");
     let mut cleaned = String::new();
-    for character in raw.chars().filter(|character| {
-        !character.is_control()
-            && !matches!(
-                *character,
-                '\u{061c}'
-                    | '\u{200b}'..='\u{200f}'
-                    | '\u{202a}'..='\u{202e}'
-                    | '\u{2066}'..='\u{2069}'
-                    | '\u{feff}'
-            )
-    }) {
+    for character in raw
+        .chars()
+        .filter(|character| !is_hidden_name_char(*character))
+    {
         let character = if matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
             '_'
         } else {
@@ -8618,6 +8812,56 @@ mod collection_object_tests {
         store.set_automatic_checks(true).ok().unwrap();
         store
     }
+    /// A store whose runtime has a backend that can show notices, with nothing turned on.
+    fn unconsented_store(path: &Path) -> Arc<VaultStore> {
+        use crate::document_notification_runtime::{active::Backend, Error, Permission, Runtime};
+        struct BackendMock;
+        impl Backend for BackendMock {
+            fn permission(&self) -> Permission {
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+        let store = Arc::new(VaultStore::new(path.join("vault")));
+        let runtime = Runtime::load_for_test(path.join("state.json"), Box::new(BackendMock));
+        assert!(store.notifications.set(Arc::new(runtime)).is_ok());
+        store
+    }
+
+    #[test]
+    fn the_automatic_check_runs_with_the_notices_off_and_the_notices_do_not_stop_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = unconsented_store(temp.path());
+        assert!(!store.automatic_collection_allowed());
+        // Its own consent, no notices: the check is allowed to run.
+        let status = store.set_automatic_checks(true).ok().unwrap();
+        assert!(status.automatic_checks_enabled && !status.enabled);
+        assert!(store.automatic_collection_allowed());
+        // Turning the notices on and off again does not stop or pause it.
+        store.set_notifications(true).ok().unwrap();
+        assert!(store.automatic_collection_allowed());
+        store.set_notifications(false).ok().unwrap();
+        assert!(store.automatic_collection_allowed());
+        assert!(!store.collection.paused());
+        // Only its own switch turns it off.
+        store.set_automatic_checks(false).ok().unwrap();
+        assert!(!store.automatic_collection_allowed());
+    }
+
+    #[test]
+    fn a_saved_choice_to_check_automatically_is_still_on_when_the_vault_is_opened_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = unconsented_store(temp.path());
+        store.set_automatic_checks(true).ok().unwrap();
+        drop(store);
+        // A new store over the same ledger (the next start of the app): on without any notice.
+        let again = unconsented_store(temp.path());
+        assert!(again.notifications.get().unwrap().automatic_eligible());
+        assert!(!again.notifications.get().unwrap().status().enabled);
+    }
+
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
 
     /// `unlock` is untouched by the derive/install split (the older unlock tests above and below
@@ -8979,6 +9223,79 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
     }
 }
 
+/// A journaled staging folder for a save to a place the patient chose: a recovery kit, a backup
+/// or a hand-over package. The temporary file `AtomicFile` writes before it renames goes inside
+/// it, not into a `.atomicwrite…` folder of its own beside the destination, so that a save the
+/// process died in leaves a folder the next start knows by name and removes
+/// (`remove_abandoned_exports`), instead of a partly written file (for a kit, the key) in a
+/// folder nothing will ever clean. The sweep touches only folders this journal names, never a
+/// folder it merely finds, and skips one an export of this process is still using.
+///
+/// No age check is needed before the sweep removes one: the sweep runs with the storage lock,
+/// which keeps another instance out while a session is open, and skips what is in flight here, so
+/// it cannot remove the live save of another instance (see `remove_abandoned_exports`).
+///
+/// The folder is made beside the destination, so the rename stays on one volume as it was.
+/// `begin` goes on without a journal entry if the vault's own disk cannot take it, as an export
+/// does: what such a save leaves after a crash is encrypted (a backup, a package). `begin_journaled`
+/// refuses instead, for the recovery kit, whose temporary file holds the key in the clear: an
+/// unjournaled stage is the very leftover nothing would clean.
+///
+/// Dropping it removes the folder and then the entry. A release build aborts on a panic and does
+/// not run `Drop` (a debug build's panic does); the next start's sweep removes the folder then.
+pub(crate) struct SaveStage {
+    dir: PathBuf,
+    entry: Option<PathBuf>,
+    _in_flight: ExportInFlight,
+}
+
+impl SaveStage {
+    /// A stage for a save whose temporary file is encrypted; see the type's documentation.
+    pub(crate) fn begin(root: &Path, destination: &Path) -> Result<Self, VaultError> {
+        Self::make(root, destination, false)
+    }
+
+    /// A stage for a save whose temporary file is readable: refused (and nothing made) when the
+    /// journal cannot take its entry.
+    pub(crate) fn begin_journaled(root: &Path, destination: &Path) -> Result<Self, VaultError> {
+        Self::make(root, destination, true)
+    }
+
+    fn make(root: &Path, destination: &Path, journal_required: bool) -> Result<Self, VaultError> {
+        let parent = destination.parent().ok_or(VaultError::Invalid)?;
+        let id = Uuid::new_v4();
+        let in_flight = ExportInFlight::new(id);
+        let dir = parent.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
+        let entry = if journal_required {
+            Some(journal_export(root, id, &dir)?)
+        } else {
+            journal_export(root, id, &dir).ok()
+        };
+        if let Err(error) = create_stage_dir(&dir) {
+            if let Some(entry) = &entry {
+                let _ = remove_owned_file(entry, Removable::ExportStage);
+            }
+            return Err(error);
+        }
+        Ok(Self {
+            dir,
+            entry,
+            _in_flight: in_flight,
+        })
+    }
+
+    /// Where the temporary file goes.
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for SaveStage {
+    fn drop(&mut self) {
+        finish_export(&self.dir, self.entry.as_deref());
+    }
+}
+
 /// Removes the staging folders of exports that a process which died left
 /// behind, each holding a readable copy of a document, and their journal
 /// entries. Best effort. The caller holds the storage lock, which keeps out
@@ -9063,6 +9380,26 @@ fn encode_path(path: &Path) -> Vec<u8> {
 fn decode_path(bytes: &[u8]) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStrExt;
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
+}
+
+/// Sets "not content indexed" on a saved file, keeping the attributes it has. Best effort: a
+/// volume or folder that refuses it only loses that, and nothing about the save depends on it.
+#[cfg(windows)]
+fn keep_out_of_windows_search(path: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_FLAGS_AND_ATTRIBUTES};
+    let Ok(metadata) = fs::metadata(path) else {
+        return;
+    };
+    // NORMAL (0x80) is valid only alone, so it goes when another attribute is added.
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x0000_0080;
+    let attributes =
+        (metadata.file_attributes() & !FILE_ATTRIBUTE_NORMAL) | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: `wide` is NUL-terminated and outlives the call.
+    let _ =
+        unsafe { SetFileAttributesW(PCWSTR(wide.as_ptr()), FILE_FLAGS_AND_ATTRIBUTES(attributes)) };
 }
 
 #[cfg(windows)]
@@ -9550,6 +9887,47 @@ impl VaultStore {
     /// The open vault's id, for what is kept outside it (#230's notice keys).
     pub(crate) fn open_vault_id(&self) -> Option<Uuid> {
         self.session().as_ref().map(|open| open.manifest.vault_id)
+    }
+
+    /// Which vault, if any, the notice keys of this store belong to, open or locked: the open
+    /// vault's own id, else the one its header names (in the clear). It looks at the folder only
+    /// (no storage lock, no repair), so it is safe on the notice path (#357).
+    pub(crate) fn notice_key_vault(&self) -> NoticeKeyVault {
+        if let Some(id) = self.open_vault_id() {
+            return NoticeKeyVault::Id(id);
+        }
+        if !self.root.exists() {
+            return NoticeKeyVault::None;
+        }
+        let files = read_header_files(&self.root);
+        match files.candidates.first().map(|header| header.vault_id) {
+            // The header slots of one vault name one id; two ids are a folder that cannot be read
+            // as one vault.
+            Some(id) if files.candidates.iter().all(|header| header.vault_id == id) => {
+                NoticeKeyVault::Id(id)
+            }
+            _ => NoticeKeyVault::Unknown,
+        }
+    }
+
+    /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the
+    /// vault id and its links under ONE session guard and doing the wipe inside it, so a lock in
+    /// between cannot turn into a sweep with an empty link set that wipes every live key. Returns
+    /// false, and sweeps nothing, when the vault is locked.
+    pub(crate) fn sweep_notice_keys(&self) -> bool {
+        self.with_open_links(crate::notice_key::sweep_removed_links)
+    }
+
+    /// Calls `f` with the open vault's id and its link ids while holding the session guard; false
+    /// (and `f` not called) when locked.
+    fn with_open_links(&self, f: impl FnOnce(Uuid, &HashSet<Uuid>)) -> bool {
+        let guard = self.session();
+        let Some(open) = guard.as_ref() else {
+            return false;
+        };
+        let links: HashSet<Uuid> = open.manifest.portal_links.iter().map(|l| l.id).collect();
+        f(open.manifest.vault_id, &links);
+        true
     }
 }
 
@@ -19032,6 +19410,10 @@ mod tests {
             // Previous full names, format 13: the last before the profile
             // handover (14, #360).
             MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
+            // The profile handover, format 14: the last before hiding a person (15).
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
+            // Hiding a person, format 15: the last before link removal (16, #160).
+            MANIFEST_FORMAT_HIDDEN_PROFILES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
@@ -20103,6 +20485,16 @@ mod tests {
         assert_eq!(sanitize_basename("report\u{202e}fdp.exe"), "reportfdp.exe");
         assert_eq!(sanitize_basename("bad:name?.pdf. "), "bad_name_.pdf");
         assert_eq!(sanitize_basename("\u{200b}\u{feff}"), "Imported file");
+        // The line and paragraph separators and the word joiner are dropped too (one predicate with
+        // the routing of a provider's name), and a name that is only those is the stand-in.
+        assert_eq!(
+            sanitize_basename("a\u{2028}b\u{2029}c\u{2060}d.pdf"),
+            "abcd.pdf"
+        );
+        assert_eq!(
+            sanitize_basename("\u{2028}\u{2029}\u{2060}"),
+            "Imported file"
+        );
         assert!(sanitize_basename(&"🩺".repeat(100)).len() <= 240);
     }
 

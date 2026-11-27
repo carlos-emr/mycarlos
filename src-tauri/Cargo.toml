@@ -85,11 +85,18 @@ subtle = "2"
 # without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-android-pdf = { path = "android-pdf" }
+tauri-plugin-android-trust = { path = "android-trust" }
+# The same jni the platform verifier is built with (see android-trust/Cargo.toml).
+jni = "=0.22.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
 seccompiler = "=0.5.0"
+# The desktop notification service over D-Bus (document_notification_linux.rs). Already in the
+# build through tauri-plugin-single-instance on Linux, with the same default features: no new
+# crate. Pinned like its neighbours.
+zbus = "=5.19.0"
 
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime. Data_Xml_Dom,
 # UI_Notifications and Win32_System_WinRT show document arrival notices.

@@ -485,6 +485,8 @@ interface-UnlockPdfDialog-unlocking = Desbloqueando…
 
 interface-VaultApp-chooseFilesToImport = Elegir archivos para importar
 
+interface-VaultLibrary-picturesNote = Se quitan el lugar, la hora y los datos de la cámara de las imágenes que añada.
+
 interface-VaultApp-finishingTheTransfer = Finalizando la transferencia
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Bloquear ahora y cancelar la transferencia
@@ -769,7 +771,7 @@ native-error-20 = Elija una frase de contraseña menos predecible que no se base
 
 native-error-21 = No elija más de 100 archivos en una importación.
 
-native-error-22 = Uno de los archivos no es un documento PDF, por lo que no se añadió nada. myCarlos solo conserva documentos PDF.
+native-error-22 = Uno de los archivos no es un documento PDF ni una imagen JPEG o PNG, por lo que no se añadió nada. myCarlos conserva documentos PDF e imágenes JPEG y PNG. Si es una imagen de iPhone (HEIC), compártala como JPEG.
 
 native-error-23 = Este documento está bloqueado con una contraseña. Introduzca la contraseña del documento que aparece en su portal de pacientes.
 
@@ -819,7 +821,7 @@ native-error-45 = myCarlos no pudo abrir ese archivo. Si está en una carpeta co
 
 native-error-46 = Un documento de la bóveda está dañado y ya no se puede leer, por lo que no se guardó ninguna copia de seguridad. No se cambió nada.
 
-native-error-47 = myCarlos no puede guardar ni mostrar esta foto: debe ser una imagen JPEG completa de como máximo 25 MB y 8192 píxeles por lado. No se cambió nada.
+native-error-47 = myCarlos no puede guardar ni mostrar esta foto: debe ser una imagen JPEG o PNG completa (no animada) de como máximo 25 MB, 8192 píxeles por lado y 50 millones de píxeles en total (24 millones en un teléfono). No se cambió nada.
 
 native-error-48 = Se comprobó la copia de seguridad, pero su restauración no ha terminado. Cierre myCarlos y ábralo de nuevo para terminar. Después abra la bóveda con la frase de contraseña o la clave de recuperación de la copia de seguridad.
 
@@ -828,6 +830,13 @@ native-error-speedTest = La prueba de velocidad se detuvo antes de terminar. No 
 native-filter-backups = Copias de seguridad de myCarlos
 
 native-filter-pdf = Documentos PDF
+
+native-filter-video = Videos (MP4 o MOV)
+native-filter-pictures = Imágenes JPEG y PNG
+
+native-filter-pdfAndPictures = Documentos PDF e imágenes JPEG y PNG
+
+native-filter-pdfPicturesAndVideos = Documentos PDF, imágenes JPEG y PNG y videos (MP4 o MOV)
 
 native-kit-text =
     Kit de recuperación de myCarlos
@@ -1058,6 +1067,8 @@ recoveryKey-reason-legend = ¿Por qué la reemplaza?
 
 recoveryKey-reason-routine = Solo quiero una clave nueva: su kit está a salvo
 
+recoveryKey-kitCloudWarning = Este archivo no está cifrado. Una carpeta que se sincroniza con la nube (OneDrive, iCloud Drive, Dropbox, Google Drive) lo sube, así que guárdelo en un lugar que no se sincronice.
+
 recoveryKey-saveKit = Guardar el kit de recuperación…
 
 recoveryKey-threeMisses = No coincidió tres veces. Vuelva a mirar su clave de recuperación y luego compruébela.
@@ -1198,6 +1209,8 @@ security-autoLock-shorter = Tiempo más corto
 security-autoLock-title = Bloqueo automático
 
 security-backup-body = Un solo archivo con toda su bóveda, todavía cifrada. Guárdelo en un lugar distinto de este dispositivo, como una unidad USB. Se abre con la frase de contraseña o la clave de recuperación que tenga al guardarlo, y se sigue abriendo con ellas aunque después las cambie aquí. Para restaurar una copia, bloquee la bóveda y elija Restaurar desde una copia de seguridad.
+
+security-backup-cloudWarning = Este archivo está cifrado, pero muestra cuántos documentos contiene y cuánto pesa cada uno. Una carpeta que se sincroniza con la nube (OneDrive, iCloud Drive, Dropbox, Google Drive) lo sube.
 
 security-backup-save = Guardar copia de seguridad cifrada…
 
@@ -1701,6 +1714,8 @@ interface-history-event-portalLinkStarted = Vinculación con la clínica iniciad
 
 interface-history-event-portalLinked = Clínica vinculada
 
+interface-history-event-portalLinkRemoved = Vínculo con la clínica quitado
+
 interface-history-event-profileCreated = Perfil de paciente añadido
 
 interface-history-event-profileDetailsChanged = Datos personales cambiados
@@ -1866,6 +1881,21 @@ portal-tryAgainFor = Intentar de nuevo con { $clinic }
 
 portal-linkAnother = Vincular otra clínica
 
+portal-removeLink = Quitar este vínculo
+
+portal-removeTitle = ¿Quitar este vínculo?
+
+portal-removeBody = { $clinic }, dispositivo «{ $device }». Este dispositivo deja de estar vinculado aquí y se borran sus claves guardadas de este dispositivo. Las copias de seguridad anteriores de su bóveda conservan esas claves hasta que se sustituyan. Es posible que su clínica siga mostrando este dispositivo.
+
+portal-removeConfirm = Quitar vínculo
+
+portal-removeKept = Los documentos de esta clínica están guardados en su caja fuerte, así que este vínculo se mantiene.
+
+portal-removeNotices = Los avisos de documentos están activados para esta clínica. Desactívelos primero y luego quite el vínculo.
+
+portal-removed = Vínculo quitado.
+
+
 ai-summary-button = Resumen
 
 ai-summary-title = Resumen en palabras sencillas
@@ -1888,11 +1918,11 @@ aiHelper-resultLabelInfo = Qué significa «Borrador de IA»
 
 ai-label-settingsTitle = Aviso en las respuestas de la IA
 
-ai-label-settingsBody = Cada respuesta de la IA indica que fue escrita por IA y que puede contener errores. Tras «No volver a mostrar», una etiqueta corta «Borrador de IA» sustituye la frase completa. La etiqueta nunca se quita. La elección se guarda en este dispositivo y vuelve a empezar si cambia el modelo o la herramienta.
+ai-label-settingsBody = Las respuestas de la IA pueden contener errores, y cada una lo indica. Si en una respuesta elige «No volver a mostrar», las respuestas siguientes muestran una etiqueta corta «Borrador de IA» en lugar de la frase completa.
 
 ai-label-settingsShowFull = Mostrar de nuevo el aviso completo
 
-ai-label-settingsFullShown = El aviso completo se muestra en cada respuesta de la IA.
+ai-label-settingsFullBack = El aviso completo vuelve a mostrarse en cada respuesta de la IA.
 
 ai-label-settingsShortShown = Se muestra una etiqueta corta «Borrador de IA» en las respuestas de la IA en las que la eligió.
 
@@ -2385,23 +2415,26 @@ interface-AiHelperNotice-continue = Continuar
 
 interface-AnonymizePreview-footerNote = El archivo terminará con esta línea:
 
-notifications-title = Avisos después de revisar los documentos
-notifications-help = Cuando se guarda un documento de la clínica tras una revisión manual, Windows puede mostrar un aviso general. Abra myCarlos normalmente para leerlo. Los documentos no se revisan automáticamente.
-notifications-allow = Permitir avisos de llegada de documentos
+notifications-title = Búsqueda de documentos
+notifications-allow = Mostrar un aviso cuando llegue un documento
 notifications-blocked = Windows está bloqueando las notificaciones. Revise sus ajustes de notificaciones.
 notifications-unknown = No se pudo comprobar el permiso de notificaciones de Windows.
+notifications-error = No se pudo guardar este ajuste. Los avisos y las comprobaciones automáticas están desactivados durante esta sesión.
+notifications-unavailable = Estos ajustes no están disponibles por ahora. Abra myCarlos normalmente para consultar sus documentos.
+notifications-helpAutomatic = myCarlos puede buscar documentos nuevos de la clínica por sí mismo mientras está abierto y desbloqueado. Los documentos nuevos aparecen entonces en su biblioteca.
 notifications-notYetAsked = Windows aún no ha mostrado ningún aviso de myCarlos, así que no tiene un ajuste para ellos. Los avisos están permitidos hasta que los desactive en los ajustes de Windows.
-notifications-error = No se pudo guardar este ajuste. Los avisos están desactivados durante esta sesión.
-notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
-notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
+notifications-blockedMac = macOS no permite las notificaciones de myCarlos. Actívelas en Ajustes del Sistema, en Notificaciones.
+notifications-notYetAskedMac = Aún no se le ha preguntado a macOS. Lo hará cuando active los avisos.
 notifications-autoAllow = Buscar documentos de las clínicas automáticamente mientras la bóveda esté desbloqueada
-notifications-autoNeedsNotices = Primero permita los avisos de llegada de documentos para activar esta opción.
-notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Las consultas pueden continuar si Windows bloquea los avisos. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores.
+notifications-autoConsent = Al activar esto, myCarlos se pone en contacto con el portal de su clínica de forma programada, con al menos dos minutos entre intentos, solo mientras está abierto y desbloqueado. Desactívelo para detenerlo.
+notifications-noticesHelp = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
+notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Los documentos nuevos aparecen en su biblioteca. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores. Los avisos son una opción aparte y no hacen falta para esto.
 notifications-autoPaused = Se necesita una consulta manual para continuar las consultas automáticas. Abra Clínicas conectadas y elija Buscar documentos nuevos.
 notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva a elegir Buscar documentos nuevos dentro de un momento.
-noticesStep-title = Avisos de su clínica
-noticesStep-intro = Su clínica está vinculada. myCarlos puede avisarle cuando llegue un documento nuevo. No se activa nada a menos que usted lo marque.
+noticesStep-title = Documentos de su clínica
+noticesStep-intro = Su clínica está vinculada. myCarlos puede buscar documentos nuevos por usted y mostrar un aviso cuando llegue uno, en un equipo que pueda hacerlo. No se activa nada a menos que usted lo marque.
 noticesStep-later = Puede cambiarlos cuando quiera en { $settings }, en { $preferences }: { $notices }.
+noticesStep-laterBackground = Puede cambiar las opciones de segundo plano cuando quiera en { $settings }, en { $preferences }: { $background }.
 noticesStep-done = Listo
 noticesStep-notNow = Ahora no
 
@@ -2500,6 +2533,8 @@ reader-android-zoomOut = Alejar
 
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Grabar un video
+interface-RecordDialog-recordAVideoFor = Grabar un video para { $name }
+interface-RecordDialog-recordingSettings = Ajustes de grabación
 interface-RecordDialog-unavailable = La grabación de video no está disponible en este dispositivo.
 interface-RecordDialog-why = ¿Por qué?
 interface-RecordDialog-startingTheCameraAndMicrophone = Iniciando la cámara y el micrófono…
@@ -2508,6 +2543,19 @@ interface-RecordDialog-yourPhoneAsksOnce = Tu teléfono pregunta una vez si myCa
 interface-RecordDialog-theCameraAndMicrophoneAreOn = La cámara y el micrófono solo están activos mientras grabas. Se apagan cuando detienes la grabación, cierras esta ventana o myCarlos se bloquea.
 interface-RecordDialog-theCameraAndMicrophoneAreOnNow = La cámara y el micrófono están activos, pero no se graba nada hasta que elijas Iniciar grabación.
 interface-RecordDialog-pictureQuality = Calidad de imagen
+interface-RecordDialog-cameraAndMicrophone = Cámara y micrófono
+interface-RecordDialog-camera = Cámara
+interface-RecordDialog-microphone = Micrófono
+interface-RecordDialog-unnamedCamera = Cámara { $number }
+interface-RecordDialog-unnamedMicrophone = Micrófono { $number }
+interface-RecordDialog-systemDefaultDevice = Predeterminado del sistema
+interface-RecordDialog-deviceFellBack = La cámara o el micrófono que usó la última vez no está conectado, así que se usa el predeterminado del sistema.
+interface-RecordDialog-deviceNotSwitched = No se pudo abrir la cámara o el micrófono que elegiste, así que sigue activo el que estaba en uso.
+interface-RecordDialog-saySomething = Di algo: la barra debería moverse.
+interface-RecordDialog-settingsNote = El video se guarda cifrado. myCarlos recuerda estas opciones en este dispositivo.
+interface-RecordDialog-testMicrophone = Probar el micrófono
+interface-RecordDialog-stopTestingMicrophone = Dejar de probar
+interface-RecordDialog-microphoneLevel = Nivel del micrófono
 interface-RecordDialog-standard = Estándar (720p)
 interface-RecordDialog-high = Alta (1080p)
 interface-RecordDialog-aboutStandardPerHour = Unos 1,1 GB por hora
@@ -2707,7 +2755,7 @@ handover-import-opening = Abriendo…
 
 handover-import-error-typo = Esa clave no parece correcta. Compárela con la que le dieron.
 
-handover-import-error-recovery = Esa es una clave de recuperación, no la clave de este archivo. Pida la clave creada para el archivo.
+handover-import-error-recovery = Eso parece una clave de recuperación, no la clave de este archivo. Revise la clave que le dieron para el archivo y compruebe que no haya un error al escribirla. Si no le dieron ninguna, pida la clave creada para el archivo.
 
 handover-import-error-wrong = Eso no abre este archivo.
 
@@ -2911,7 +2959,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Las comprobaciones automáticas solo se hacen mientras myCarlos está abierto y desbloqueado.
+notifications-autoSummary = myCarlos solo recoge por sí mismo los documentos nuevos de la clínica mientras está abierto y desbloqueado. Mientras está bloqueado en segundo plano, solo puede avisarle de que hay algo esperando.
 
 background-keepRunningSummary = myCarlos puede seguir en segundo plano después de cerrar su ventana. Su bóveda se bloquea al cerrarse la ventana.
 
@@ -2926,8 +2974,57 @@ native-notice-test = Este es un aviso de prueba de myCarlos.
 notifications-testButton = Mostrar un aviso de prueba
 
 notifications-testSent = Aviso de prueba enviado. Si no lo ve, revise la configuración de notificaciones de Windows.
+notifications-testSentMac = Aviso de prueba enviado. Si no lo ve, revise Ajustes del Sistema, en Notificaciones.
 
 notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
+
+native-backupExclusionFailed = Este teléfono no pudo mantener la bóveda fuera de las copias de seguridad del dispositivo. Inténtelo de nuevo.
+
+interface-AddVideo-add = Añadir un video
+
+interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y el nombre y modelo del dispositivo que contiene.
+
+interface-AddVideo-checking = Comprobando el video…
+
+interface-AddVideo-storing = Añadiendo el video: { $percent } %
+
+interface-AddVideo-progressLabel = Añadiendo el video
+
+interface-AddVideo-cancel = Cancelar
+
+interface-AddVideo-cancelling = Cancelando…
+
+interface-AddVideo-added = Se añadió el video.
+
+interface-AddVideo-duplicate = Ese video ya está aquí. No se añadió nada.
+
+interface-AddVideo-cancelled = Cancelado. No se añadió nada.
+
+interface-AddVideo-notVideo = Este archivo no es un video que myCarlos pueda añadir. Elija un video MP4 o MOV.
+
+interface-AddVideo-videoAlone = Un video se añade por separado. Elija un solo video, o elija documentos e imágenes, pero no ambos a la vez. No se añadió nada.
+
+interface-AddVideo-hevc = Este video usa H.265 (HEVC), que muchos ordenadores no pueden reproducir. Guárdelo como MP4 H.264 y añádalo de nuevo.
+
+interface-AddVideo-videoCodec = Este video usa un formato de imagen que myCarlos no puede reproducir. Guárdelo como MP4 H.264 y añádalo de nuevo.
+
+interface-AddVideo-audioCodec = El sonido de este video usa un formato que myCarlos no puede reproducir. Guárdelo con sonido AAC y añádalo de nuevo.
+
+interface-AddVideo-noVideo = Este archivo no tiene imagen, así que no es un video. Elija un video MP4 o MOV.
+
+interface-AddVideo-tooManyTracks = Este video tiene más imágenes o sonidos de los que myCarlos puede añadir. Guarde una copia sencilla con una imagen y un sonido, y añádala de nuevo.
+
+interface-AddVideo-external = Una parte de este video está guardada fuera del archivo, así que no se puede añadir. Guarde una copia completa y añádala de nuevo.
+
+interface-AddVideo-fragmented = Este video está en un formato de transmisión. Guárdelo como MP4 normal y añádalo de nuevo.
+
+interface-AddVideo-tooBig = La imagen de este video es mayor de lo que myCarlos puede añadir. Guarde una copia más pequeña y añádala de nuevo.
+
+interface-AddVideo-tooLarge = Este video es mayor de lo que myCarlos puede añadir en este dispositivo (2 GB en un ordenador, 1 GB en un teléfono). Guarde una copia más pequeña y añádala de nuevo.
+
+interface-AddVideo-damaged = Este video está dañado o cortado, así que no se puede añadir. Cópielo de nuevo desde donde lo obtuvo e inténtelo otra vez.
+
+interface-AddVideo-adding = Añadiendo el video…
