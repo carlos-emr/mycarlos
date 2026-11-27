@@ -14,3 +14,11 @@ security-tests/**/target/
 __pycache__/
 
 .hmr-test-*/
+release-out/
+# Signing material and local secrets never belong in the repository (#422)
+*.jks
+*.keystore
+*.p12
+*.pfx
+.env
+.env.*
