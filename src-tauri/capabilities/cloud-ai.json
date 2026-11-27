@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "cloud-ai-window",
+  "description": "Renderer capabilities for the optional cloud AI commands (#72). Inert unless the cloud-ai Cargo feature registers the commands.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-cloud-ai-enabled",
+    "allow-cloud-ai-set-enabled",
+    "allow-cloud-key-list",
+    "allow-cloud-key-add",
+    "allow-cloud-key-remove",
+    "allow-cloud-key-test",
+    "allow-cloud-send-prepare",
+    "allow-cloud-send",
+    "allow-cloud-send-cancel"
+  ]
+}

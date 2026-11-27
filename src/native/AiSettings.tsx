@@ -9,6 +9,8 @@ import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
 import { AiSpeedCheck } from "./AiSpeedCheck";
+import { CloudAiSetting } from "./CloudAiSetting";
+import type { CloudAiBridge } from "../cloudAi";
 
 /** Settings > AI helper (#72): the model on this computer. Later AI settings
  * (such as the answers kept with documents) belong here too. Shown only on a
@@ -17,11 +19,14 @@ import { AiSpeedCheck } from "./AiSpeedCheck";
 export function AiSettings({
   aiStatus,
   onAiStatus,
+  cloudAi = null,
   onOpenAiHelperNotice,
 }: {
   aiStatus: ModelStatus | null;
   /** The status after the model was added or removed here. */
   onAiStatus: (status: ModelStatus) => void;
+  /** The cloud AI bridge (#72), given only in a build with the cloud AI flag. */
+  cloudAi?: CloudAiBridge | null;
   /** Opens the notice about the AI helper (#72, #355): it is here, with the
    * helper's other settings, and no longer in Security. */
   onOpenAiHelperNotice?: () => void;
@@ -119,6 +124,7 @@ export function AiSettings({
           </section>
         )}
         {aiStatus && <AiSpeedCheck status={aiStatus} />}
+        <CloudAiSetting bridge={cloudAi} />
       </div>
     </main>
   );

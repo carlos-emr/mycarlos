@@ -12,6 +12,13 @@
     "background_status": [
       "locale: enum UiLocale"
     ],
+    "cloud_send": [
+      "locale: enum UiLocale"
+    ],
+    "cloud_send_prepare": [
+      "PrepareSendRequest.language: enum UiLocale",
+      "PrepareSendRequest.removed: the elements of RemovedPart"
+    ],
     "vault_ai_result_save": [
       "SaveAiResultRequest.sources: the elements of SourceSpan"
     ],
@@ -203,6 +210,85 @@
         "locale": {
           "optional": true,
           "struct": null
+        }
+      },
+      "raw": false
+    },
+    "cloud_ai_enabled": {
+      "arguments": {},
+      "raw": false
+    },
+    "cloud_ai_set_enabled": {
+      "arguments": {
+        "on": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "cloud_key_add": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "CloudKeyAddRequest"
+        }
+      },
+      "raw": false
+    },
+    "cloud_key_list": {
+      "arguments": {},
+      "raw": false
+    },
+    "cloud_key_remove": {
+      "arguments": {
+        "id": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "cloud_key_test": {
+      "arguments": {
+        "id": {
+          "optional": false,
+          "struct": null
+        },
+        "testId": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "cloud_send": {
+      "arguments": {
+        "exchangeId": {
+          "optional": false,
+          "struct": null
+        },
+        "locale": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "cloud_send_cancel": {
+      "arguments": {
+        "exchangeId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "cloud_send_prepare": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PrepareSendRequest"
         }
       },
       "raw": false
@@ -1277,6 +1363,25 @@
       },
       "open": false
     },
+    "CloudKeyAddRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "key": {
+          "optional": false,
+          "struct": null
+        },
+        "label": {
+          "optional": false,
+          "struct": null
+        },
+        "provider": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
     "ConfirmRecoveryKeyRequest": {
       "ambiguous": false,
       "denyUnknown": true,
@@ -1656,6 +1761,45 @@
       },
       "open": false
     },
+    "PrepareSendRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "keyId": {
+          "optional": false,
+          "struct": null
+        },
+        "labels": {
+          "optional": false,
+          "struct": null
+        },
+        "language": {
+          "optional": false,
+          "struct": null
+        },
+        "model": {
+          "optional": true,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "removed": {
+          "optional": false,
+          "struct": "RemovedPart"
+        },
+        "source": {
+          "optional": false,
+          "struct": null
+        },
+        "text": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
     "ProfileDetails": {
       "ambiguous": false,
       "denyUnknown": true,
@@ -1864,6 +2008,25 @@
           "struct": null
         },
         "value": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RemovedPart": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "manual": {
+          "optional": true,
+          "struct": null
+        },
+        "original": {
+          "optional": false,
+          "struct": null
+        },
+        "replacement": {
           "optional": false,
           "struct": null
         }

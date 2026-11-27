@@ -140,6 +140,10 @@ impl Prepared {
     pub(crate) fn estimate(&self) -> &Estimate {
         &self.estimate
     }
+
+    pub(crate) fn model_label(&self) -> &'static str {
+        self.model_label
+    }
 }
 
 /// What the page asks to send. Everything in it is checked by `prepare`; none is believed.
@@ -300,6 +304,11 @@ pub(crate) fn send(
     };
     if !confirmer.confirm(&confirmation) {
         return Err(SendError::Declined);
+    }
+    // The dialog can stay open for a long time: a lock, a consent turned off or a cancel while it
+    // was open ends this before anything is recorded or sent.
+    if cancel.load(Ordering::Acquire) {
+        return Err(SendError::Failed(Failure::Cancelled, None));
     }
     let secret = vault
         .key_secret(prepared.key_id)
@@ -844,5 +853,38 @@ mod tests {
             result,
             Err(SendError::Failed(Failure::Busy, Some(ref id))) if id == "req_FAKE1"
         ));
+    }
+
+    #[test]
+    fn a_cancel_or_lock_while_the_dialog_was_open_records_and_sends_nothing() {
+        struct CancelsWhileOpen<'a>(&'a AtomicBool);
+        impl Confirmer for CancelsWhileOpen<'_> {
+            fn confirm(&self, _: &Confirmation) -> bool {
+                self.0.store(true, Ordering::Release);
+                true
+            }
+        }
+        let vault = FakeVault::new();
+        let transport = FakeTransport {
+            vault: &vault,
+            calls: RefCell::new(vec![]),
+            reply: Ok((200, good_body())),
+        };
+        let prepared = prepared(&vault, "Patient [NAME 1] presents with fever.").unwrap();
+        let cancel = AtomicBool::new(false);
+        let result = send(
+            &vault,
+            &transport,
+            &CancelsWhileOpen(&cancel),
+            prepared,
+            &cancel,
+            || 5,
+        );
+        assert!(matches!(
+            result,
+            Err(SendError::Failed(Failure::Cancelled, None))
+        ));
+        assert!(transport.calls.borrow().is_empty());
+        assert!(vault.history.borrow().is_empty());
     }
 }

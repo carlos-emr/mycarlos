@@ -257,6 +257,10 @@ describe("the text the operating system shows for myCarlos", () => {
   // pinned above; a new one of any kind has to be placed here.
   const NATIVE_IDS_USED = [
     "NativeCancel",
+    "NativeCloudSendBody",
+    "NativeCloudSendGo",
+    "NativeCloudSendKeep",
+    "NativeCloudSendTitle",
     "NativeFilterBackups",
     "NativeFilterModels",
     "NativeFilterPdf",
@@ -306,6 +310,21 @@ describe("the text the operating system shows for myCarlos", () => {
     // computer, shown in a native dialog the patient opens; not a name from a record), and
     // `kept` / `removal` are the dialog's own sentences.
     "native-setAside-desktop": ["folder"],
+    // The cloud AI send confirmation (#72): the one confirmation per send, built natively from the
+    // vault and the re-checked text. The patient chose to send this document with their own key, so
+    // the dialog names it (with the provider and host, the key's own label, the model, and the size
+    // and cost estimate); it is a native modal the patient opened, never an operating-system notice.
+    "native-cloud-send-body": [
+      "characters",
+      "cost",
+      "document",
+      "host",
+      "key",
+      "model",
+      "provider",
+      "tokens",
+    ],
+    "native-cloud-send-title": ["provider"],
     "native-setAside-warning": ["kept", "removal"],
   };
 

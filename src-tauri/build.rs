@@ -54,6 +54,13 @@ fn declares_camera_and_microphone(manifest: &str) -> bool {
 }
 
 fn main() {
+    // The build profile, for the cloud AI gate (`src/cloud_ai/gate.rs`): the release profile sets
+    // `mycarlos_release_profile`, and a build with the `cloud-ai` feature does not compile with it,
+    // whatever `debug_assertions` says (a RUSTFLAGS flip cannot sneak a release build through).
+    println!("cargo:rustc-check-cfg=cfg(mycarlos_release_profile)");
+    if std::env::var("PROFILE").is_ok_and(|profile| profile == "release") {
+        println!("cargo:rustc-cfg=mycarlos_release_profile");
+    }
     if std::env::var("TARGET").is_ok_and(|target| target.contains("android")) {
         let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("gen/android/app/src/main/AndroidManifest.xml");
@@ -118,6 +125,18 @@ fn main() {
             "ai_model_speed",
             "ai_explain",
             "ai_cancel",
+            // Declared in every build and granted in every build by capabilities/cloud-ai.json, but
+            // registered only with the `cloud-ai` feature (src/cloud_ai/commands.rs): a build without
+            // it has these grants and no handlers (inert; a call is refused as an unknown command).
+            "cloud_ai_enabled",
+            "cloud_ai_set_enabled",
+            "cloud_key_list",
+            "cloud_key_add",
+            "cloud_key_remove",
+            "cloud_key_test",
+            "cloud_send_prepare",
+            "cloud_send",
+            "cloud_send_cancel",
             "kdf_benchmark",
             "vault_status",
             "vault_passphrase_rules",

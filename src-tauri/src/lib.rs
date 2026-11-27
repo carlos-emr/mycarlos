@@ -3286,7 +3286,10 @@ async fn vault_create(
     let created = run_blocking(store.arc(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
-            .inspect(|_| picks.clear())
+            .inspect(|_| {
+                picks.clear();
+                cloud_ai_on_lock();
+            })
             .and_then(|_| store.snapshot());
         request.passphrase.zeroize();
         result
@@ -3320,7 +3323,10 @@ async fn vault_unlock(
                 // A pick can read the session after a lock clears it but pass its
                 // unlocked check before the lock lands. Starting a new session here
                 // leaves such a pick in the one that ended.
-                .inspect(|_| picks.clear());
+                .inspect(|_| {
+                    picks.clear();
+                    cloud_ai_on_lock();
+                });
             request.passphrase.zeroize();
             result
         }),
@@ -3609,6 +3615,8 @@ fn stop_work_for_lock(picks: &PendingPicks) {
     pdf_view::cancel_views();
     pdf_view::cancel_text_reads();
     local_runner::on_lock();
+    // The cloud AI session (#72): what was prepared is dropped, a send is stopped, consent goes off.
+    cloud_ai_on_lock();
 }
 
 /// How often the native timer checks the idle deadline.
@@ -3650,6 +3658,13 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
         stop_work_for_lock(picks);
     }
     locked
+}
+
+/// A lock, an idle lock or a reset ends the cloud AI session (#72): what was prepared is dropped, a
+/// send that is running is asked to stop, and consent goes off. Nothing with the feature off.
+fn cloud_ai_on_lock() {
+    #[cfg(feature = "cloud-ai")]
+    cloud_ai::on_lock();
 }
 
 /// Counts time as activity until it is dropped, on every path, for at most
@@ -4434,7 +4449,10 @@ async fn vault_recover(
             let result = store
                 .recover(&request.recovery_key, &request.new_passphrase)
                 // As for unlock: a pick from the session that ended stays there.
-                .inspect(|_| picks.clear());
+                .inspect(|_| {
+                    picks.clear();
+                    cloud_ai_on_lock();
+                });
             request.recovery_key.zeroize();
             request.new_passphrase.zeroize();
             result
@@ -8043,7 +8061,9 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    cloud_ai_on_lock();
     run_blocking(store.arc(), VaultStore::reset).await?;
+    cloud_ai_on_lock();
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
@@ -8376,6 +8396,12 @@ pub fn run() {
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
+            #[cfg(feature = "cloud-ai")]
+            {
+                let session = Arc::new(cloud_ai::commands::CloudSession::default());
+                cloud_ai::install(Arc::clone(&session));
+                app.manage(session);
+            }
             // The startup receipt of files named on the command line, and a second launch's, belong
             // to `run` (#133): the received files are managed there, before any plugin.
             let vaults = app.state::<StoreHandle>().inner().clone();
@@ -8447,6 +8473,24 @@ pub fn run() {
             ai_model_speed,
             ai_explain,
             ai_cancel,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_ai_enabled,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_ai_set_enabled,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_list,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_add,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_remove,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_test,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_send_prepare,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_send,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_send_cancel,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
@@ -9253,7 +9297,7 @@ mod tests {
             (
                 "async fn vault_reset(",
                 concat!(
-                    "VaultStore::reset).await?; ",
+                    "VaultStore::reset).await?; cloud_ai_on_lock(); ",
                     "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
                     "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
@@ -9791,6 +9835,7 @@ mod tests {
             files,
             [
                 "appearance.json",
+                "cloud-ai.json",
                 "default.json",
                 "events.json",
                 "zoom.json"
@@ -12081,6 +12126,13 @@ mod tests {
                 "app.manage(Arc::new(PendingPicks::default()))",
             ),
             ("Arc<ReceivedFiles>", ".manage(Arc::clone(&received))"),
+            (
+                "Arc<CloudSession>",
+                concat!(
+                    "let session = Arc::new(cloud_ai::commands::CloudSession::default());",
+                    "cloud_ai::install(Arc::clone(&session)); app.manage(session);",
+                ),
+            ),
         ];
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
@@ -12240,6 +12292,53 @@ mod tests {
             }
         }
         found
+    }
+
+    /// The cloud AI commands (#72) live in `cloud_ai/commands.rs`, compiled only with the `cloud-ai`
+    /// feature. Each is declared in build.rs (so its permission exists in every build), granted by
+    /// `capabilities/cloud-ai.json` and never by default.json, and registered here behind the feature.
+    #[test]
+    fn the_cloud_ai_commands_are_declared_granted_and_registered_together() {
+        let commands_source = include_str!("cloud_ai/commands.rs");
+        let build_script = include_str!("../build.rs");
+        let library = include_str!("lib.rs");
+        let cloud: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/cloud-ai.json")).unwrap();
+        let default: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let granted: Vec<&str> = cloud["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|permission| permission.as_str().unwrap())
+            .collect();
+        let marker = ["#[tauri", "::command]\npub(crate) async fn "].concat();
+        let names: Vec<&str> = commands_source
+            .split(&marker)
+            .skip(1)
+            .map(|rest| rest.split('(').next().unwrap())
+            .collect();
+        assert_eq!(names.len(), 9, "{names:?}");
+        assert_eq!(granted.len(), names.len());
+        for name in names {
+            let permission = format!("allow-{}", name.replace('_', "-"));
+            assert!(granted.contains(&permission.as_str()), "{name}");
+            assert!(build_script.contains(&format!("\"{name}\"")), "{name}");
+            assert!(
+                library.contains(&format!(
+                    "#[cfg(feature = \"cloud-ai\")]\n            cloud_ai::commands::{name},\n"
+                )),
+                "{name}"
+            );
+            // Never granted by default: a build with the feature off has no cloud grant to widen.
+            assert!(!default["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p.as_str() == Some(permission.as_str())));
+        }
+        // The window the grant is for is the one window.
+        assert_eq!(cloud["windows"], serde_json::json!(["main"]));
     }
 
     #[test]

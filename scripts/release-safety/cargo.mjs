@@ -337,6 +337,12 @@ export function checkCommandText(text, label) {
             .find((word) => !word.startsWith("+") && !word.startsWith("-"))
         : undefined;
     if (cargoSub !== undefined && NOT_A_BUILD.has(cargoSub)) continue;
+    // A command that builds the DEBUG profile (the evaluation installers: `tauri build --debug`) may
+    // carry the cloud AI send, and only that feature: a debug build is refused by the store checks
+    // (debuggable, get-task-allow, the profile markers) and the Rust gate refuses the feature in the
+    // release profile, so such a build cannot ship. Anything else, a release command above all, may not.
+    const debugBuild =
+      tokens.includes("--debug") && !tokens.includes("--release");
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i];
       let list = null;
@@ -359,6 +365,8 @@ export function checkCommandText(text, label) {
         }
         for (const feature of list.split(/[\s,]+/).filter(Boolean)) {
           const bad = forbiddenPart(feature);
+          if (bad && debugBuild && (bad === "cloud-ai" || bad === "cloud_ai"))
+            continue;
           if (bad) problems.push(`${label} builds with the ${bad} feature`);
         }
       }

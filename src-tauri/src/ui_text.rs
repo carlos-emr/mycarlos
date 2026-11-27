@@ -416,6 +416,14 @@ mod tests {
             ("kept", "FAKE kept"),
             ("removal", "FAKE removal"),
             ("folder", "/FAKE/{folder}/אבג"),
+            // The cloud send confirmation (#72).
+            ("provider", "FAKE provider"),
+            ("host", "fake.example"),
+            ("model", "FAKE model"),
+            ("document", "FAKE.pdf"),
+            ("characters", "1000"),
+            ("tokens", "250"),
+            ("cost", "US$0.01"),
         ];
         for locale in UiLocale::ALL {
             for id in MessageId::ALL {

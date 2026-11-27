@@ -15,24 +15,42 @@
 //!   and the history entry for the answer. A `Transport` is the only thing that touches a network;
 //!   the tests supply a fake one.
 //!
-//! Not here, on purpose: the Tauri commands, the native dialog and the screens (later changes).
+//! - `keytest`: the explicit key test (`GET /v1/models`), no document;
+//! - `exchanges`: the one prepared send and the cancel flags;
+//! - `commands` (only with the feature): the Tauri commands and the native confirmation.
 
 #[cfg(feature = "cloud-ai")]
 pub(crate) mod client;
+pub(crate) mod exchanges;
+pub(crate) mod keytest;
 pub(crate) mod request;
 pub(crate) mod response;
 pub(crate) mod restore;
 pub(crate) mod send;
 
-// Until the live contract check pins the VERIFY values (the `anthropic-version` header and the
-// shape of `output_config.format`, see TESTING.md), NO build may have the feature on (debug builds
-// ship too: the evaluation downloads are `tauri build --debug`). Local work opts in with
-// `cloud-ai-unverified-dev`, which no CI job or packaging step may enable.
-#[cfg(all(
-    feature = "cloud-ai",
-    not(test),
-    not(feature = "cloud-ai-unverified-dev")
-))]
-compile_error!(
-    "the cloud-ai feature builds nothing that ships until the VERIFY values in cloud_ai/request.rs are pinned (#72)"
-);
+#[cfg(feature = "cloud-ai")]
+pub(crate) mod commands;
+
+/// The one cloud session of the process, kept here (set when the app is built) so that EVERY way
+/// the vault locks (the command, the idle backstop, a reset) can reach it without plumbing: a lock
+/// drops what was prepared, stops a send that is running and turns consent off.
+#[cfg(feature = "cloud-ai")]
+static SESSION: std::sync::OnceLock<std::sync::Arc<commands::CloudSession>> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "cloud-ai")]
+pub(crate) fn install(session: std::sync::Arc<commands::CloudSession>) {
+    let _ = SESSION.set(session);
+}
+
+/// Called wherever the vault locks or is reset.
+#[cfg(feature = "cloud-ai")]
+pub(crate) fn on_lock() {
+    if let Some(session) = SESSION.get() {
+        session.lock();
+    }
+}
+
+// The build gate and the marker: see `gate.rs`. The feature compiles in test, evaluation and development
+// builds (the debug profile) and does not compile in a release build.
+mod gate;

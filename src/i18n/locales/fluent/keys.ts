@@ -314,6 +314,10 @@ export const MESSAGE_KEYS = [
   "native.backup.noteEmptied",
   "native.backup.noteUntouched",
   "native.cancel",
+  "native.cloud.send.title",
+  "native.cloud.send.body",
+  "native.cloud.send.keep",
+  "native.cloud.send.go",
   "native.error.01",
   "native.error.02",
   "native.error.03",
@@ -1424,6 +1428,49 @@ export const MESSAGE_KEYS = [
   "interface.AddVideo.tooLarge",
   "interface.AddVideo.damaged",
   "interface.AddVideo.adding",
+  "cloudAi.title",
+  "cloudAi.syntheticOnly",
+  "cloudAi.notice",
+  "cloudAi.understand",
+  "cloudAi.enable",
+  "cloudAi.disable",
+  "cloudAi.enabledState",
+  "cloudAi.disabledState",
+  "cloudAi.noKey",
+  "cloudAi.keyItem",
+  "cloudAi.addKey",
+  "cloudAi.addTitle",
+  "cloudAi.labelField",
+  "cloudAi.keyField",
+  "cloudAi.keyHelp",
+  "cloudAi.add",
+  "cloudAi.cancel",
+  "cloudAi.remove",
+  "cloudAi.removeTitle",
+  "cloudAi.removeBody",
+  "cloudAi.removeConfirm",
+  "cloudAi.err.badShape",
+  "cloudAi.err.adminKey",
+  "cloudAi.err.duplicate",
+  "cloudAi.err.tooMany",
+  "cloudAi.err.badLabel",
+  "cloudAi.err.generic",
+  "cloudAi.send",
+  "cloudAi.previewNote",
+  "cloudAi.working",
+  "cloudAi.cancelSend",
+  "cloudAi.cancelled",
+  "cloudAi.answerTitle",
+  "cloudAi.answerLabel",
+  "cloudAi.keyTest",
+  "cloudAi.answerFlagged",
+  "cloudAi.keyTestRunning",
+  "cloudAi.keyTestAccepted",
+  "cloudAi.keyTestRejected",
+  "cloudAi.keyTestBusy",
+  "cloudAi.keyTestUnexpected",
+  "cloudAi.keyTestUnreachable",
+  "cloudAi.sendFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1847,6 +1894,10 @@ const FLUENT_IDS_BY_KEY = {
   "native.backup.noteEmptied": "native-backup-noteEmptied",
   "native.backup.noteUntouched": "native-backup-noteUntouched",
   "native.cancel": "native-cancel",
+  "native.cloud.send.title": "native-cloud-send-title",
+  "native.cloud.send.body": "native-cloud-send-body",
+  "native.cloud.send.keep": "native-cloud-send-keep",
+  "native.cloud.send.go": "native-cloud-send-go",
   "native.error.01": "native-error-01",
   "native.error.02": "native-error-02",
   "native.error.03": "native-error-03",
@@ -3130,6 +3181,49 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AddVideo.tooLarge": "interface-AddVideo-tooLarge",
   "interface.AddVideo.damaged": "interface-AddVideo-damaged",
   "interface.AddVideo.adding": "interface-AddVideo-adding",
+  "cloudAi.title": "cloudAi-title",
+  "cloudAi.syntheticOnly": "cloudAi-syntheticOnly",
+  "cloudAi.notice": "cloudAi-notice",
+  "cloudAi.understand": "cloudAi-understand",
+  "cloudAi.enable": "cloudAi-enable",
+  "cloudAi.disable": "cloudAi-disable",
+  "cloudAi.enabledState": "cloudAi-enabledState",
+  "cloudAi.disabledState": "cloudAi-disabledState",
+  "cloudAi.noKey": "cloudAi-noKey",
+  "cloudAi.keyItem": "cloudAi-keyItem",
+  "cloudAi.addKey": "cloudAi-addKey",
+  "cloudAi.addTitle": "cloudAi-addTitle",
+  "cloudAi.labelField": "cloudAi-labelField",
+  "cloudAi.keyField": "cloudAi-keyField",
+  "cloudAi.keyHelp": "cloudAi-keyHelp",
+  "cloudAi.add": "cloudAi-add",
+  "cloudAi.cancel": "cloudAi-cancel",
+  "cloudAi.remove": "cloudAi-remove",
+  "cloudAi.removeTitle": "cloudAi-removeTitle",
+  "cloudAi.removeBody": "cloudAi-removeBody",
+  "cloudAi.removeConfirm": "cloudAi-removeConfirm",
+  "cloudAi.err.badShape": "cloudAi-err-badShape",
+  "cloudAi.err.adminKey": "cloudAi-err-adminKey",
+  "cloudAi.err.duplicate": "cloudAi-err-duplicate",
+  "cloudAi.err.tooMany": "cloudAi-err-tooMany",
+  "cloudAi.err.badLabel": "cloudAi-err-badLabel",
+  "cloudAi.err.generic": "cloudAi-err-generic",
+  "cloudAi.send": "cloudAi-send",
+  "cloudAi.previewNote": "cloudAi-previewNote",
+  "cloudAi.working": "cloudAi-working",
+  "cloudAi.cancelSend": "cloudAi-cancelSend",
+  "cloudAi.cancelled": "cloudAi-cancelled",
+  "cloudAi.answerTitle": "cloudAi-answerTitle",
+  "cloudAi.answerLabel": "cloudAi-answerLabel",
+  "cloudAi.keyTest": "cloudAi-keyTest",
+  "cloudAi.answerFlagged": "cloudAi-answerFlagged",
+  "cloudAi.keyTestRunning": "cloudAi-keyTestRunning",
+  "cloudAi.keyTestAccepted": "cloudAi-keyTestAccepted",
+  "cloudAi.keyTestRejected": "cloudAi-keyTestRejected",
+  "cloudAi.keyTestBusy": "cloudAi-keyTestBusy",
+  "cloudAi.keyTestUnexpected": "cloudAi-keyTestUnexpected",
+  "cloudAi.keyTestUnreachable": "cloudAi-keyTestUnreachable",
+  "cloudAi.sendFailed": "cloudAi-sendFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3509,6 +3603,19 @@ export interface MessageArgsByKey {
   "native.backup.noteEmptied": undefined;
   "native.backup.noteUntouched": undefined;
   "native.cancel": undefined;
+  "native.cloud.send.title": { provider: FluentArgument };
+  "native.cloud.send.body": {
+    characters: FluentArgument;
+    cost: FluentArgument;
+    document: FluentArgument;
+    host: FluentArgument;
+    key: FluentArgument;
+    model: FluentArgument;
+    provider: FluentArgument;
+    tokens: FluentArgument;
+  };
+  "native.cloud.send.keep": undefined;
+  "native.cloud.send.go": undefined;
   "native.error.01": undefined;
   "native.error.02": undefined;
   "native.error.03": undefined;
@@ -4693,6 +4800,53 @@ export interface MessageArgsByKey {
   "interface.AddVideo.tooLarge": undefined;
   "interface.AddVideo.damaged": undefined;
   "interface.AddVideo.adding": undefined;
+  "cloudAi.title": undefined;
+  "cloudAi.syntheticOnly": undefined;
+  "cloudAi.notice": undefined;
+  "cloudAi.understand": undefined;
+  "cloudAi.enable": undefined;
+  "cloudAi.disable": undefined;
+  "cloudAi.enabledState": undefined;
+  "cloudAi.disabledState": undefined;
+  "cloudAi.noKey": undefined;
+  "cloudAi.keyItem": {
+    date: FluentArgument;
+    label: FluentArgument;
+    last4: FluentArgument;
+  };
+  "cloudAi.addKey": undefined;
+  "cloudAi.addTitle": undefined;
+  "cloudAi.labelField": undefined;
+  "cloudAi.keyField": undefined;
+  "cloudAi.keyHelp": undefined;
+  "cloudAi.add": undefined;
+  "cloudAi.cancel": undefined;
+  "cloudAi.remove": undefined;
+  "cloudAi.removeTitle": undefined;
+  "cloudAi.removeBody": undefined;
+  "cloudAi.removeConfirm": undefined;
+  "cloudAi.err.badShape": undefined;
+  "cloudAi.err.adminKey": undefined;
+  "cloudAi.err.duplicate": undefined;
+  "cloudAi.err.tooMany": undefined;
+  "cloudAi.err.badLabel": undefined;
+  "cloudAi.err.generic": undefined;
+  "cloudAi.send": undefined;
+  "cloudAi.previewNote": undefined;
+  "cloudAi.working": undefined;
+  "cloudAi.cancelSend": undefined;
+  "cloudAi.cancelled": undefined;
+  "cloudAi.answerTitle": undefined;
+  "cloudAi.answerLabel": undefined;
+  "cloudAi.keyTest": undefined;
+  "cloudAi.answerFlagged": { marks: FluentArgument };
+  "cloudAi.keyTestRunning": undefined;
+  "cloudAi.keyTestAccepted": undefined;
+  "cloudAi.keyTestRejected": undefined;
+  "cloudAi.keyTestBusy": undefined;
+  "cloudAi.keyTestUnexpected": undefined;
+  "cloudAi.keyTestUnreachable": undefined;
+  "cloudAi.sendFailed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

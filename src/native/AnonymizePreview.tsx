@@ -19,6 +19,8 @@ import {
 import { useModalFocus } from "../useModalFocus";
 import { useMediaMatch } from "./smallWindow";
 import { removalCounts, wordsToCheck } from "./anonymizeReview";
+import { CloudSendStep } from "./CloudSendStep";
+import type { CloudAiBridge } from "../cloudAi";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   hasVaultErrorCode,
@@ -159,6 +161,7 @@ export function AnonymizePreview({
   saveText,
   copyText,
   exportHeader,
+  cloudAi = null,
   onClose,
 }: {
   record: VaultRecord;
@@ -186,6 +189,9 @@ export function AnonymizePreview({
   ) => Promise<TextCopyOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
+  /** The cloud AI bridge (#72), given only in a build with the cloud AI flag; the send step
+   * shows only when cloud AI is on and a key is saved. */
+  cloudAi?: CloudAiBridge | null;
   onClose: () => void;
 }) {
   useI18n();
@@ -468,8 +474,8 @@ export function AnonymizePreview({
     setPutBack({ parts: result.parts, flagged: result.flagged.length });
   };
 
-  /** What native code still found, for a save or a copy: taken out, placeholders and moved
-   * dates whole, for the patient to check and try again. */
+  /** What native code still found (a refused Save or copy, or a refused cloud send): taken out,
+   * placeholders and moved dates whole, for the patient to check and try again. */
   const refuse = (hits: { start: number; end: number }[]) => {
     if (!current) return;
     let step = current;
@@ -988,6 +994,22 @@ export function AnonymizePreview({
               >
                 {translateNow("interface.AnonymizePreview.copy")}
               </button>
+              {current && (
+                <CloudSendStep
+                  bridge={cloudAi}
+                  onRefused={refuse}
+                  recordId={record.id}
+                  text={current.toSend}
+                  source={current.onDevice.source}
+                  labels={[...new Set(Object.values(current.onDevice.labels))]}
+                  removed={current.onDevice.removed.map((part) => ({
+                    replacement: part.replacement,
+                    original: part.original,
+                    manual: part.kind === "manual",
+                  }))}
+                  disabled={busy || !ticket}
+                />
+              )}
               {closeAtBottom && closeButton}
             </footer>
             {saved && (

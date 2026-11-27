@@ -18,12 +18,11 @@ default = []
 # (src/model_helper.rs), so CI tests the launcher, sandbox, cancel and lock without a model. No
 # installer enables it; CI fails a build of the app that accepts the stub argument.
 ai-helper-stub = []
-# The patient's own cloud AI key and, in later changes, the send path (#72, THREAT_MODEL AI-11 and
-# NET-05). Off by default and not in any release build until the #25 review signs off.
+# The patient's own cloud AI key and send path (#72, THREAT_MODEL AI-11 and NET-09). Off by default.
+# It compiles in evaluation and development builds (the debug profile) and NOT in a release build
+# (`src/cloud_ai/gate.rs`); the release-safety gate refuses it in any release build command and
+# its marker in any store artifact.
 cloud-ai = []
-# Local work on the cloud-ai feature before the live contract check (see cloud_ai/mod.rs): without
-# it a build with `cloud-ai` fails to compile. No CI job or packaging step may enable it.
-cloud-ai-unverified-dev = ["cloud-ai"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
