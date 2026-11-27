@@ -1,0 +1,306 @@
+"""Copy exact reviewed evidence only, after Root independently admits a completed H10 run.
+
+This helper does not run the scorer or establish native/process/guardian acceptance.
+Default: read-only report to stdout. --write creates a NEW sheet and lineage file.
+No normalized-only, quote-agnostic, similarity, or favorable-grade selection is allowed.
+"""
+import argparse
+import csv
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import re
+
+BASE = Path('/root/reports/ai-eval-rescore-20261111')
+SCORER = BASE / 'new-scorer-v9.1/scripts/summary-evaluation/harness/compare.py'
+HARD = BASE / 'ladder/HARD10-FREEZE-v2.json'
+OLD_RAW = Path('/root/reports/ai-eval/runs/M2literal6595-postdemo_v5clock_a1-H10/run.jsonl')
+BASELINE = BASE / 'input/E5-en.jsonl'
+OLD_SHEET = Path('/workspace/codex-agent2-H10-diagnostic-STP-merge-20261113/combined-fresh-S-TP.csv')
+OLD_KEY = Path('/root/reports/codex-agent2-M2literal6595-postdemo-v5clock-H10-diagnostic-score2-20261113/key/review-key.csv')
+PROVENANCE = Path('/root/supervisor/handoff/agent2-H10-final-actual-diagnostic-report-20261113/FRESH-109-REVIEW-ROW-PROVENANCE.json')
+PINS = {
+    SCORER: 'bc3b898f3869465d15344b93bb566aa1267d250d4c8d16d08d7e8de9f04798fc',
+    SCORER.parent / 'HARNESS-FREEZE.json': 'd1f0a34a4d749c14fdee4576c98c9070a091472b1d30b0e99c242b0d21c41fc9',
+    HARD: 'b657b15e20a043bc31dd842e9a5587f2414029b2f8e1e81598ad2c1614c57e63',
+    BASELINE: 'fdac409d22e9c0a078df1c52ca907899f904c98ab75def9ae9101fae0dc4ce85',
+    OLD_RAW: '52440145453d9befcb28b74610aa28d861499ea967b4e290a79777b3c2ce5065',
+    OLD_SHEET: 'e059a68eed84299831a07717f57e82d948eaaf95fffbcf0fd8174af392d7deb9',
+    OLD_KEY: 'b471470758ddf39d7b6411c5646e29d4e1b48212b85b7453f26b0913b3db7523',
+    PROVENANCE: 'e4730325b67a206afb6aa24f59a42d1e24e9408c55f5bb217b5d3e479ba845be',
+}
+PROMPT = ('id', 'document', 'language', 'sentence', 'quote', 'context', 'fact_it_may_state')
+ANSWERS = ('verdict', 'unsafe', 'technical', 'note')
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def canonical(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+
+
+def ref(path):
+    return dict(path=str(path), sha256=sha(Path(path).read_bytes()))
+
+
+def json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, 'duplicate JSON key: ' + key)
+        result[key] = value
+    return result
+
+
+def complete_run(data, expected_ids, variant=None, commit=None, model=None):
+    rows = [json.loads(line, object_pairs_hook=json_object) for line in data.decode().splitlines() if line.strip()]
+    require(len(rows) == len(expected_ids) + 2, 'incomplete/extra run events')
+    require(rows[0].get('kind') == 'run' and rows[-1].get('kind') == 'end', 'run/END boundary')
+    meta, events, end = rows[0], rows[1:-1], rows[-1]
+    require(all(row.get('kind') == 'document' for row in events), 'unexpected event')
+    ids = [row.get('id') for row in events]
+    require(len(ids) == len(set(ids)) and set(ids) == set(expected_ids), 'missing/extra/duplicate document')
+    require(end.get('answered') == len(expected_ids), 'END answered count')
+    for event in events:
+        require({'kind', 'id', 'docLang', 'pages', 'textBytes', 'pagesSha256', 'wallMs'} <= set(event),
+                'document event required fields missing')
+        require(isinstance(event['docLang'], str) and bool(event['docLang']), 'document language missing')
+        require(isinstance(event['pagesSha256'], str) and re.fullmatch(r'[0-9a-f]{64}', event['pagesSha256']),
+                'document pagesSha256 missing or malformed')
+        require(all(type(event[key]) is int and event[key] >= 0 for key in ('pages', 'textBytes', 'wallMs')),
+                'document count/size/time fields malformed')
+        require(bool(event.get('error')) or isinstance(event.get('result'), dict), 'document result/error missing')
+    for actual, expected, name in ((meta.get('variant'), variant, 'variant'),
+                                   (meta.get('commit'), commit, 'commit'),
+                                   ((meta.get('model') or {}).get('sha256'), model, 'model')):
+        if expected is not None:
+            require(actual == expected, 'wrong ' + name)
+    return meta, {row['id']: row for row in events}
+
+
+def verify_event_pages(entries, pages, module):
+    require(set(entries) == set(pages), 'missing/extra document/page identity')
+    for doc, event in entries.items():
+        # Unlike compare.as_read, a current candidate must record its page hash explicitly.
+        require(event.get('pagesSha256') == module.pages_hash(pages[doc]), 'document page hash differs: ' + doc)
+        require(event['pages'] == len(pages[doc]), 'document page count differs: ' + doc)
+        require(event['textBytes'] == sum(len(page['text'].encode('utf-8')) for page in pages[doc]),
+                'document text byte count differs: ' + doc)
+
+
+def scored_runs_by_label(values):
+    labels = [run['label'] for run in values]
+    require(len(labels) == len(set(labels)), 'duplicate scorer run label')
+    return {run['label']: run for run in values}
+
+
+def statement(sentence):
+    return (sentence.get('text'), sentence.get('quote'), sentence.get('located'))
+
+
+def sentences(entries, doc):
+    return ((entries.get(doc) or {}).get('result') or {}).get('sentences') or []
+
+
+def window(entries, doc, index):
+    parts = sentences(entries, doc)
+    require(0 <= index < len(parts), 'window index')
+    start, end = max(0, index - 1), min(len(parts), index + 2)
+    return (index - start, tuple(statement(s) for s in parts[start:end]))
+
+
+def prompt_equal(first, second):
+    return all(first.get(field, '') == second.get(field, '') for field in PROMPT)
+
+
+def displayed_window_matches(row, signature, module):
+    texts, quotes = row['sentence'].split(module.TOGETHER), row['quote'].split(module.TOGETHER)
+    marked = [i for i, text in enumerate(texts) if text.startswith('⟦') and text.endswith('⟧')]
+    if len(marked) != 1 or len(texts) != len(quotes):
+        return False
+    place = marked[0]
+    texts[place] = texts[place][1:-1]
+    return signature[0] == place and [(part[0], part[1]) for part in signature[1]] == list(zip(texts, quotes))
+
+
+def complete_answers(row, module):
+    kind = row['id'][0]
+    verdict = row.get('verdict', '').strip().lower()
+    if kind == 'P':
+        return verdict in ('same', 'different')
+    if verdict not in ('correct', 'wrong', 'unsupported', 'vague'):
+        return False
+    module.unsafe_of(row)  # Refuse malformed answers rather than silently dropping them.
+    if kind == 'S' and module.technical_of(row) is None:
+        return False
+    if kind == 'S' and verdict == 'correct' and len(module.listed_facts(row)) > 1:
+        return module.stated_facts(row) is not False
+    return kind in ('S', 'T')
+
+
+def same_evidence(row, old, current_keys, old_keys, current_runs, old_runs, module):
+    if not prompt_equal(row, old) or not complete_answers(old, module):
+        return False
+    doc, kind = row['document'], row['id'][0]
+    if kind == 'S':
+        current = [statement(sentences(current_runs[k['run']], doc)[int(k['sentence'])]) for k in current_keys]
+        previous = [statement(sentences(old_runs[k['run']], doc)[int(k['sentence'])]) for k in old_keys]
+        previous = [part for part in previous if part[:2] == (old['sentence'], old['quote'])]
+        return bool(current) and all(part[:2] == (row['sentence'], row['quote']) and part in previous for part in current)
+    if kind == 'T':
+        current = [window(current_runs[k['run']], doc, int(k['sentence'])) for k in current_keys]
+        previous = [window(old_runs[k['run']], doc, int(k['sentence'])) for k in old_keys]
+        previous = [part for part in previous if displayed_window_matches(old, part, module)]
+        return bool(current) and all(displayed_window_matches(row, part, module) and part in previous for part in current)
+    # P rows explicitly show both statements/quotes. Require both raw parts, including located,
+    # to have identical reviewed source evidence, regardless of the run label.
+    texts, quotes = row['sentence'].split(module.TOGETHER), row['quote'].split(module.TOGETHER)
+    if len(texts) != 2 or len(quotes) != 2:
+        return False
+    for text, quote in zip(texts, quotes):
+        current = {statement(s) for entries in current_runs.values() for s in sentences(entries, doc)
+                   if s.get('text') == text and s.get('quote') == quote}
+        previous = {statement(s) for entries in old_runs.values() for s in sentences(entries, doc)
+                    if s.get('text') == text and s.get('quote') == quote}
+        if not current or not current <= previous:
+            return False
+    return True
+
+
+def grouped(rows):
+    result = {}
+    for row in rows:
+        result.setdefault(row['id'], []).append(row)
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--current-run', required=True)
+    parser.add_argument('--current-pages', required=True)
+    parser.add_argument('--expected-run-sha256', required=True)
+    parser.add_argument('--expected-variant', required=True)
+    parser.add_argument('--expected-commit', required=True)
+    parser.add_argument('--expected-model-sha256', required=True)
+    parser.add_argument('--scores', required=True, help='Fresh actual unchanged-scorer output; Root verifies its invocation.')
+    parser.add_argument('--sheet', required=True, help='Fresh blank emitted review/review.csv or review-latest.csv')
+    parser.add_argument('--key', required=True, help='Its current key/review-key.csv; never an old label-swapped key')
+    parser.add_argument('--out', required=True)
+    parser.add_argument('--lineage', required=True)
+    parser.add_argument('--write', action='store_true', help='After Root admission only; refuse existing output files')
+    args = parser.parse_args()
+    for path, expected in PINS.items():
+        require(sha(path.read_bytes()) == expected, 'pinned source/input drift: ' + str(path))
+    spec = importlib.util.spec_from_file_location('unchanged_frozen_compare', SCORER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    full, full_tags = module.load_documents(), module.load_tags()
+    hard = module.read_json(HARD)
+    require(not module.freeze_problems(), 'global document file drift')
+    require(not module.pinning_problems(module.scoring_identity(full, {}, full_tags)), 'global scoring identity drift')
+    require(sha((SCORER.parent / 'FACT-TAGS.json').read_bytes()) == module.read_json(module.FREEZE)['tags_file_sha256'],
+            'global tag file drift')
+    for name, expected in hard['scoring_files'].items():
+        require(sha((BASE / 'ladder' / name).read_bytes()) == expected, 'H10 scoring file drift: ' + name)
+    docs = module.load_documents(BASE / 'ladder/H10v2/documents', BASE / 'ladder/H10v2/fixtures.json')
+    tags = module.load_tags(BASE / 'ladder/H10v2/TAGS.json')
+    require(set(docs) == set(hard['documents']) and len(docs) == 10, 'arbitrary H10 roster')
+    require(all(doc == full[doc_id] for doc_id, doc in docs.items()), 'H10 document projection drift')
+    require(tags == {name: tag for name, tag in full_tags.items() if name.split('/')[0] in docs}, 'H10 tag projection drift')
+    raw = Path(args.current_run).read_bytes()
+    require(sha(raw) == args.expected_run_sha256, 'current raw hash differs from Root-bound final hash')
+    current_meta, current_entries = complete_run(raw, docs, args.expected_variant, args.expected_commit,
+                                                  args.expected_model_sha256)
+    base_meta, base_entries = module.read_run(BASELINE)
+    old_meta, old_entries = complete_run(OLD_RAW.read_bytes(), docs)
+    require(args.expected_variant not in (base_meta['variant'], old_meta['variant']), 'current label collides with source run')
+    old_runs = {base_meta['variant']: base_entries, old_meta['variant']: old_entries}
+    current_runs = {base_meta['variant']: base_entries, args.expected_variant: current_entries}
+    for name, expected in hard['files'].items():
+        require(sha((Path(args.current_pages) / name).read_bytes()) == expected, 'current staged runner file drift: ' + name)
+    pages = module.load_pages(args.current_pages)
+    require(set(pages) == set(docs), 'missing/extra current page documents')
+    verify_event_pages(current_entries, pages, module)
+    require(all(current_entries[d]['docLang'] == docs[d]['lang'] for d in docs), 'document language differs')
+    module.as_read(docs, {label: ({}, entries) for label, entries in current_runs.items()}, pages)
+    # Old clinical evidence was independently reviewed despite its failed operational guard.
+    # It establishes no operational acceptance for either old or current run.
+    module.as_read(docs, {label: ({}, entries) for label, entries in old_runs.items()}, pages)
+    scores = module.read_json(args.scores)
+    expected_identity = module.scoring_identity(docs, dict(margin_lost=0, margin_actions=0, require_gain=[]), tags)
+    require(scores['scoring'] == expected_identity and scores['frozen'] is False, 'not unchanged H10 scoring identity')
+    scored = scored_runs_by_label(scores['runs'])
+    require(set(scored) == set(current_runs), 'scorer run labels differ')
+    require(scored[args.expected_variant]['meta'] == current_meta and scored[base_meta['variant']]['meta'] == base_meta,
+            'scorer headers differ from actual raw inputs')
+    require(scores['pages_as_read'] == {d: module.pages_hash(pages[d]) for d in docs}, 'scorer page identity differs')
+    old_rows = module.read_csv_rows(OLD_SHEET)
+    rows, keys = module.read_csv_rows(args.sheet), module.read_csv_rows(args.key)
+    require(len({row['id'] for row in rows}) == len(rows), 'duplicate current review row')
+    require(all(not row.get(field, '') for row in rows for field in ANSWERS), 'input sheet must be fresh blank')
+    current_keys, old_keys = grouped(keys), grouped(module.read_csv_rows(OLD_KEY))
+    require(set(current_keys) == {row['id'] for row in rows}, 'current sheet/key coverage differs')
+    for row in rows:
+        require(all(k['doc'] == row['document'] and k['run'] in current_runs for k in current_keys[row['id']]),
+                'current key document/run differs')
+    module.read_review(args.sheet, current_runs, args.key)  # Bind current IDs/key to current raw, without relabeling.
+    module.read_review(OLD_SHEET, old_runs, OLD_KEY)
+    provenance = module.read_json(PROVENANCE)
+    provenance_rows = {row['id']: row for row in provenance['rows']}
+    previous = {row['id']: row for row in old_rows}
+    require(len(previous) == 109 == len(provenance_rows), 'old fresh review membership changed')
+    for row in old_rows:
+        source = provenance_rows[row['id']]
+        require(sha(canonical(row)) == source['fullRowSha256'], 'review row lineage mismatch')
+        source_path = Path(source['reviewSource']['path'])
+        require(sha(source_path.read_bytes()) == source['reviewSource']['sha256'], 'original fresh reviewer file drift')
+        source_row = module.read_csv_rows(source_path)[source['sourceRow'] - 2]
+        require(source_row == row, 'combined review differs from original reviewer cells')
+    carried, fresh = [], []
+    for row in rows:
+        old = previous.get(row['id'])
+        if old is not None and same_evidence(row, old, current_keys[row['id']], old_keys.get(row['id'], []),
+                                             current_runs, old_runs, module):
+            for field in ANSWERS:
+                row[field] = old.get(field, '')
+            carried.append(dict(id=row['id'], promptSha256=sha(canonical({k: row[k] for k in PROMPT})),
+                                answerSha256=sha(canonical({k: row.get(k, '') for k in ANSWERS})),
+                                originalFreshSource=provenance_rows[row['id']]))
+        else:
+            fresh.append(row['id'])
+    report = dict(status='EXACT-REVIEW-CELL-REUSE-ONLY', writesRequested=args.write,
+                  runtimeAcceptedByThisScript=False, operationalAcceptanceCheckedHere=False,
+                  rawScorerFrozen=False, rawUnfrozenPreserved=True, adoptionOrM8Authority=False,
+                  sourceRunOperationalStatus='FAILED-GUARD; clinical review lineage only',
+                  currentRaw=ref(args.current_run), scores=ref(args.scores), sheet=ref(args.sheet), key=ref(args.key),
+                  existingH10Freeze=ref(HARD), oldReviewProvenance=ref(PROVENANCE),
+                  completeCurrentRun= True, reused=carried, freshBlindRequired=fresh,
+                  documentPayloadIdentity={d: dict(wholeResultEqual=current_entries[d].get('result') == old_entries[d].get('result'),
+                                                   orderedSentencesEqual=sentences(current_entries, d) == sentences(old_entries, d),
+                                                   currentResultSha256=sha(canonical(current_entries[d].get('result'))),
+                                                   diagnosticResultSha256=sha(canonical(old_entries[d].get('result')))) for d in docs})
+    if args.write:
+        require(Path(args.out).resolve() != Path(args.lineage).resolve(), 'output paths collide')
+        require(not Path(args.out).exists() and not Path(args.lineage).exists(), 'refuse existing outputs')
+        # All validation above completes before either new file is opened. Exclusive creation.
+        with open(args.out, 'x', newline='', encoding='utf-8') as target:
+            writer = csv.DictWriter(target, fieldnames=module.SHEET_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        report['newSheet'] = ref(args.out)
+        with open(args.lineage, 'x', encoding='utf-8') as target:
+            json.dump(report, target, ensure_ascii=False, indent=2)
+            target.write('\n')
+    print(json.dumps(dict(reused=len(carried), freshBlindRequired=len(fresh), wrote=args.write,
+                          runtimeAcceptedByThisScript=False, rawScorerFrozen=False)))
+
+
+if __name__ == '__main__':
+    main()
