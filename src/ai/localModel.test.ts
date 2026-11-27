@@ -338,3 +338,31 @@ describe("modelRunsHere", () => {
     expect(modelRunsHere(status)).toBe(runs);
   });
 });
+
+describe("a document with no readable page", () => {
+  const speedBridge = (): ModelBridge => ({
+    aiModelStatus: vi
+      .fn()
+      .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
+    aiSummarize: vi.fn().mockResolvedValue({
+      sentences: [],
+      model: FAKE_MODEL,
+      lastPage: 0,
+      lastPageCut: false,
+    }),
+    aiExplain: vi.fn(),
+    aiCancel: vi.fn().mockResolvedValue(undefined),
+  });
+
+  // The speed check's branches and the not-installed model's cancel are covered in
+  // localModelSpeed.test.ts (#546).
+  it("keeps a summary of a document with no readable page whole and at page 0", async () => {
+    const empty = fakeDocumentText([], false);
+    const result = await summarizeDocument(
+      nativeLocalModel(speedBridge()),
+      empty,
+      "en",
+    );
+    expect(result).toMatchObject({ lastPage: 0, partial: false });
+  });
+});

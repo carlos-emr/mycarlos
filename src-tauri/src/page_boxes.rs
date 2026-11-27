@@ -480,6 +480,9 @@ pub(crate) fn span_boxes(
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
