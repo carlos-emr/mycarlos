@@ -721,3 +721,34 @@ fn clearing_the_ai_helper_and_the_lock_leave_the_folder_flag_alone() {
     v.store.restore_folder(v.letters).unwrap();
     assert_eq!(v.store.folder_record_ids(v.letters).len(), 2);
 }
+
+#[test]
+fn filing_keeps_the_places_out_of_reach_and_refuses_rather_than_cutting_at_the_cap() {
+    let ids = |count: usize| -> Vec<Uuid> { (0..count).map(|_| Uuid::new_v4()).collect() };
+    let visible = ids(3);
+    let hidden = ids(2);
+    let in_reach: HashSet<Uuid> = visible.iter().copied().collect();
+    let current: Vec<Uuid> = [&visible[..1], &hidden[..]].concat();
+
+    // Re-filed from what the screen shows: the chosen places, then the hidden ones, once each.
+    let chosen = vec![visible[1], visible[2]];
+    let places = places_after_filing(&chosen, &in_reach, &current).unwrap();
+    assert_eq!(places, [visible[1], visible[2], hidden[0], hidden[1]]);
+    // No folder chosen: none at all, the hidden places included.
+    assert!(places_after_filing(&[], &in_reach, &current)
+        .unwrap()
+        .is_empty());
+
+    // Exactly at the cap is fine; one more is refused, never cut.
+    let room = MAX_FOLDER_ASSIGNMENTS - hidden.len();
+    let fits = ids(room);
+    let all_in_reach: HashSet<Uuid> = fits.iter().copied().collect();
+    let kept = places_after_filing(&fits, &all_in_reach, &hidden).unwrap();
+    assert_eq!(kept.len(), MAX_FOLDER_ASSIGNMENTS);
+    let too_many = ids(room + 1);
+    let all_in_reach: HashSet<Uuid> = too_many.iter().copied().collect();
+    assert!(matches!(
+        places_after_filing(&too_many, &all_in_reach, &hidden),
+        Err(VaultError::Invalid)
+    ));
+}

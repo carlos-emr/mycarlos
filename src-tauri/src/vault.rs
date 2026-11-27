@@ -3589,21 +3589,10 @@ impl VaultStore {
                 if unique_record_ids.contains(&record.id) {
                     // A place out of reach is never one of the assignments (they were validated
                     // against the person's folders in reach).
-                    let mut places = assignments.clone();
-                    // Taking a document out of every folder it was shown in puts it in none: the
-                    // hidden place goes too, or the document would vanish from the library.
-                    if !assignments.is_empty() {
-                        places.extend(
-                            record.folder_ids.iter().copied().filter(|id| {
-                                !in_reach.contains(id) && !assignments.contains(id)
-                            }),
-                        );
-                    }
-                    // A record with more places than the manifest allows would not open again.
-                    if places.len() > MAX_FOLDER_ASSIGNMENTS {
-                        return Err(VaultError::Invalid);
-                    }
-                    new_places.insert(record.id, places);
+                    new_places.insert(
+                        record.id,
+                        places_after_filing(&assignments, &in_reach, &record.folder_ids)?,
+                    );
                 }
             }
             for record in &mut manifest.records {
@@ -10510,6 +10499,33 @@ fn validate_folder_ids(
         return Err(VaultError::NotFound);
     }
     Ok(())
+}
+
+/// The places a document has after the patient files it in `chosen` (#574): the chosen ones plus
+/// the places it already has that are out of reach (the screen never saw them, so it cannot send
+/// them back; restoring a hidden folder must bring back exactly what was there). Choosing no folder
+/// at all puts it in none, the hidden places included, or the document would vanish from the
+/// library. **Refused, never cut:** when the chosen and the kept places together would exceed
+/// `MAX_FOLDER_ASSIGNMENTS` (a record with more would not open again), the filing is `Invalid`,
+/// since dropping a hidden place silently would lose what a restore is meant to bring back.
+fn places_after_filing(
+    chosen: &[Uuid],
+    in_reach: &HashSet<Uuid>,
+    current: &[Uuid],
+) -> Result<Vec<Uuid>, VaultError> {
+    let mut places = chosen.to_vec();
+    if !chosen.is_empty() {
+        places.extend(
+            current
+                .iter()
+                .copied()
+                .filter(|id| !in_reach.contains(id) && !chosen.contains(id)),
+        );
+    }
+    if places.len() > MAX_FOLDER_ASSIGNMENTS {
+        return Err(VaultError::Invalid);
+    }
+    Ok(places)
 }
 
 fn unique(values: Vec<Uuid>) -> Vec<Uuid> {
