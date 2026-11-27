@@ -1339,6 +1339,9 @@ export const MESSAGE_KEYS = [
   "handover.unfinished",
   "native.error.49",
   "native.error.50",
+  "native.error.51",
+  "native.error.52",
+  "native.error.53",
   "hiddenPeople.title",
   "hiddenPeople.body",
   "hiddenPeople.list",
@@ -3038,6 +3041,9 @@ const FLUENT_IDS_BY_KEY = {
   "handover.unfinished": "handover-unfinished",
   "native.error.49": "native-error-49",
   "native.error.50": "native-error-50",
+  "native.error.51": "native-error-51",
+  "native.error.52": "native-error-52",
+  "native.error.53": "native-error-53",
   "hiddenPeople.title": "hiddenPeople-title",
   "hiddenPeople.body": "hiddenPeople-body",
   "hiddenPeople.list": "hiddenPeople-list",
@@ -4597,6 +4603,9 @@ export interface MessageArgsByKey {
   "handover.unfinished": undefined;
   "native.error.49": undefined;
   "native.error.50": undefined;
+  "native.error.51": undefined;
+  "native.error.52": undefined;
+  "native.error.53": undefined;
   "hiddenPeople.title": undefined;
   "hiddenPeople.body": undefined;
   "hiddenPeople.list": undefined;

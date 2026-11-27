@@ -522,6 +522,22 @@ impl From<VaultError> for PublicText {
                 code: "package_passphrase_tries_used",
                 message_key: "native.error.49",
             },
+            // A save dialog that opened in the folder that holds the vault: choose another folder
+            // (an export, a backup and a recovery kit all say it).
+            VaultError::SaveLocationInsideVault => Self {
+                code: "save_location_inside_vault",
+                message_key: "native.error.51",
+            },
+            // The file was written and could not be read back and checked: not a typing mistake.
+            VaultError::PackageNotVerified => Self {
+                code: "package_not_verified",
+                message_key: "native.error.52",
+            },
+            // A line break or tab inside a typed passphrase (a paste can add one the field hides).
+            VaultError::PassphraseControlCharacter => Self {
+                code: "passphrase_control_character",
+                message_key: "native.error.53",
+            },
             // Security says it beside the person's Hide: someone has to stay in the library.
             VaultError::LastVisibleProfile => Self {
                 code: "last_visible_profile",
@@ -4909,8 +4925,16 @@ async fn vault_profile_export_pick(
     .await?;
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
+    // Opened in the person's Documents folder, not in whatever folder the system last used: that
+    // could be the folder that holds the vault, which the save refuses (#360 export error 19).
+    let start = app.path().document_dir().ok();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app).set_file_name(name).blocking_save_file()
+        let dialog = file_dialog(&app).set_file_name(name);
+        let dialog = match start {
+            Some(folder) => dialog.set_directory(folder),
+            None => dialog,
+        };
+        dialog.blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -14741,6 +14765,35 @@ mod native_localization_tests {
     }
 
     #[test]
+    fn the_save_location_check_and_passphrase_refusals_have_their_own_codes_and_words() {
+        let generic = serde_json::to_value(PublicError::from(VaultError::Invalid)).unwrap();
+        for (error, code, key) in [
+            (
+                VaultError::SaveLocationInsideVault,
+                "save_location_inside_vault",
+                "native.error.51",
+            ),
+            (
+                VaultError::PackageNotVerified,
+                "package_not_verified",
+                "native.error.52",
+            ),
+            (
+                VaultError::PassphraseControlCharacter,
+                "passphrase_control_character",
+                "native.error.53",
+            ),
+        ] {
+            let value = serde_json::to_value(PublicError::from(error)).unwrap();
+            assert_eq!(value["code"], code);
+            assert_eq!(value["messageKey"], key);
+            // Never the generic "Something you typed wasn't accepted" text (error 19).
+            assert_ne!(value["message"], generic["message"], "{code}");
+            assert!(value["message"].as_str().is_some_and(|s| !s.is_empty()));
+        }
+    }
+
+    #[test]
     fn native_localization_preserves_ipc_fields_and_optional_omission_contract() {
         let base = serde_json::to_value(PublicError::from(VaultError::Storage)).unwrap();
         assert_eq!(base["code"], "storage");
@@ -14788,6 +14841,9 @@ mod native_localization_tests {
             VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::PackagePassphraseTriesUsed,
+            VaultError::SaveLocationInsideVault,
+            VaultError::PackageNotVerified,
+            VaultError::PassphraseControlCharacter,
             VaultError::LastVisibleProfile,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,

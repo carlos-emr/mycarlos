@@ -2928,6 +2928,12 @@ native-error-49 = W tej odblokowanej sesji wypróbowano już maksymalną liczbę
 
 native-error-50 = W bibliotece musi zostać co najmniej jedna osoba, więc ostatniej nie można ukryć. Najpierw dodaj inną osobę.
 
+native-error-51 = Ten folder należy do myCarlos, więc nie można w nim nic zapisać. Wybierz folder poza folderem myCarlos, na przykład Dokumenty lub Pulpit.
+
+native-error-52 = Plik został zapisany, ale potem nie dało się go sprawdzić, więc go nie zachowano. Nic nie zostało zmienione. Spróbuj ponownie, a jeśli problem się powtarza, wybierz inny folder.
+
+native-error-53 = Hasło zawiera podział wiersza lub tabulator. Usuń go (wklejanie często dodaje taki znak na końcu) i spróbuj ponownie.
+
 hiddenPeople-title = Ukryte osoby
 
 hiddenPeople-body = Ukryte osoby nie są widoczne w bibliotece, wyszukiwaniu ani u asystenta AI. Nic nie jest usuwane: zostają w tym sejfie i w kopiach zapasowych. Każdy, kto zna Twoje hasło, może je przywrócić.
