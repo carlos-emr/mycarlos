@@ -32,6 +32,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "test:windows-navigation": "playwright test --config playwright.windows.config.ts",
+    "test:windows-playtests": "playwright test --config playwright.windows.config.ts playtests",
     "i18n:generate": "node scripts/generate-fluent-bindings.mjs",
     "i18n:check": "node scripts/generate-fluent-bindings.mjs --check && node --test scripts/generate-fluent-bindings.test.mjs"
   },
