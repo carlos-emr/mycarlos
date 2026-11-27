@@ -13993,7 +13993,13 @@ describe("durable vault UI", () => {
       name: humanText("Your older backups"),
     });
     expect(previousGuide).toBeVisible();
-    expect(previousGuide).toHaveHumanTextContent(previousBackup);
+    // The saved file's name is never kept in webview storage (iOS backs it up, #428): a name an
+    // earlier build stored is dropped on read, and the steps name the file by when it was saved
+    // and its size.
+    expect(previousGuide).toHaveHumanTextContent(
+      /Your new backup is the one you just saved, on /,
+    );
+    expect(window.localStorage.getItem(guideKey)).not.toContain(previousBackup);
     fireEvent.click(
       within(
         screen.getByRole("navigation", { name: humanText("Record library") }),

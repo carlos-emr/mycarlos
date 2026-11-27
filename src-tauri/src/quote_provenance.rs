@@ -1,7 +1,9 @@
 //! Original unfound model quotes, tied to their sentence rather than a moving queue.
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) struct UnlocatedQuotes(Vec<(usize, String)>);
+redact_debug!(UnlocatedQuotes);
 
 impl UnlocatedQuotes {
     pub(crate) fn record(&mut self, index: usize, quote: String) {

@@ -54,7 +54,8 @@ pub(crate) struct AlreadyHere {
 
 /// What a package holds and whether this vault has it, from the header, the manifest and the end
 /// of the file: no document has been read, and nothing is written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ImportPreview {
     pub package_id: Uuid,
     pub exported_at_ms: u64,
@@ -73,17 +74,21 @@ pub(crate) struct ImportPreview {
     pub plaintext_bytes: u64,
     pub already_here: Option<AlreadyHere>,
 }
+redact_debug!(ImportPreview);
 
-#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone)]
 pub(crate) struct ImportOptions {
     /// What to call the person here; the package's label when none.
     pub display_name: Option<String>,
     /// Make the person although this vault already has them (`already_here`).
     pub allow_duplicate: bool,
 }
+redact_debug!(ImportOptions);
 
 /// What an import did, in counts that name no document.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ProfileImported {
     pub profile_id: Uuid,
     pub documents: usize,
@@ -98,6 +103,7 @@ pub(crate) struct ProfileImported {
     /// The short code the source can recompute from the file and its key.
     pub receipt_code: String,
 }
+redact_debug!(ProfileImported);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ImportResult {
