@@ -4,7 +4,9 @@
     "www.donneesquebec.ca",
     "data.ontario.ca",
     "api.dane.gov.pl",
-    "opdadm.moi.gov.tw"
+    "opdadm.moi.gov.tw",
+    "infra.datos.gob.ar",
+    "www.ine.es"
   ],
   "sources": {
     "insee-prenoms": {
@@ -71,6 +73,20 @@
       "sha256": "db1e762e6e96045964d1b2b5927da1582528ddf0c6ab167503dfb76a0391fffd",
       "licence": "Government Open Data License, version 1 (政府資料開放授權條款-第1版), https://data.gov.tw/license",
       "attribution": "Ministry of the Interior (Taiwan), 姓氏排名與人數按三階段年齡分 (data.gov.tw dataset 126774)"
+    },
+    "renaper-historico": {
+      "file": "ar-historico-nombres.zip",
+      "url": "https://infra.datos.gob.ar/catalog/otros/dataset/2/distribution/2.1/download/historico-nombres.zip",
+      "sha256": "d8e1fcbceb57061d557c4140bdfc7548e99e7b4715a95b8523ab85706800ff7a",
+      "licence": "Creative Commons Attribution 4.0 (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/ (datos.gob.ar, RENAPER, Nombres de personas físicas)",
+      "attribution": "Registro Nacional de las Personas (RENAPER), Nombres de personas físicas, datos.gob.ar"
+    },
+    "ine-nombres-edad-media": {
+      "file": "ine-nombres_por_edad_media.xls",
+      "url": "https://www.ine.es/daco/daco42/nombyapel/nombres_por_edad_media.xls",
+      "sha256": "72b7f8d2e77a4681188c9495562c291e4d4db22dc9fe709d65eb3ab3d167a1e8",
+      "licence": "INE legal notice (https://ine.es/dyngs/AYU/en/index.htm?cid=125): reuse allowed with the source cited, no suggestion that INE endorses it",
+      "attribution": "Elaboración propia con datos extraídos del sitio web del INE: www.ine.es (Estadística del Padrón Continuo, 1 de enero de 2022)"
     }
   }
 }

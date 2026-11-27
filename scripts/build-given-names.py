@@ -39,6 +39,7 @@ refuses scripts, so it is downloaded by a person in a browser and given to
 import argparse
 import csv
 import hashlib
+import importlib.util
 import io
 import json
 import re
@@ -55,6 +56,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PINS = ROOT / "scripts" / "given-names-sources.json"
 EXCEPTIONS = ROOT / "scripts" / "given-names-exceptions.json"
 HUNDRED_FAMILY = ROOT / "scripts" / "hundred-family-surnames.txt"
+MINIMAL_XLS = ROOT / "scripts" / "minimal_xls.py"
 OUT = ROOT / "src" / "deidentify" / "gazetteers"
 FIRST_YEAR = 1940
 COVERAGE = 0.98
@@ -228,6 +230,39 @@ def add_ontario(tally: Tally, data: bytes) -> None:
             tally.add(name, int(count))
 
 
+def first_word(name: str) -> str:
+    """The first word of a given-name field: "Maria Jose" and "JOSE ANTONIO" are read as Maria and Jose."""
+    return name.strip().split(" ", 1)[0]
+
+
+def add_renaper(tally: Tally, data: bytes) -> None:
+    """Argentina's RENAPER "Nombres de personas físicas": a zip of one csv (nombre,cantidad,anio), streamed."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        with archive.open(archive.namelist()[0]) as raw:
+            for row in csv.reader(io.TextIOWrapper(raw, encoding="utf-8-sig", newline="")):
+                if len(row) != 3 or not row[1].isdigit() or not row[2].isdigit():
+                    continue
+                if int(row[2]) >= FIRST_YEAR:
+                    tally.add(first_word(row[0]), int(row[1]))
+
+
+def load_minimal_xls():
+    spec = importlib.util.spec_from_file_location("minimal_xls", MINIMAL_XLS)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def add_ine(tally: Tally, data: bytes) -> None:
+    """Spain's INE "Nombres por edad media" (Padron Continuo, names held by 20 or more people): men, then women."""
+    for sheet in load_minimal_xls().read_xls(data)[:2]:
+        for (row, column), value in sheet.items():
+            if column == 1 and row >= 7 and isinstance(value, str):
+                count = sheet.get((row, 2))
+                if isinstance(count, float) and count >= 1:
+                    tally.add(first_word(value), int(count))
+
+
 def add_ssa(tally: Tally, data: bytes) -> None:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         for entry in archive.namelist():
@@ -300,8 +335,18 @@ def build_all(raw: Path, ssa_zip: Path | None, today: str) -> dict[str, str]:
     exceptions_all = json.loads(EXCEPTIONS.read_text(encoding="utf-8"))
     files: dict[str, str] = {}
 
+    # The gate reads every list together, so a name dropped by hand is dropped from ALL of them (a
+    # name left in another language's list would bring it back): the exceptions of every language apply
+    # to every list. The `_note` key is not an exception.
+    merged_exceptions = {
+        name: reason
+        for lang, hand in exceptions_all.items()
+        if not lang.startswith("_")
+        for name, reason in hand.items()
+    }
+
     def lang_exceptions(lang: str) -> dict[str, str]:
-        return exceptions_all.get(lang, {})
+        return merged_exceptions
 
     def write(file: str, name: str, sources: list[str], names: list[str], dropped: dict, note: str) -> None:
         document = meta(name, sources, pins, {"names": names, "dropped": dropped}, note, today)
@@ -344,6 +389,18 @@ def build_all(raw: Path, ssa_zip: Path | None, today: str) -> dict[str, str]:
           "First names of people alive in the PESEL register (20 Jan 2026), lower case, the "
           "commonest names holding 98 % of the people counted. Names that are also common words "
           "are kept on purpose.")
+
+    # es: Argentina's RENAPER (CC BY 4.0, births 1940 on) and Spain's INE Padron (people alive, 20 or more).
+    tally = Tally()
+    sources = ["renaper-historico", "ine-nombres-edad-media"]
+    add_renaper(tally, read_source(raw, "renaper-historico", pins))
+    add_ine(tally, read_source(raw, "ine-nombres-edad-media", pins))
+    names, dropped = cut(tally, lang_exceptions("es"))
+    write("given-names-es.json", "given-names-es", sources, names, dropped,
+          "First words of first names: births since 1940 in Argentina (RENAPER) and the people in "
+          "Spain's Padron Continuo at 1 Jan 2022 whose name is held by 20 or more (INE), lower case, "
+          "the commonest names holding 98 % of the counted. Names that are also common words are kept "
+          "on purpose.")
 
     # zh: surnames. Taiwan's register (Government Open Data License v1), top 98 % of people, and the
     # Hundred Family Surnames (a public-domain classical text, in simplified characters).

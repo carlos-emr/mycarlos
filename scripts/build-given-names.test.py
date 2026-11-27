@@ -74,6 +74,40 @@ class Cut(unittest.TestCase):
         self.assertEqual(names, ["faith", "may", "rose"])
 
 
+class Spanish(unittest.TestCase):
+    def test_a_compound_name_is_read_by_its_first_word(self):
+        self.assertEqual(builder.first_word("Maria Jose"), "Maria")
+        self.assertEqual(builder.first_word("JOSE ANTONIO"), "JOSE")
+        self.assertEqual(builder.first_word("  Rocio "), "Rocio")
+
+    def test_renaper_counts_first_words_of_births_from_1940(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "historico-nombres.csv",
+                "\ufeffnombre,cantidad,anio\nMaria,314,1922\nMaria Jose,10,1950\nRosa,5,1960\nMaria,6,1961\nbad,row\n",
+            )
+        tally = builder.Tally()
+        builder.add_renaper(tally, buffer.getvalue())
+        self.assertEqual(tally.counts, {"maria": 16, "rosa": 5})
+
+    def test_ine_reads_names_and_counts_from_the_first_two_sheets(self):
+        men = {(7, 1): "ANTONIO", (7, 2): 627738.0, (8, 1): "JOSE ANTONIO", (8, 2): 300789.0, (6, 1): "Nombre"}
+        women = {(7, 1): "MARIA", (7, 2): 100.0}
+        fake = mock.Mock()
+        fake.read_xls.return_value = [men, women, {(7, 1): "IGNORED", (7, 2): 5.0}]
+        with mock.patch.object(builder, "load_minimal_xls", return_value=fake):
+            tally = builder.Tally()
+            builder.add_ine(tally, b"")
+        self.assertEqual(tally.counts, {"antonio": 627738, "jose": 300789, "maria": 100})
+
+    def test_an_exception_of_any_language_is_dropped_from_every_list(self):
+        # The exceptions file groups words by language, but the lists are read together.
+        hand = builder.json.loads(builder.EXCEPTIONS.read_text(encoding="utf-8"))
+        self.assertIn("salud", hand["es"])
+        self.assertIn("inna", hand["pl"])
+
+
 class Readers(unittest.TestCase):
     def test_quebec_counts_less_than_five_as_two_and_skips_the_years_before_1940(self):
         tally = builder.Tally()

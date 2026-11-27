@@ -4,6 +4,7 @@ import { isKnownGivenName, isLikelyHanName } from "./gazetteer";
 import givenNamesEn from "./gazetteers/given-names-en.json";
 import givenNamesFr from "./gazetteers/given-names-fr.json";
 import givenNamesPl from "./gazetteers/given-names-pl.json";
+import givenNamesEs from "./gazetteers/given-names-es.json";
 import surnamesZh from "./gazetteers/surnames-zh.json";
 import pins from "../../scripts/given-names-sources.json";
 import exceptions from "../../scripts/given-names-exceptions.json";
@@ -72,6 +73,79 @@ describe("a header's subject after 'for' is a person when it starts with a known
   it("still keeps 'SURNAME, Given' in a header, as before", () => {
     const out = send("Physiotherapy summary — HALLOWAY, Wren");
     expect(out).not.toContain("HALLOWAY");
+  });
+});
+
+describe("a Spanish header's subject after 'para' is a person when it starts with a known given name", () => {
+  it.each([
+    ["Plan de cuidados para Rosa Ejemplo", "Ejemplo"],
+    ["Informe para Pilar Ejemplo", "Ejemplo"],
+    ["Resumen de alta para Dolores Ejemplo", "Ejemplo"],
+    ["Informe para Consuelo Ejemplo", "Ejemplo"],
+    ["Plan de cuidados para Amparo Ejemplo", "Ejemplo"],
+    ["Informe para Rocío Ejemplo", "Ejemplo"],
+    ["Informe de alta para Jesús Ejemplo", "Ejemplo"],
+    ["Plan de cuidados sobre María Ejemplo", "Ejemplo"],
+  ])("%s", (text, surname) => {
+    const out = send(text);
+    expect(out).not.toContain(surname);
+    expect(out).toMatch(/\[NAME[^\]]*\]$/u);
+  });
+
+  it.each([
+    "Plan de cuidados para Prevención De Caídas",
+    "Plan de cuidados para Salud Mental",
+    "Informe para Asma Infantil",
+    "Resumen para Vida Diaria",
+    "Plan para Mama Derecha",
+    "Informe para Santa Casa",
+    "Plan de cuidados para Cuidados Paliativos",
+    "Resumen de alta para Insuficiencia Cardiaca",
+  ])("leaves a topic alone: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it("takes Dolores, Esperanza and the other name-words as names where a name stands, and leaves the lower-case care phrase alone", () => {
+    for (const text of [
+      "Informe para Dolores García",
+      "Plan de cuidados para Esperanza Ejemplo",
+      "Informe para Consuelo García",
+      "Informe para Soledad García",
+      "Informe para Remedios García",
+      "Informe para Socorro García",
+      "Informe para Angustias García",
+    ])
+      expect(send(text), text).toMatch(/\[NAME[^\]]*\]$/u);
+    // A care phrase written in lower case is no name: the header rule needs capitalised words.
+    for (const text of [
+      "Plan para dolores lumbares",
+      "Informe para remedios caseros",
+      "Plan de cuidados para soledad no deseada",
+      "Plan para esperanza de vida",
+    ])
+      expect(send(text), text).toBe(text);
+  });
+
+  it("states the cost: a title-case topic that starts with such a word is read as a name", () => {
+    // "Dolores" is a name before it is a plural noun: a title-case "Dolores Lumbares" after "para"
+    // is redacted (over-redaction, never a missed name).
+    expect(send("Plan para Dolores Lumbares")).toMatch(/\[NAME[^\]]*\]$/u);
+  });
+
+  it("keeps Spanish name-words in the list and the care words out", () => {
+    for (const name of [
+      "rosa",
+      "pilar",
+      "dolores",
+      "consuelo",
+      "amparo",
+      "rocio",
+      "luz",
+      "paz",
+    ])
+      expect(isKnownGivenName(name), name).toBe(true);
+    for (const word of ["salud", "asma", "vida", "mama", "santo", "santa"])
+      expect(isKnownGivenName(word), word).toBe(false);
   });
 });
 
@@ -159,6 +233,7 @@ describe("the given-name and surname lists", () => {
     ["en", givenNamesEn],
     ["fr", givenNamesFr],
     ["pl", givenNamesPl],
+    ["es", givenNamesEs],
     ["zh", surnamesZh],
   ] as const)(
     "the %s file is a licensed, pinned, sorted and unique list",
@@ -182,7 +257,13 @@ describe("the given-name and surname lists", () => {
     const pinned = new Map(
       Object.values(pins.sources).map((source) => [source.url, source]),
     );
-    for (const file of [givenNamesEn, givenNamesFr, givenNamesPl, surnamesZh])
+    for (const file of [
+      givenNamesEn,
+      givenNamesFr,
+      givenNamesPl,
+      givenNamesEs,
+      surnamesZh,
+    ])
       for (const source of file.sources) {
         const pin = pinned.get(source.url);
         // The Hundred Family Surnames is a file of this repository, not a download.
@@ -193,23 +274,24 @@ describe("the given-name and surname lists", () => {
       }
   });
 
-  it("keeps the hand exceptions out of the lists, each with its reason", () => {
-    const lists = {
-      en: givenNamesEn,
-      fr: givenNamesFr,
-      pl: givenNamesPl,
-    } as const;
-    for (const [lang, file] of Object.entries(lists)) {
-      const hand = exceptions[lang as keyof typeof lists];
-      for (const [name, reason] of Object.entries(hand)) {
-        expect(file.names, `${lang}: ${name}`).not.toContain(name);
-        expect(reason.length, `${lang}: ${name}`).toBeGreaterThan(10);
-      }
+  it("keeps the hand exceptions out of EVERY list (the gate reads them together), each with its reason", () => {
+    const lists = [givenNamesEn, givenNamesFr, givenNamesPl, givenNamesEs];
+    const hand = Object.entries(exceptions)
+      .filter(([group]) => !group.startsWith("_"))
+      .flatMap(([group, words]) =>
+        Object.entries(words as Record<string, string>).map(
+          ([name, reason]) => ({ group, name, reason }),
+        ),
+      );
+    expect(hand.length).toBeGreaterThan(15);
+    for (const { group, name, reason } of hand) {
+      expect(reason.length, `${group}: ${name}`).toBeGreaterThan(10);
+      for (const file of lists)
+        expect(file.names, `${group}: ${name} in ${file.name}`).not.toContain(
+          name,
+        );
+      expect(isKnownGivenName(name), name).toBe(false);
     }
-    // Care words held as rare names (a review found them in the English and French lists).
-    for (const word of ["female", "male", "infant", "walker", "baby", "ward"])
-      expect(givenNamesEn.names).not.toContain(word);
-    expect(givenNamesFr.names).not.toContain("elder");
   });
 
   it.each([
@@ -229,7 +311,7 @@ describe("the given-name and surname lists", () => {
   });
 
   it("holds lower-case single-word names for the Latin lists, and the hand exceptions are out", () => {
-    for (const file of [givenNamesEn, givenNamesFr, givenNamesPl])
+    for (const file of [givenNamesEn, givenNamesFr, givenNamesPl, givenNamesEs])
       for (const name of file.names)
         expect(name).toMatch(/^[\p{L}][\p{L}'’-]*[\p{L}]$/u);
     // An ordinary Polish word that does real harm as a gate (scripts/given-names-exceptions.json).

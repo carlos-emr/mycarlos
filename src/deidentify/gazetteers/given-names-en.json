@@ -14,12 +14,12 @@
   }
  ],
  "made": "2026-11-27",
- "count": 3302,
+ "count": 3300,
  "dropped": {
   "counted": 9761488,
   "distinct names counted": 8970,
   "below the 98 % cutoff": 5659,
-  "exceptions": 9,
+  "exceptions": 11,
   "not a plain single-word name": 147
  },
  "note": "First names of children born since 1940 (Ontario registrations; the US Social Security national file when listed in sources), lower case, the commonest names holding 98 % of the births counted. Names that are also common words are kept on purpose.",
@@ -370,7 +370,6 @@
   "ashwin",
   "asia",
   "asiya",
-  "asma",
   "aspen",
   "assunta",
   "astrid",
@@ -2847,7 +2846,6 @@
   "santana",
   "santiago",
   "santino",
-  "santo",
   "saoirse",
   "sara",
   "sarah",

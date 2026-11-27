@@ -9,6 +9,7 @@ import municipalities from "./gazetteers/municipalities.json";
 import givenNamesEn from "./gazetteers/given-names-en.json";
 import givenNamesFr from "./gazetteers/given-names-fr.json";
 import givenNamesPl from "./gazetteers/given-names-pl.json";
+import givenNamesEs from "./gazetteers/given-names-es.json";
 import surnamesZh from "./gazetteers/surnames-zh.json";
 
 const WORD = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
@@ -319,12 +320,12 @@ export function bracketedMunicipalities(text: string): Span[] {
   return spans;
 }
 
-// Given names (English, French and Polish lists together) in the matching copy's folding: lower
+// Given names (English, French, Polish and Spanish lists together) in the matching copy's folding: lower
 // case, accents removed. The lists keep names that are also ordinary words (Rose, May, Faith) on
 // purpose: the gate only widens one rule that still needs its own shape, and a missed name is the
 // worse mistake.
 const GIVEN_NAMES = new Set(
-  [givenNamesEn, givenNamesFr, givenNamesPl].flatMap((list) =>
+  [givenNamesEn, givenNamesFr, givenNamesPl, givenNamesEs].flatMap((list) =>
     list.names.map((name) => fold(name).replace(/’/gu, "'")),
   ),
 );
