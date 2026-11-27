@@ -606,8 +606,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     language-matched sentence?
 25. **Sending to a cloud AI with the patient's own key (#72, proposed, not built; section 11.1):** may a
     patient's own API key, a de-identified text, and a native confirmation for each send be the cloud
-    way for the pilot? Is "no Canadian processing option" acceptable with a plain notice? Who writes the
-    notice in seven languages, and who checks the provider's current terms? This gates real data (#25).
+    way for the pilot? What processing locations are acceptable for each supported provider? Who writes
+    the notice in seven languages, and who checks each provider's terms? This gates real data (#25).
 
 ### Reading a stored PDF on Android (#358)
 
@@ -728,10 +728,10 @@ the first use and at any time from Security.
 
 ### 11.1 Proposed, not built: sending the text with the patient's own key
 
-On 20 November 2026 Ben chose, for #72's "cloud" way, that the patient may add **their own API key** for
-one provider (Anthropic) and send one document's text from myCarlos. Nothing in this section is built; it
-is described so that the assessment can cover it before any code that sends. It would be behind a Cargo
-feature (`cloud-ai`) that is off by default and not in release builds, and the text-file way stays.
+For #72's cloud option, the patient may add **their own API key** and send one document's text from
+myCarlos to a provider from a fixed allowlist. The 27 November 2026 decision permits the off-by-default
+`cloud-ai` Cargo feature in evaluation builds and requires release builds to refuse it. The text-file
+option stays. This assessment describes the proposed end-to-end send.
 
 - **What leaves the device:** the text of one document after the remover and the preview, re-checked in
   Rust, with fixed instructions, plus the key (which identifies the patient's account to the provider, so
@@ -745,7 +745,7 @@ feature (`cloud-ai`) that is off by default and not in release builds, and the t
   limit.
 - **What the provider does with the text** (how long it is kept, whether it is used to improve models) is
   decided by the patient's account at the provider; myCarlos cannot see or change it, and the notice makes no
-  claim about it. The documented provider offers no Canadian processing region.
+  claim about it. The assessment must verify processing locations and terms for each supported provider.
 - **Recorded:** the history keeps the time, provider, model, document and the provider's request id, never
   the text, the answer or the key; the entry is written before the send.
 - **Stated limits:** the remover is never perfect; the native side cannot prove the patient read the

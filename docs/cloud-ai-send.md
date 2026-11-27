@@ -5,40 +5,41 @@ them before any code that sends. No network code and no real key exist for it. W
 
 ## What it is
 
-An optional way, for one tool first (the plain-words **Summary**), to send one document's text to one
-provider, **Anthropic**, from myCarlos itself, using the **patient's own API key**. The text-file way
-(save a de-identified file and take it to any service) stays. Computers only first.
+An optional way, for one tool first (the plain-words **Summary**), to send one document's text from
+myCarlos to a supported provider chosen by the patient, using the **patient's own API key**.
+Patients can still save a de-identified file and take it to any service. The first version is for computers.
 
 ## Decisions
 
-- **One provider, one host:** `api.anthropic.com`, paths `POST /v1/messages` and `GET /v1/models` only,
-  HTTPS with the platform's certificate verifier, no redirects, no proxy, no cookies. The address is a
-  constant in Rust (THREAT_MODEL NET-09).
+- **Fixed provider allowlist:** the planned entries are Anthropic, OpenAI and Google Gemini. Each
+  provider has a fixed HTTPS host and an allowlist of API paths defined in Rust. Patients choose a
+  provider and model from the app's verified options. HTTPS uses the platform certificate verifier
+  and the client sends no redirects, proxies or cookies. See THREAT_MODEL NET-09.
 - **The key:** stored encrypted in the vault (a manifest field, so a format bump taken at merge), only ever
   in Rust, shown masked, removable, never returned to the page; an admin key (`sk-ant-admin…`) is refused.
   It is in backups; older backups keep it after removal.
-- **Consent, layered, off by default:** the `cloud-ai` Cargo feature (off in release builds until #25
-  signs off) -> a device setting after reading the notice -> a key -> a preview and **a trusted native
-  confirmation for each send**. No background send, no "always allow".
+- **Consent, off by default.** The `cloud-ai` Cargo feature is permitted in evaluation builds and
+  refused in release builds. The patient reads the notice, enables the device setting and adds a key.
+  Every send requires a preview and **trusted native confirmation**.
 - **The page never sends and never holds the key.** Rust re-checks the final text (as it does before a
   save), builds and sends the request, validates the answer, restores the placeholders from the removed
   list the page hands it (checked natively: exact placeholders of this export that stand in the text sent,
   bounded; a stated residual, not a proof, because only the page holds the document), and keeps the answer natively, labelled as written in the cloud.
 - **Recorded:** history entries for the send (written before it) and the answer: time, provider, model,
   document, request id, token counts. Never the text, the answer, the removed list or the key.
-- **No claims about the provider's data use.** The notice says the patient's account rules apply. The
-  documented provider offers no Canadian processing region (a point for #25).
+- **Provider data handling.** The notice says the selected provider's account rules apply.
+  Assess supported providers' processing locations and data-handling terms before approving real data in #25.
 - **No automatic retry**; "Try again" asks again.
 
 ## Choices made as "supervisor default while Ben away" (21 November 2026; Ben may change any)
 
 | Question | Default |
 |---|---|
-| Default model | Claude Opus 5.5; Sonnet 5.5 and Haiku 5.5 selectable |
+| Default model | A reviewed model from the selected provider's verified catalogue |
 | Key in backups | No special case; the dialogs warn plainly |
 | Server-side fallbacks | On, with a plain message if the whole chain refuses |
 | Cost warning | Bold when the estimate is over $0.50 |
-| Canada | Accept with a plain notice; #25 decides before real data |
+| Processing location | #25 reviews the selected provider's processing locations and notice before real data |
 | Platforms | Computers first |
 | Stored monthly total | Not now (tokens are in the history) |
 | Retry | None automatic |
