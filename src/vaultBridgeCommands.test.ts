@@ -190,15 +190,33 @@ describe("each bridge method invokes its native command with its arguments", () 
       "saveBackupToPicked (videos kept by default)",
       (b) => b.saveBackupToPicked("pick-1"),
       "vault_backup_picked",
-      { request: { pickId: "pick-1", leaveVideosOut: false } },
+      {
+        request: {
+          pickId: "pick-1",
+          leaveVideosOut: false,
+          localDate: "2026-01-15",
+        },
+      },
     ],
     [
       "saveBackupToPicked (videos left out)",
       (b) => b.saveBackupToPicked("pick-1", true),
       "vault_backup_picked",
-      { request: { pickId: "pick-1", leaveVideosOut: true } },
+      {
+        request: {
+          pickId: "pick-1",
+          leaveVideosOut: true,
+          localDate: "2026-01-15",
+        },
+      },
     ],
     ["backupSize", (b) => b.backupSize(), "vault_backup_size"],
+    [
+      "snoozeBackupReminder (the patient's own date)",
+      (b) => b.snoozeBackupReminder(),
+      "vault_backup_reminder_snooze",
+      { localDate: "2026-01-15" },
+    ],
     ["leftOutRecords", (b) => b.leftOutRecords(), "vault_left_out_records"],
     [
       "pickRestoreSource",
@@ -218,7 +236,12 @@ describe("each bridge method invokes its native command with its arguments", () 
       "vault_restore",
       {
         locale: locale(),
-        request: { pickId: "pick-1", recoveryKey: "FAKE-KEY", replace: true },
+        request: {
+          pickId: "pick-1",
+          recoveryKey: "FAKE-KEY",
+          replace: true,
+          localDate: "2026-01-15",
+        },
       },
     ],
     [
