@@ -136,7 +136,6 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use idle::{IdleDeadline, Opening};
 use received::{ReceivedFiles, ReceivedSource};
 use serde::{Deserialize, Serialize};
-#[cfg(desktop)]
 use std::io;
 use std::{
     collections::HashMap,
@@ -5917,8 +5916,9 @@ fn open_supported_file(
 }
 
 /// A picked file that cannot be opened is a problem with that file, not with
-/// the vault, so only an unexplained failure is reported as a storage error.
-#[cfg(desktop)]
+/// the vault, so only an unexplained failure is reported as a storage error. On every platform:
+/// a picked file on a computer, and a sealed inbox item (`open_sealed_source`, which phones compile
+/// too) both open through it, so it carries no `cfg(desktop)` of its own.
 fn import_source_error(error: io::Error) -> VaultError {
     match error.kind() {
         // Moved, renamed or deleted after it was picked.
