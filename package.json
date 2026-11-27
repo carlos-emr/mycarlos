@@ -23,6 +23,7 @@
     "test:android-portal-fixture": "python3 scripts/android-portal-fixture.test.py",
     "check:release-safety": "node scripts/check-release-safety.mjs",
     "test:release-safety": "node --test scripts/check-release-safety.test.mjs",
+    "test:cloud-ai-gate": "node --test scripts/cloud-ai-gate.test.mjs",
     "test:macos-association": "node --test scripts/check-macos-pdf-association.test.mjs && node scripts/check-macos-pdf-association.mjs --config",
     "test:android-share": "node --test scripts/check-android-pdf-share.test.mjs && node scripts/check-android-pdf-share.mjs --config",
     "test:dev-hmr": "node scripts/test-dev-hmr.mjs",

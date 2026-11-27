@@ -19,7 +19,7 @@ an archive with no native library, or no mode at all is a finding, not a pass.
 
 | Finding                                                      | Where it looks                                                                                                                                                                                                                                                            | Rests on                                                                                                                                            |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ai-helper-stub`, `cloud-ai`, tauri's `devtools` compiled in | `Cargo.toml` defaults and the `tauri` dependency (`--source`); `--features` / `-F` in the release script, release workflows and package release scripts (`--source`); a marker in the native code of an APK/AAB/IPA                                                       | Cargo; the stub names itself "FAKE stub"; the cloud send must define `mycarlos-cloud-ai` under its feature (a contract: **#72's code must add it**) |
+| `ai-helper-stub`, `cloud-ai`, tauri's `devtools` compiled in | `Cargo.toml` defaults and the `tauri` dependency (`--source`); `--features` / `-F` in the release script, release workflows and package release scripts (`--source`); a marker in the native code of an APK/AAB/IPA                                                       | Cargo; the stub names itself "FAKE stub"; the cloud send defines `mycarlos-cloud-ai` under its feature (`src-tauri/src/cloud_ai/gate.rs`) |
 | Dev or hot-reload hooks                                      | the frontend build (`--dist`): the Vite client, `import.meta.hot`, React refresh, the Vite ping, a webpack hot client                                                                                                                                                     | patterns of the dev tooling                                                                                                                         |
 | A dev server address in the app                              | native code and the frontend: `localhost`, loopback, `10.0.2.2` or a private-network address with a port, except the configured `build.devUrl` (tauri embeds its config in every build; the real CI debug APK holds exactly `http://localhost:1420`)                      | observed on a real APK                                                                                                                              |
 | A debug build                                                | `android:debuggable`, `android:testOnly`; iOS `get-task-allow`, a provisioning profile that lists devices (development or ad-hoc), `aps-environment` development; a native library that still has `.symtab` or `.debug_info` (Cargo's release profile has `strip = true`) | the manifest and profile; observed on a real APK                                                                                                    |
@@ -42,8 +42,16 @@ an archive with no native library, or no mode at all is a finding, not a pass.
 - A **binary `Info.plist`** is converted with macOS `plutil`; on another system the gate says it cannot read it
   (fail closed). Tests use XML plists.
 - The **markers** (`FAKE stub`, `mycarlos-cloud-ai`) must be confirmed against a real build with each feature on;
-  a marker that turns out to occur in a dependency is replaced, not ignored. `cloud-ai` does not exist in the code
-  yet, so today it is covered by the feature-name checks only.
+  a marker that turns out to occur in a dependency is replaced, not ignored. The `mycarlos-cloud-ai` marker is defined
+  by `cloud_ai/gate.rs` and tested in the object code (`scripts/cloud-ai-gate.test.mjs`); it has not yet been looked
+  for in a real packaged build.
+- **Cloud AI (#72): which build is which.** The *release* profile (`tauri build`, the store and package builds; Cargo
+  `PROFILE=release`, or `debug_assertions` off) does not compile with the `cloud-ai` feature: `cloud_ai/gate.rs` stops it, and
+  `scripts/cloud-ai-gate.test.mjs` compiles that file with `rustc` both ways. The *evaluation and development* profile
+  (`tauri build --debug`, `tauri dev`, `cargo test`; `debug_assertions` on) may carry it. This script refuses the feature on
+  every build command that is not a debug-profile one (`--debug`), in the Cargo defaults, in an alias, and its marker in any
+  store artifact; the evaluation workflows (`.github/workflows/mycarlos.yml`, `--debug`) are the only place the feature can
+  be switched on, by a workflow line a maintainer adds.
 - Whether a **release** Tauri build still embeds the `devUrl` (we allow exactly that string) and whether Android
   Gradle strips the Rust library as expected.
 - Detecting a devtools-enabled webview in a built artifact (the source checks refuse the `devtools` feature; no

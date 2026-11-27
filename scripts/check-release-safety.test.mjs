@@ -1574,3 +1574,49 @@ test("features given through the shell cannot be checked and are refused", () =>
   assert.deepEqual(found("cargo test --features $FEATURES"), "");
   assert.deepEqual(found("cargo build --features serde"), "");
 });
+
+test("the cloud AI feature is allowed on a debug-profile build command only (the evaluation builds), never on a release one", () => {
+  const found = (command) => checkBuildCommands(command, "w").join("|");
+  // The evaluation installers: `tauri build --debug`, with the feature, in each spelling.
+  for (const command of [
+    "node node_modules/@tauri-apps/cli/tauri.js build --debug --features cloud-ai --bundles nsis",
+    "npm run tauri build -- --debug --features cloud-ai --bundles deb",
+    "npm run tauri build -- --debug -F cloud-ai",
+    "npm run tauri build -- --debug --features=cloud-ai",
+    "tauri android build -- --debug --apk --features cloud_ai",
+    "tauri build --features cloud-ai --debug",
+  ])
+    assert.equal(found(command), "", command);
+  // A release command, or one that does not say it is a debug build, is refused.
+  for (const command of [
+    "tauri build --features cloud-ai",
+    "tauri build -F cloud-ai",
+    "npm run tauri build -- --features cloud-ai --bundles nsis",
+    "cargo build --release --features cloud-ai",
+    "cargo build --features cloud-ai",
+    "tauri build --release --debug --features cloud-ai",
+    "tauri build --debug=false --features cloud-ai",
+  ])
+    assert.match(found(command), /cloud-ai feature|cloud_ai feature/, command);
+  // `--debug` allows the cloud AI feature and nothing else that a store build must not carry.
+  assert.match(
+    found("tauri build --debug --features cloud-ai,ai-helper-stub"),
+    /ai-helper-stub feature/,
+  );
+  assert.match(
+    found("tauri build --debug --features devtools"),
+    /devtools feature/,
+  );
+  assert.match(found("tauri build --debug --all-features"), /--all-features/);
+  assert.doesNotMatch(
+    found("tauri build --debug --features cloud-ai,ai-helper-stub"),
+    /cloud-ai feature/,
+  );
+  // A workflow step, as the gate reads it.
+  assert.equal(
+    found(
+      "      - name: Build Windows evaluation installer\n        run: node node_modules/@tauri-apps/cli/tauri.js build --debug --features cloud-ai --bundles nsis\n",
+    ),
+    "",
+  );
+});
