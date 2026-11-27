@@ -2102,8 +2102,58 @@ fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     path.rsplit('/').next().unwrap_or_default().to_owned()
 }
 
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
-    let name = picked_name_tail(path);
+/// The longest display name an Android provider is believed (characters). A longer one is
+/// not used: the id's own tail is, as before.
+const MAX_PROVIDED_NAME_CHARS: usize = 255;
+
+/// The name a pick is routed and stored under: the one the document provider reported
+/// (`OpenableColumns.DISPLAY_NAME`) when it is a plain file name, otherwise the tail of the id
+/// (`picked_name_tail`). An opaque Android id (`msf:31`) says nothing about the file, while the
+/// provider's name ("clip.mp4") does. The provider's name is another app's text, so it is used
+/// only when it is one path-free line with a stem and an extension, of a bounded length; anything
+/// else is as if the provider had given none.
+fn routing_name(tail: &str, provided: Option<&str>) -> String {
+    let usable = provided.map(str::trim).filter(|name| {
+        let named = name
+            .rsplit_once('.')
+            .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty());
+        named
+            && name.chars().count() <= MAX_PROVIDED_NAME_CHARS
+            && !name
+                .chars()
+                .any(|c| c.is_control() || c == '/' || c == '\\')
+    });
+    usable.unwrap_or(tail).to_owned()
+}
+
+/// What each picked file's provider calls it. Only an Android `content://` pick is asked
+/// (`ContentResolver`, through the plugin); every other pick, and any answer that is missing or
+/// fails, is `None`, which `routing_name` treats as "use the tail of the id".
+async fn provider_display_names(
+    _app: &tauri::AppHandle,
+    paths: &[tauri_plugin_fs::FilePath],
+) -> Vec<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        let mut names = Vec::with_capacity(paths.len());
+        for path in paths {
+            names.push(match path {
+                tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content" => {
+                    tauri_plugin_android_pdf::display_name(_app, url.as_str()).await
+                }
+                _ => None,
+            });
+        }
+        names
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        vec![None; paths.len()]
+    }
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
     if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
         return name;
     }
@@ -2130,8 +2180,8 @@ const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
 /// Name recorded for an imported video: the name it came with, or for an Android document id that
 /// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
 /// "Imported document.pdf", which a video must never be named.
-fn video_import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
-    let name = picked_name_tail(path);
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
     let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
     if content && !is_video_name(&name) {
         IMPORTED_VIDEO_NAME.to_owned()
@@ -5695,6 +5745,9 @@ async fn vault_import_picked(
         folder_ids: request.folder_ids.clone(),
     };
     let paths = picks.take_import(request.pick_id, &picked_for)?;
+    // The names the providers give (Android), asked before the blocking work: a stored name is a
+    // real one even where the id is opaque.
+    let provided = provider_display_names(&app, &paths).await;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.arc(), move |store| {
@@ -5703,8 +5756,8 @@ async fn vault_import_picked(
             // A provider may download a whole document before the open returns,
             // with no progress to report meanwhile.
             let _opening = Opening::new(store.idle());
-            for path in paths {
-                sources.push(open_import_source(&app, path)?);
+            for (path, provided) in paths.into_iter().zip(provided) {
+                sources.push(open_import_source(&app, path, provided.as_deref())?);
             }
         }
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
@@ -5777,6 +5830,8 @@ async fn vault_import_any_pick(
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
     let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
     let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    // The picker takes `app`; the providers' names are asked afterwards.
+    let names_app = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
         // PNG pictures only: HEIC is not accepted.
@@ -5798,8 +5853,13 @@ async fn vault_import_any_pick(
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
     // The name the provider gave, not the display name: an Android document id that does not end in
     // a known extension is shown as "Imported document.pdf", which would send a video down the
-    // document path.
-    let names: Vec<String> = paths.iter().map(picked_name_tail).collect();
+    // document path. An opaque id ("msf:31") is routed by what the provider calls the file.
+    let provided = provider_display_names(&names_app, &paths).await;
+    let names: Vec<String> = paths
+        .iter()
+        .zip(&provided)
+        .map(|(path, provided)| routing_name(&picked_name_tail(path), provided.as_deref()))
+        .collect();
     Ok(Some(match route_pick(&names) {
         None => AnyPick::VideoAlone,
         Some(video) => {
@@ -5869,10 +5929,14 @@ async fn vault_import_video_picked(
     let (Some(path), true) = (paths.pop(), paths.is_empty()) else {
         return Err(VaultError::ImportBatchLimit.into());
     };
+    let provided = provider_display_names(&app, std::slice::from_ref(&path))
+        .await
+        .pop()
+        .flatten();
     let job = picks.start_video_import()?;
     let running = Arc::clone(&job);
     let result = run_blocking(store.arc(), move |store| {
-        let name = video_import_display_name(&path);
+        let name = video_import_display_name(&path, provided.as_deref());
         let idle = Arc::clone(store.idle());
         // Opening a source can block (a network path, or a provider that fetches the file first).
         let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
@@ -5920,8 +5984,9 @@ fn vault_video_import_cancel(picks: State<'_, Arc<PendingPicks>>) {
 fn open_import_source(
     app: &tauri::AppHandle,
     path: tauri_plugin_fs::FilePath,
+    provided: Option<&str>,
 ) -> Result<ImportSource, VaultError> {
-    let display_name = import_display_name(&path);
+    let display_name = import_display_name(&path, provided);
     let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
         display_name: picture_import_name(display_name, kind),
@@ -11635,7 +11700,10 @@ mod tests {
     #[test]
     fn mobile_imports_are_named_after_the_file_not_the_uri() {
         let named = |value: &str| {
-            import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
         };
         assert_eq!(
             named("file:///private/var/mobile/Inbox/My%20Report.pdf"),
@@ -11666,9 +11734,10 @@ mod tests {
             "Imported document.pdf"
         );
         assert_eq!(
-            import_display_name(&tauri_plugin_fs::FilePath::Path(
-                "/home/jamie/FAKE.pdf".into()
-            )),
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+                None
+            ),
             "/home/jamie/FAKE.pdf"
         );
     }
@@ -11683,7 +11752,7 @@ mod tests {
             "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
         assert_eq!(tail(clip), "clip.mp4");
         assert_eq!(
-            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap())),
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap()), None),
             "Imported document.pdf"
         );
         assert!(is_video_name(&tail(clip)));
@@ -11707,7 +11776,10 @@ mod tests {
     #[test]
     fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
         let named = |value: &str| {
-            video_import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
         };
         assert_eq!(
             named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
@@ -11722,8 +11794,100 @@ mod tests {
             "My Clip.mov"
         );
         assert_eq!(
-            video_import_display_name(&tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into())),
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into()),
+                None
+            ),
             "/home/x/clip.mp4"
+        );
+    }
+
+    #[test]
+    fn the_providers_own_name_routes_and_names_an_opaque_android_pick() {
+        let url = |value: &str| tauri_plugin_fs::FilePath::Url(value.parse().unwrap());
+        let opaque = url("content://com.android.providers.downloads.documents/document/msf%3A31");
+        let tail = picked_name_tail(&opaque);
+        assert_eq!(tail, "31");
+        // The provider's name wins over the tail of the id.
+        assert_eq!(routing_name(&tail, Some("clip.mp4")), "clip.mp4");
+        // No answer, or none that can be used, is as before.
+        assert_eq!(routing_name(&tail, None), "31");
+        for unusable in [
+            "",
+            "   ",
+            "noextension",
+            ".pdf",
+            "trailing.",
+            "a/b.mp4",
+            "a\\b.mp4",
+            "line\nbreak.mp4",
+            "nul\0.mp4",
+        ] {
+            assert_eq!(routing_name(&tail, Some(unusable)), "31", "{unusable:?}");
+        }
+        let too_long = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS));
+        assert_eq!(routing_name(&tail, Some(&too_long)), "31");
+        let longest = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS - 4));
+        assert_eq!(routing_name(&tail, Some(&longest)), longest);
+        // Surrounding space is not part of the name; a space or a dot inside it is.
+        assert_eq!(
+            routing_name(&tail, Some("  FAKE Scan 10.30.pdf ")),
+            "FAKE Scan 10.30.pdf"
+        );
+
+        // The routing: an opaque id that the provider calls a video is that video, and a PDF
+        // beside it is a refused mix, as for ids that carry their names.
+        let route = |picks: &[(&tauri_plugin_fs::FilePath, Option<&str>)]| {
+            let names: Vec<String> = picks
+                .iter()
+                .map(|(path, provided)| routing_name(&picked_name_tail(path), *provided))
+                .collect();
+            route_pick(&names)
+        };
+        assert_eq!(route(&[(&opaque, Some("clip.mp4"))]), Some(true));
+        assert_eq!(route(&[(&opaque, None)]), Some(false));
+        let other = url("content://com.android.providers.downloads.documents/document/msf%3A32");
+        assert_eq!(
+            route(&[(&opaque, Some("clip.mp4")), (&other, Some("labs.pdf"))]),
+            None
+        );
+        assert_eq!(
+            route(&[(&opaque, Some("movie.mov")), (&other, Some("b.m4v"))]),
+            None
+        );
+        assert_eq!(route(&[(&opaque, Some("labs.pdf"))]), Some(false));
+
+        // The stored name is the provider's, not a stand-in.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("clip.mp4")),
+            "clip.mp4"
+        );
+        assert_eq!(
+            video_import_display_name(&opaque, None),
+            "Imported video.mp4"
+        );
+        // A name that is not a video's still gets the stand-in for a video import.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("labs.pdf")),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            import_display_name(&opaque, Some("FAKE labs.pdf")),
+            "FAKE labs.pdf"
+        );
+        assert_eq!(import_display_name(&opaque, None), "Imported document.pdf");
+        // Only what the picker offers is kept as a document's name.
+        assert_eq!(
+            import_display_name(&opaque, Some("photo.heic")),
+            "Imported document.pdf"
+        );
+        // A desktop path is its own name (only an Android `content://` pick is ever asked).
+        assert_eq!(
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/FAKE.pdf".into()),
+                None
+            ),
+            "/home/x/FAKE.pdf"
         );
     }
 
