@@ -3,6 +3,7 @@ import { LanguageSetting } from "./LanguageSetting";
 import { AppearanceSetting } from "./AppearanceSetting";
 import { useI18n } from "../i18n";
 import { NotificationSetting } from "./NotificationSetting";
+import { BackgroundSetting } from "./BackgroundSetting";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
  * is kept in the vault. The AI helper's model has its own page,
@@ -22,6 +23,7 @@ export function PreferencesSettings() {
         <LanguageSetting />
         <AppearanceSetting />
         <NotificationSetting />
+        <BackgroundSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
         ) : (

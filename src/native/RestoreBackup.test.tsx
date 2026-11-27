@@ -13,6 +13,7 @@ function setUp(preview: Partial<RestorePreview> = {}, overrides = {}) {
       replaces: "nothing",
       differsFromThisDevice: false,
       documentCount: 2,
+      leftOut: 0,
       ...preview,
     }),
     restore: vi.fn().mockResolvedValue(true),
@@ -311,6 +312,31 @@ describe("RestoreBackup", () => {
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
+  it("says, before the patient agrees, that a backup was made without videos", async () => {
+    setLocaleOverride("en");
+    const user = userEvent.setup();
+    const { bridge } = setUp({ leftOut: 3 });
+    await chooseAndCheck(user);
+    expect(
+      await screen.findByText(
+        humanText(
+          /^This backup was made without videos\. Restoring it brings back everything else, and your videos will not be there\./,
+        ),
+      ),
+    ).toBeVisible();
+    expect(bridge.restore).not.toHaveBeenCalled();
+    // An ordinary backup says nothing of the kind.
+  });
+
+  it("says nothing about videos for an ordinary backup", async () => {
+    setLocaleOverride("en");
+    const user = userEvent.setup();
+    setUp({ leftOut: 0 });
+    await chooseAndCheck(user);
+    await screen.findByRole("button", { name: humanText("Restore backup") });
+    expect(screen.queryByText(humanText(/made without videos/))).toBeNull();
+  });
+
   it.each(["success", "refusal"] as const)(
     "ignores an old inspection %s after the credential is edited and accepts a fresh check",
     async (outcome) => {
@@ -326,6 +352,7 @@ describe("RestoreBackup", () => {
         replaces: "nothing",
         differsFromThisDevice: false,
         documentCount: 27,
+        leftOut: 0,
       };
       const { bridge, onRestored } = setUp(
         {},
@@ -398,6 +425,7 @@ describe("RestoreBackup", () => {
         replaces: "nothing",
         differsFromThisDevice: false,
         documentCount: 27,
+        leftOut: 0,
       };
       const { bridge, onRestored } = setUp(
         {},

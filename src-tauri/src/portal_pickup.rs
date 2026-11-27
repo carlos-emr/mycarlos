@@ -5,6 +5,9 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct CheckResult {
     pub added: usize,
+    /// The clinics (by name, one entry per document) whose new documents were for a person who
+    /// is hidden and wait in Shared with me (#360). Names no person.
+    pub for_hidden: Vec<String>,
     pub refused: usize,
     pub receipts_pending: usize,
     pub issues: Vec<CheckIssue>,
@@ -293,6 +296,8 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
+    // What an earlier check filed for a hidden person and nobody took is not this check's.
+    store.clear_arrived_for_hidden();
     let links = store.delivery_links(session)?;
     // Refusals whose deliveries have expired are no longer offered (#143).
     // Only tidying: an expired refusal is ignored anyway, so a failure to
@@ -467,11 +472,20 @@ where
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((record_id, added)) => {
                             result.added += usize::from(added);
-                            #[cfg(windows)]
+                            if added && store.take_arrived_for_hidden(record_id) {
+                                // No clinic name yet: said without one, never as an empty name.
+                                result.for_hidden.push(
+                                    link.clinic
+                                        .as_ref()
+                                        .map(|clinic| clinic.clinic_name.clone())
+                                        .unwrap_or_default(),
+                                );
+                            }
+                            #[cfg(desktop)]
                             if added {
                                 store.notify_local_arrival(record_id, &link, session);
                             }
-                            #[cfg(not(windows))]
+                            #[cfg(not(desktop))]
                             let _ = record_id;
                             send_pending(&link)?;
                         }
@@ -606,4 +620,89 @@ where
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        portal_approval::{ApprovalReason, ApprovalState},
+        portal_link::LinkError,
+        vault::VaultError,
+    };
+
+    #[test]
+    fn a_failure_of_one_link_is_told_apart_from_one_that_ends_the_whole_check() {
+        // Ending the check: the vault locked, or the portal is not reachable at all.
+        for error in [
+            VaultError::Portal(LinkError::Cancelled),
+            VaultError::Portal(LinkError::Unavailable),
+        ] {
+            assert!(!is_per_link_failure(&error));
+        }
+        // One link's own failure: the others are still asked.
+        for error in [
+            VaultError::Portal(LinkError::Network),
+            VaultError::Portal(LinkError::DeviceRemoved),
+            VaultError::Portal(LinkError::Busy),
+            VaultError::Portal(LinkError::HttpRefused(503, Some(30))),
+            VaultError::ApprovalTerminal(
+                ApprovalState::Refused,
+                Some(ApprovalReason::StaffRequired),
+            ),
+            VaultError::ApprovalTerminal(ApprovalState::Expired, None),
+            VaultError::ApprovalRequestMissing,
+            VaultError::ApprovalNeedsClinic,
+            VaultError::NotFound,
+            VaultError::Invalid,
+        ] {
+            assert!(is_per_link_failure(&error), "{error:?}");
+        }
+        // Anything else is not a link's own failure.
+        assert!(!is_per_link_failure(&VaultError::PickupRefused));
+    }
+
+    #[test]
+    fn only_a_request_that_can_still_be_approved_is_open() {
+        for state in [ApprovalState::Pending, ApprovalState::ChallengeReady] {
+            assert!(still_open(state), "{state:?}");
+        }
+        for state in [
+            ApprovalState::Accepted,
+            ApprovalState::Refused,
+            ApprovalState::Expired,
+            ApprovalState::Cancelled,
+        ] {
+            assert!(!still_open(state), "{state:?}");
+        }
+    }
+
+    fn response(status: u16, body: &[u8]) -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status,
+            body: zeroize::Zeroizing::new(body.to_vec()),
+            date: None,
+            retry_after: None,
+        }
+    }
+
+    #[test]
+    fn a_portal_from_before_reading_aids_is_known_by_its_one_answer() {
+        assert!(refuses_unknown_query(&response(
+            400,
+            br#"{"code":"invalid_cursor"}"#
+        )));
+        // Another status, another code, a body that is not JSON, or no code at all: not that portal.
+        assert!(!refuses_unknown_query(&response(
+            500,
+            br#"{"code":"invalid_cursor"}"#
+        )));
+        assert!(!refuses_unknown_query(&response(
+            400,
+            br#"{"code":"invalid_request"}"#
+        )));
+        assert!(!refuses_unknown_query(&response(400, b"not json")));
+        assert!(!refuses_unknown_query(&response(400, br#"{"code":7}"#)));
+        assert!(!refuses_unknown_query(&response(400, br#"{}"#)));
+    }
 }

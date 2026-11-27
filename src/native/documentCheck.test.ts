@@ -72,7 +72,7 @@ describe("what a check for new clinic documents says (#128)", () => {
         ),
       ),
     ).toBe(
-      `${CHECKED} Some clinic checks need attention. New documents saved: 1. Documents that could not be verified: 0. FAKE Clinic b: This approval request expired. To ask again for this device, go to Security, under Clinic documents.`,
+      `${CHECKED} Some clinic checks need attention. New documents saved: 1. Documents that could not be verified: 0. FAKE Clinic b: This approval request expired. To ask again for this device, go to Security, under Connected clinics.`,
     );
   });
 
