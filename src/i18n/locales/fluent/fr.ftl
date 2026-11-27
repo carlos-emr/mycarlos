@@ -2984,6 +2984,8 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
 
+native-backupExclusionFailed = Ce téléphone n’a pas pu garder le coffre-fort hors des sauvegardes de l’appareil. Veuillez réessayer.
+
 interface-AddVideo-add = Ajouter une vidéo
 
 interface-AddVideo-hint = Choisissez une vidéo MP4 ou MOV sur cet appareil. Le lieu, ainsi que le nom et le modèle de l’appareil qu’elle contient, sont d’abord supprimés.

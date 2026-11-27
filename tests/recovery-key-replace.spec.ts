@@ -213,7 +213,10 @@ test("a key whose kit may have been lost or seen is replaced: the older backups'
     step: string;
     keep: string | null;
   };
-  expect(kept).toMatchObject({ step: "delete", keep: BACKUP_NAME });
+  // The steps are kept without the file's name (it can carry a person's name, and on iOS the
+  // webview's storage is backed up, #422): this session still shows it, storage never holds it.
+  expect(kept).toMatchObject({ step: "delete", keep: null });
+  expect(JSON.stringify(kept)).not.toContain(FAKE_KEY_LABEL);
 
   // Done: the steps go, here and from storage.
   await olderBackups(page)

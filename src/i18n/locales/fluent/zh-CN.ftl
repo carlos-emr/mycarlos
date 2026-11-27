@@ -2675,6 +2675,8 @@ notifications-testWait = 请等待几秒钟后再试。
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
 
+native-backupExclusionFailed = 这部手机无法让保险库不被设备备份。请重试。
+
 interface-AddVideo-add = 添加视频
 
 interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。

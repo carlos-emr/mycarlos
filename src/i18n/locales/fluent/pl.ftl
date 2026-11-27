@@ -3078,6 +3078,8 @@ notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
 
+native-backupExclusionFailed = Ten telefon nie zdołał wyłączyć skarbca z kopii zapasowych urządzenia. Spróbuj ponownie.
+
 interface-AddVideo-add = Dodaj film
 
 interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce oraz nazwa i model urządzenia, które zawiera, zostaną najpierw usunięte.

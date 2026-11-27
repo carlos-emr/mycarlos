@@ -2984,6 +2984,8 @@ notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
 
+native-backupExclusionFailed = Este teléfono no pudo mantener la bóveda fuera de las copias de seguridad del dispositivo. Inténtelo de nuevo.
+
 interface-AddVideo-add = Añadir un video
 
 interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y el nombre y modelo del dispositivo que contiene.

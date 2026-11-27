@@ -2675,6 +2675,8 @@ notifications-testWait = 請等候幾秒鐘後再試一次。
 notifications-testFailed = 無法顯示測試通知。
 notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。
 
+native-backupExclusionFailed = 這支手機無法讓保險庫不被裝置備份。請再試一次。
+
 interface-AddVideo-add = 新增影片
 
 interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點以及裝置名稱和型號會先被刪除。

@@ -1396,6 +1396,7 @@
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "native.backupExclusionFailed",
   "interface.AddVideo.add",
   "interface.AddVideo.hint",
   "interface.AddVideo.checking",

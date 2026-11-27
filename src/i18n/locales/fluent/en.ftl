@@ -2949,6 +2949,8 @@ notifications-testWait = Wait a few seconds, then try again.
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
 
+native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.
+
 interface-AddVideo-add = Add a video
 
 interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and the device's name and model it carries are removed first.

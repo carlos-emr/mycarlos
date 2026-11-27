@@ -30,6 +30,7 @@ mod ui_text;
 mod ui_text_ids;
 use ui_text::UiLocale;
 use ui_text_ids::MessageId;
+mod backup_exclusion;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod desktop_background;
@@ -609,6 +610,10 @@ impl From<VaultError> for PublicText {
             VaultError::PdfViewNoSandbox => Self {
                 code: "pdf_view_no_sandbox",
                 message_key: "native.error.33",
+            },
+            VaultError::BackupExclusionFailed => Self {
+                code: "backup_exclusion_failed",
+                message_key: "native.backupExclusionFailed",
             },
             VaultError::NoSpace => Self {
                 code: "no_space",
@@ -3306,6 +3311,9 @@ async fn vault_create(
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -3334,6 +3342,9 @@ async fn vault_unlock(
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -4495,6 +4506,9 @@ async fn vault_recover(
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -5514,6 +5528,8 @@ async fn vault_restore(
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
     let store = store.pin();
+    // A restore writes a vault into the data folder: the same refusal as creating one.
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
@@ -8387,6 +8403,16 @@ pub fn run() {
             // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
             // nothing is written, so this is what it was. Each slot has its own notification ledger
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            // iOS: the whole data folder stays out of iCloud and computer backups (#422, guideline
+            // 5.1.3(ii)). Ben decided the exclusion is kept, so a failure refuses vault work.
+            if let Err(error) = backup_exclusion::configure(app.path().app_local_data_dir()?) {
+                // Not fatal to start: creating, unlocking and recovering a vault refuse until it
+                // can be set (and try again each time), so no health data is ever written first.
+                #[cfg(debug_assertions)]
+                eprintln!("could not exclude the data folder from backups: {error}");
+                #[cfg(not(debug_assertions))]
+                let _ = error;
+            }
             let slots = Arc::new(vault_slots::VaultSlots::open(
                 app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),

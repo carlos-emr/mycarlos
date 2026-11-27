@@ -1397,6 +1397,7 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "native.backupExclusionFailed",
   "interface.AddVideo.add",
   "interface.AddVideo.hint",
   "interface.AddVideo.checking",
@@ -3096,6 +3097,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "native.backupExclusionFailed": "native-backupExclusionFailed",
   "interface.AddVideo.add": "interface-AddVideo-add",
   "interface.AddVideo.hint": "interface-AddVideo-hint",
   "interface.AddVideo.checking": "interface-AddVideo-checking",
@@ -4655,6 +4657,7 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "native.backupExclusionFailed": undefined;
   "interface.AddVideo.add": undefined;
   "interface.AddVideo.hint": undefined;
   "interface.AddVideo.checking": undefined;

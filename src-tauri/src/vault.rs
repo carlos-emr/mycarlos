@@ -395,6 +395,10 @@ pub enum VaultError {
     AlreadyExists,
     #[error("the vault has not been created")]
     Missing,
+    /// iOS: the app's data folder could not be kept out of iCloud and computer backups
+    /// (`backup_exclusion.rs`), so no vault is created or opened until it can.
+    #[error("this phone could not keep the vault out of device backups")]
+    BackupExclusionFailed,
     #[error("the vault is locked")]
     Locked,
     #[error("the vault is open in another app instance")]
