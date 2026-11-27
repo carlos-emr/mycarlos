@@ -153,7 +153,7 @@ fn a_save_the_process_died_in_is_removed_at_the_next_start_with_its_partly_writt
     assert!(stage.join("partly-written.tmp").exists());
     assert_eq!(journal_entries(&f.root), 1);
 
-    remove_abandoned_exports(&vault_home(&f.root).unwrap());
+    remove_abandoned_exports(vault_home(&f.root).unwrap());
     assert!(!stage.exists());
     assert_eq!(journal_entries(&f.root), 0);
     assert!(names_in(&f.out).is_empty());
@@ -176,7 +176,7 @@ fn the_next_start_removes_only_the_folders_the_journal_names() {
     fs::write(unnamed.join("x"), b"FAKE-UNNAMED").unwrap();
     fs::write(f.out.join("notes.txt"), b"FAKE-NOTES").unwrap();
 
-    remove_abandoned_exports(&vault_home(&f.root).unwrap());
+    remove_abandoned_exports(vault_home(&f.root).unwrap());
     assert!(!named.exists());
     assert!(other_program.join("tmpfile.tmp").exists());
     assert!(unnamed.join("x").exists());
@@ -190,7 +190,7 @@ fn a_save_still_running_here_is_not_removed_by_the_sweep() {
     let running = SaveStage::begin(&f.root, &destination).unwrap();
     fs::write(running.dir().join("tmpfile.tmp"), b"FAKE-IN-PROGRESS").unwrap();
 
-    remove_abandoned_exports(&vault_home(&f.root).unwrap());
+    remove_abandoned_exports(vault_home(&f.root).unwrap());
     assert!(running.dir().join("tmpfile.tmp").exists());
     assert_eq!(journal_entries(&f.root), 1);
 
