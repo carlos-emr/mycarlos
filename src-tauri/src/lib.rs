@@ -9127,10 +9127,14 @@ mod tests {
             Some(std::collections::HashSet::new())
         );
         // A vault whose header cannot be read is unknown, not absent: nothing may be guessed.
+        // Every header file there is is made unreadable in place (a removal goes only through
+        // remove_owned_file, #71, which a test in this module cannot reach).
         for name in ["header-0.json", "header-1.json", "header.json"] {
-            let _ = std::fs::remove_file(temp.path().join("other").join(name));
+            let path = temp.path().join("other").join(name);
+            if path.exists() {
+                std::fs::write(path, b"{").unwrap();
+            }
         }
-        std::fs::write(temp.path().join("other").join("header-0.json"), b"{").unwrap();
         assert_eq!(other.notice_key_vault(), vault::NoticeKeyVault::Unknown);
         assert_eq!(other_vault_ids(&this, &all), None);
     }
