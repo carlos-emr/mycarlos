@@ -181,7 +181,12 @@ function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
   if (live?.kind === "waiting") return say("portal.awaitingClinic");
   return say("portal.awaiting");
 }
-/** Two card states are the same when they say the same thing. */
+/** Two card states are the same when they say the same thing. The comparison of two failed
+ * states (by code, below) is not reached today: a failed link is dropped from what automatic
+ * checks watch (`checked` in useApprovalPolling.ts), and every check or request the patient
+ * starts ends in `polling.restart(known)`, where `known` is the link's waiting state or nothing,
+ * so a change never goes from one failed state straight to another. Kept for a change that
+ * would let it. */
 function sameState(a: CardState, b: CardState): boolean {
   if ("key" in a || "key" in b)
     return "key" in a && "key" in b && a.key === b.key;

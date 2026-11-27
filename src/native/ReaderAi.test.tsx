@@ -204,6 +204,29 @@ describe("the reader's AI helper", () => {
     expect(screen.queryByRole("region", { name: "Explain a term" })).toBeNull();
   });
 
+  it("treats a helper that cannot say what is installed as not installed, asks no model, and leads to Preferences", async () => {
+    const model = fakeLocalModel();
+    model.status = vi.fn().mockRejectedValue(new Error("FAKE status failure"));
+    const { onOpenPreferences, loadText } = renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const panel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    expect(
+      await within(panel).findByText("The AI helper isn't on this device yet"),
+    ).toBeVisible();
+    // Nothing of the failure is shown, and nothing was read or asked.
+    expect(screen.queryByText(/FAKE status failure/)).toBeNull();
+    expect(loadText).not.toHaveBeenCalled();
+    expect(model.calls).toHaveLength(0);
+    await user.click(
+      within(panel).getByRole("button", { name: "Open AI helper settings" }),
+    );
+    expect(onOpenPreferences).toHaveBeenCalledTimes(1);
+  });
+
   it("labels a summary as AI's, and links only the sentences found in the document", async () => {
     const model = fakeLocalModel({
       sentences: () => [
@@ -555,6 +578,30 @@ describe("the reader's AI helper", () => {
       term: "potassium",
     });
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("asks the model once and keeps one answer when Summary opens, though React runs its effect twice (StrictMode)", async () => {
+    const model = fakeLocalModel();
+    const { kept } = fakeKept([], model);
+    renderReader(model, { kept, strict: true });
+    await firstPage();
+    const user = userEvent.setup();
+    const asked = () =>
+      model.calls.filter((call) => call.tool === "summary").length;
+    // One model call and one kept answer for one opening of the panel, though StrictMode runs its
+    // effect twice. NOT a pin of the `startedFor` guard on its own: with that check dropped this
+    // still passes (the fake model is not asked twice by the second run), and opening the panel
+    // again asks again by design when nothing readable was kept. The property pinned is the
+    // outcome, not the guard.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(AI_LABEL);
+    await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(asked()).toBe(1);
+    expect(kept.save).toHaveBeenCalledTimes(1);
+    // A second press is a toggle (it closes the panel), not a second request.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(asked()).toBe(1);
   });
 
   it("shows the summary the vault kept, asks no model, and summarizes again on request", async () => {

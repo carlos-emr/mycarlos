@@ -1,4 +1,4 @@
-import { humanText, humanValue } from "./test/humanText";
+import { humanText, humanValue, visibleText } from "./test/humanText";
 import { birthDateGroup, enterBirthDate } from "./test/birthDate";
 import {
   act,
@@ -7471,6 +7471,1370 @@ describe("durable vault UI", () => {
     } finally {
       visibility.mockRestore();
     }
+  });
+
+  // ---- Privacy across screens: how the pieces fit together, not single files ----
+
+  /** Every place a name can be read or heard from: text, and the attributes a screen reader or a
+   * tooltip uses. A field's typed value is not included (the patient typed that). */
+  function placesThatSay(name: string): Element[] {
+    return Array.from(document.querySelectorAll("*")).filter((element) => {
+      const own = Array.from(element.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? "")
+        .join("");
+      const attributes = [
+        "aria-label",
+        "title",
+        "alt",
+        "placeholder",
+        "aria-description",
+        "aria-valuetext",
+      ].map((attribute) => element.getAttribute(attribute) ?? "");
+      return [own, ...attributes].some((text) => text.includes(name));
+    });
+  }
+
+  const hiddenCasey = {
+    id: "profile-9",
+    displayName: "FAKE Casey Hiddenname",
+    hiddenAtMs: 1_700_000_000_000,
+    documents: 3,
+  };
+  const withHiddenCasey = (): VaultSnapshot => ({
+    ...snapshotWithRecord,
+    hiddenProfiles: [hiddenCasey],
+  });
+
+  it("names a hidden person only inside Hidden people: not the library, its search, a dialog, or the lock screen", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(withHiddenCasey())),
+      hideProfile: vi.fn().mockResolvedValue(undefined),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const name = "Hiddenname";
+    expect(placesThatSay(name)).toEqual([]);
+    // Searching for the name finds no one, and the page still does not say it.
+    const search = screen.getByRole("searchbox");
+    await user.type(search, name);
+    expect(placesThatSay(name).filter((e) => e !== search)).toEqual([]);
+    await user.clear(search);
+    // Security shows it, and only in the Hidden people panel (and what its buttons say).
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    const panel = document.querySelector(".native-hidden-people");
+    expect(panel).not.toBeNull();
+    const found = placesThatSay(name);
+    expect(found.length).toBeGreaterThan(0);
+    for (const element of found) expect(panel!.contains(element)).toBe(true);
+    // The hand-over dialog lists the people the library shows, not the hidden one.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Hand records over…") }),
+    );
+    await screen.findByRole("dialog");
+    for (const element of placesThatSay(name))
+      expect(panel!.contains(element)).toBe(true);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: humanText("Cancel"),
+      }),
+    );
+    // Locked: the name is nowhere.
+    await user.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(placesThatSay(name)).toEqual([]);
+  });
+
+  it("after a person is hidden, nothing of theirs (name, documents, the notice) is on the library, in its search, or on the lock screen", async () => {
+    const user = userEvent.setup();
+    let hidden = false;
+    const casey = {
+      id: "profile-9",
+      displayName: "FAKE Casey Hiddenname",
+      createdAtMs: 2,
+    };
+    const letter = {
+      id: "record-9",
+      profileId: "profile-9",
+      folderIds: [],
+      displayName: "FAKE_Letter_for_Hiddenname.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    };
+    const current = (): VaultSnapshot =>
+      hidden
+        ? {
+            ...snapshotWithRecord,
+            hiddenProfiles: [{ ...hiddenCasey, documents: 1 }],
+          }
+        : {
+            ...snapshotWithRecord,
+            profiles: [...snapshotWithRecord.profiles, casey],
+            records: [...snapshotWithRecord.records, letter],
+          };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current())),
+      hideProfile: vi.fn().mockImplementation(async () => {
+        hidden = true;
+      }),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    // With two people the library's heading is the person's name.
+    await screen.findByRole("heading", { name: humanText("Jamie") });
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Hide FAKE Casey Hiddenname"),
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: humanText("Hide FAKE Casey Hiddenname"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.hideProfile).toHaveBeenCalledWith("profile-9"),
+    );
+    const panel = await waitFor(() => {
+      const found = document.querySelector(".native-hidden-people");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // Outside the Hidden people panel the person and their document are not said anywhere.
+    // Outside the panel only the polite line that tells a screen reader it was hidden says it
+    // (the confirmation of what the patient just did).
+    const notice = (element: Element) =>
+      element.getAttribute("aria-live") === "polite" &&
+      /is now hidden/.test(element.textContent ?? "");
+    const outside = () =>
+      placesThatSay("Hiddenname").filter(
+        (element) => !panel.contains(element) && !notice(element),
+      );
+    expect(outside()).toEqual([]);
+    // Back in the library, and searching for them.
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^My records/) }),
+    );
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const search = screen.getByRole("searchbox");
+    await user.type(search, "Hiddenname");
+    // Only the confirmation is left (measured: it stays on the library page, see below).
+    const left = placesThatSay("Hiddenname").filter((e) => e !== search);
+    expect(left.every(notice)).toBe(true);
+    // Locked: nothing of it is left, not even the line that told a screen reader it was hidden.
+    await user.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(placesThatSay("Hiddenname")).toEqual([]);
+    expect(document.body.textContent).not.toContain("Hiddenname");
+  });
+
+  /** Every bridge method, in exactly one of two lists (a `Record` over all the keys, so adding a
+   * method to `VaultBridge` stops the build until it is placed):
+   * - `write`: changes the vault, sends or saves something for a clinic, or is refused by native
+   *   in recovery mode. In read-only recovery none may be reached from any control. That last
+   *   group is the backup (`backup_parts` returns `RecoveryMode`, vault.rs, pinned by the test
+   *   `a_read_only_vault_is_not_backed_up`: a backup of a degraded manifest could omit records
+   *   silently, and the old-backups guide tells the patient to delete older ones after a new
+   *   one) and a person's hand-over, export and import (`exportable_profile` and the import
+   *   both return `RecoveryMode`). The UI matches: those buttons are disabled.
+   * - `allowed`: reads, pickers, computing, and the deliberate exceptions: a single document's
+   *   export and an anonymized text's save (native: "the export still runs: it may be the only
+   *   way to get a document out", `export_atomic`), erasing the vault and restoring a backup
+   *   (how a damaged vault is started over; both are reached from the locked and set-up
+   *   screens, not the library), the device's own auto-lock setting, and `recover` (the locked
+   *   screen). */
+  const BRIDGE_CLASS: Record<keyof VaultBridge, "write" | "allowed"> = {
+    native: "allowed",
+    status: "allowed",
+    passphraseRules: "allowed",
+    create: "write",
+    unlock: "allowed",
+    lock: "allowed",
+    touch: "allowed",
+    setAutoLock: "allowed",
+    platform: "allowed",
+    snapshot: "allowed",
+    history: "allowed",
+    linkPortal: "write",
+    connectPortal: "write",
+    // Removes a link that has delivered nothing: a change to the vault (main's #476 added it).
+    removePortalLink: "write",
+    checkDocuments: "write",
+    requestDeviceApproval: "write",
+    submitApprovalCode: "write",
+    restartDeviceApproval: "write",
+    forgetRefusedDeliveries: "write",
+    refreshDeviceApproval: "write",
+    changePassphrase: "write",
+    beginRecoveryKey: "write",
+    confirmRecoveryKey: "write",
+    saveRecoveryKit: "allowed",
+    benchmarkKdf: "allowed",
+    recoveryKeyLabel: "allowed",
+    cancelRecoveryKey: "allowed",
+    recover: "allowed",
+    pickBackupDestination: "write",
+    saveBackupToPicked: "write",
+    backupSize: "allowed",
+    leftOutRecords: "allowed",
+    prepareProfileExport: "write",
+    pickProfileExportDestination: "write",
+    saveProfileExportToPicked: "write",
+    pickProfileImportSource: "allowed",
+    profileImportKeyKind: "allowed",
+    inspectProfileImport: "allowed",
+    importProfile: "write",
+    pickRestoreSource: "allowed",
+    inspectRestore: "allowed",
+    restore: "allowed",
+    createProfile: "write",
+    renameProfile: "write",
+    updateProfileDetails: "write",
+    sharedIdentity: "allowed",
+    createFolder: "write",
+    updateFolder: "write",
+    renameRecord: "write",
+    assignFolders: "write",
+    assignFoldersBatch: "write",
+    pickImportFiles: "allowed",
+    // One picker for documents, pictures and videos (#556): picking is not a write.
+    pickImportAny: "allowed",
+    importPickedFiles: "write",
+    // A video is picked like a picture; adding it is a write, and its progress and cancel are not.
+    pickImportVideo: "allowed",
+    importPickedVideo: "write",
+    videoImportProgress: "allowed",
+    videoImportCancel: "allowed",
+    pickExportDestination: "allowed",
+    exportToPicked: "allowed",
+    savePhoto: "write",
+    videoStart: "write",
+    videoAppend: "write",
+    videoPause: "write",
+    videoResume: "write",
+    videoStop: "write",
+    videoSpace: "allowed",
+    videoPending: "allowed",
+    videoRecover: "write",
+    isVideo: "allowed",
+    videoOpen: "allowed",
+    videoClose: "allowed",
+    isPhoto: "allowed",
+    viewPhoto: "allowed",
+    hideProfile: "write",
+    restoreProfile: "write",
+    hideRecord: "write",
+    unhideRecord: "write",
+    hideUnavailableRecords: "write",
+    isLockedPdf: "allowed",
+    unlockPdf: "allowed",
+    listReceived: "allowed",
+    acceptReceived: "write",
+    discardReceived: "write",
+    moveToPerson: "write",
+    viewPage: "allowed",
+    cancelView: "allowed",
+    readAndroidPdf: "allowed",
+    pageBoxes: "allowed",
+    aiModelStatus: "allowed",
+    aiSummarize: "allowed",
+    aiExplain: "allowed",
+    aiCancel: "allowed",
+    aiModelSpeed: "allowed",
+    onAiAnswerStarted: "allowed",
+    onVaultLocked: "allowed",
+    trayWaiting: "allowed",
+    onTrayWaiting: "allowed",
+    documentText: "allowed",
+    cancelDocumentText: "allowed",
+    recordKnownDetails: "allowed",
+    pickTextExportDestination: "allowed",
+    exportTextToPicked: "allowed",
+    copyTextExport: "allowed",
+    saveAiResult: "write",
+    aiResults: "allowed",
+    readAiResult: "allowed",
+    reset: "allowed",
+  };
+  const BRIDGE_WRITES = (
+    Object.keys(BRIDGE_CLASS) as (keyof VaultBridge)[]
+  ).filter((name) => BRIDGE_CLASS[name] === "write");
+
+  it("lets no control write while the vault is read-only: every enabled button in the library, a document's details and Security", async () => {
+    const user = userEvent.setup();
+    // A clinic is linked and its approval is waiting (as in the clinic tests), and a document
+    // waits in Shared with me, so that the controls for both are on the screen.
+    const readOnly: VaultSnapshot = {
+      ...snapshotWithRecord,
+      recovery: "writeFailed",
+      recoveryKeySetAtMs: 5,
+      portalLinkingEnabled: true,
+      portalLinks: [
+        {
+          id: "fake-clinic-link",
+          portalBase: "https://portal.example.test/patient",
+          deviceName: "myCarlos FAKE device",
+          profileId: null,
+          clinicName: "FAKE First Clinic",
+          fingerprints: [],
+          incomplete: false,
+          deviceKeyId: "FAKE_FIRST_DEVICE",
+          deviceFingerprint: "11".repeat(32),
+          approvalRequested: true,
+          clinicApproved: false,
+        },
+      ],
+      profiles: [
+        ...snapshotWithRecord.profiles,
+        { id: "profile-2", displayName: "FAKE Robin", createdAtMs: 2 },
+        { id: "shared-1", displayName: "Shared with me", createdAtMs: 3 },
+      ],
+      sharedProfileId: "shared-1",
+      records: [
+        ...snapshotWithRecord.records,
+        {
+          ...snapshotWithRecord.records[0],
+          id: "record-shared",
+          profileId: "shared-1",
+          displayName: "FAKE_Shared_Letter.pdf",
+        },
+      ],
+      hiddenProfiles: [hiddenCasey],
+    };
+    // Every method a control could reach is present: the interface hides the control of a
+    // method that is missing, which would make this test pass for the wrong reason.
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(readOnly)),
+      hideProfile: vi.fn().mockResolvedValue(undefined),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+      linkPortal: vi.fn().mockResolvedValue(undefined),
+      connectPortal: vi.fn().mockResolvedValue(undefined),
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      submitApprovalCode: vi.fn().mockResolvedValue(undefined),
+      restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    // With two people the library's heading is the person's name.
+    await screen.findByRole("heading", { name: humanText("Jamie") });
+    const calledWrites = () =>
+      BRIDGE_WRITES.filter((name) => {
+        const method = bridge[name] as unknown;
+        return vi.isMockFunction(method) && method.mock.calls.length > 0;
+      });
+    // The classification covers every method the test bridge has, and no other.
+    expect(
+      Object.keys(bridge).filter((name) => !(name in BRIDGE_CLASS)),
+    ).toEqual([]);
+    // Not pressed, by their whole names: they close, move between pages and people, or erase the
+    // vault (which stays possible, see BRIDGE_CLASS). Nothing else is skipped, and the set that
+    // was skipped is asserted at the end, so a real write cannot hide in a substring.
+    const NAVIGATION =
+      /^(lock now|cancel|close|back|not now|done|skip|dismiss|my records|records|security|preferences|ai helper|shared with me|hidden|jamie\d.*|fake robin\d.*|shared with me\d.*|erase.*)$/i;
+    const skipped = new Set<string>();
+    const isNavigation = (name: string) => {
+      const navigation = NAVIGATION.test(name);
+      if (navigation) skipped.add(name);
+      return navigation;
+    };
+    const nameOf = (element: Element) =>
+      visibleText(
+        element.getAttribute("aria-label") ?? element.textContent ?? "",
+      ).trim();
+    // Disclosures (a <summary>, such as "Show device details") hide controls until opened.
+    const expandDisclosures = async () => {
+      for (const summary of Array.from(document.querySelectorAll("summary")))
+        if (!summary.closest("details")?.open) await user.click(summary);
+    };
+    const dialogsOpen = () => [
+      ...screen.queryAllByRole("dialog"),
+      ...screen.queryAllByRole("alertdialog"),
+    ];
+    const enabled = (element: Element) =>
+      !(element as HTMLButtonElement).disabled &&
+      element.getAttribute("aria-disabled") !== "true";
+    const pressable = (scope?: HTMLElement) => {
+      const where = scope ? within(scope) : screen;
+      return [
+        ...where.queryAllByRole("button"),
+        ...where.queryAllByRole("menuitem"),
+      ];
+    };
+    // Dialogs a press opened beyond the `keep` already open: their buttons are pressed too (a
+    // confirmation is where a write would start), then they are closed.
+    const closeWhatOpened = async (keep: number) => {
+      for (let i = 0; i < 4 && dialogsOpen().length > keep; i += 1) {
+        const dialog = dialogsOpen()[dialogsOpen().length - 1];
+        for (const button of within(dialog).queryAllByRole("button")) {
+          const name = nameOf(button);
+          if (enabled(button) && name && !isNavigation(name)) {
+            pressed.push(`(in a dialog) ${name}`);
+            await user.click(button);
+          }
+        }
+        await user.keyboard("{Escape}");
+      }
+    };
+    const pressed: string[] = [];
+    /** Presses every enabled button once, by its name, in `scope` (default: the page), and then
+     * again for the buttons that pressing revealed (a selection reveals Move, for one). */
+    const sweep = async (scope?: () => HTMLElement | null) => {
+      const keep = dialogsOpen().length;
+      const done = new Set<string>();
+      for (let pass = 0; pass < 3; pass += 1) {
+        const names = Array.from(
+          new Set(
+            pressable(scope?.() ?? undefined)
+              .filter(enabled)
+              .map(nameOf)
+              .filter((name) => name && !done.has(name) && !isNavigation(name)),
+          ),
+        );
+        if (!names.length) break;
+        for (const name of names) {
+          // A press can close the dialog being swept (as Back does): nothing is left in it.
+          if (scope && !scope()) return;
+          const target = pressable(scope?.() ?? undefined).find(
+            (element) => enabled(element) && nameOf(element) === name,
+          );
+          if (!target) continue;
+          done.add(name);
+          pressed.push(name);
+          await user.click(target);
+          await closeWhatOpened(keep);
+        }
+      }
+    };
+    // The library.
+    await sweep();
+    // A document's details dialog, left open while its own buttons are pressed.
+    await user.click(screen.getByText(humanText("FAKE_Results.pdf")));
+    await screen.findByRole("dialog");
+    const pressedBefore = pressed.length;
+    await sweep(() => screen.queryByRole("dialog"));
+    // (Pressing some of them closes the dialog, as Back does; the rest are still pressed.)
+    expect(pressed.length).toBeGreaterThan(pressedBefore);
+    if (screen.queryByRole("dialog")) await user.keyboard("{Escape}");
+    // Shared with me: where a received document is accepted, discarded or moved to a person.
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Shared with me/) }),
+    );
+    await screen.findByText(humanText("FAKE_Shared_Letter.pdf"));
+    await expandDisclosures();
+    await sweep();
+    const sharedLetter = screen.queryByText(
+      humanText("FAKE_Shared_Letter.pdf"),
+    );
+    if (sharedLetter) {
+      await user.click(sharedLetter);
+      if (await screen.findByRole("dialog").catch(() => null)) {
+        await sweep(() => screen.queryByRole("dialog"));
+        if (screen.queryByRole("dialog")) await user.keyboard("{Escape}");
+      }
+    }
+    // Security, which holds the clinic cards and the people.
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    await expandDisclosures();
+    // The clinic's controls are on the screen (not hidden for want of a bridge method) and are
+    // refused by being disabled, not by being absent.
+    for (const name of [
+      "Retry saved approval request",
+      "Link another clinic",
+    ] as const) {
+      const control = screen.getByRole("button", { name: humanText(name) });
+      expect(control, name).toBeDisabled();
+    }
+    await sweep();
+    // The sweep really pressed things (it is not vacuously quiet).
+    expect(pressed.length).toBeGreaterThan(5);
+    expect(calledWrites()).toEqual([]);
+    // What was not pressed is the page and person navigation and the window's lock button, and
+    // nothing else (a substring match used to skip, by accident, anything with "back" or "lock").
+    expect(Array.from(skipped).sort()).toEqual([
+      "AI helper",
+      "FAKE Robin00 documents",
+      "Jamie11 document",
+      "Lock now",
+      "Preferences",
+      "Security",
+      "Shared with me",
+    ]);
+  });
+
+  // ---- A double press, or a form sent twice, never writes twice ----
+  // Two kinds of case. A second click on a button is stopped by the button being disabled while
+  // the first action runs (`busy`): React drops a click on a disabled button, so those tests
+  // fail only if that disabling is removed. A form sent twice with `fireEvent.submit` goes past
+  // the button altogether, so what stops it is the form's own guard.
+
+  /** The bridge call stays pending, as a slow disk would leave it, until `finish` is called. */
+  function pendingCall<T>() {
+    let finish: (value: T) => void = () => {};
+    const promise = new Promise<T>((resolve) => {
+      finish = resolve;
+    });
+    return { promise, finish };
+  }
+
+  it("hides a document once for a double click on Hide", async () => {
+    const user = userEvent.setup();
+    const slow = pendingCall<void>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      hideRecord: vi.fn().mockReturnValue(slow.promise),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText(humanText("FAKE_Results.pdf")));
+    const hide = screen.getByRole("button", { name: humanText("Hide") });
+    fireEvent.click(hide);
+    fireEvent.click(hide);
+    await waitFor(() => expect(bridge.hideRecord).toHaveBeenCalled());
+    expect(bridge.hideRecord).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish());
+    expect(bridge.hideRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides a person once for a double click on the confirmation, and a second Enter does nothing more", async () => {
+    const user = userEvent.setup();
+    const slow = pendingCall<void>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...snapshotWithRecord,
+          profiles: [
+            ...snapshotWithRecord.profiles,
+            { id: "profile-2", displayName: "FAKE Robin", createdAtMs: 2 },
+          ],
+        }),
+      ),
+      hideProfile: vi.fn().mockReturnValue(slow.promise),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Hide FAKE Robin") }),
+    );
+    const confirm = within(await screen.findByRole("alertdialog")).getByRole(
+      "button",
+      { name: humanText("Hide FAKE Robin") },
+    );
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(bridge.hideProfile).toHaveBeenCalled());
+    expect(bridge.hideProfile).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish());
+    expect(bridge.hideProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds a person once for a form sent twice", async () => {
+    const user = userEvent.setup();
+    const slow = pendingCall<string>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      createProfile: vi.fn().mockReturnValue(slow.promise),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const name = await screen.findByLabelText(humanText(/New profile name/));
+    await user.type(name, "FAKE Robin");
+    const form = name.closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(bridge.createProfile).toHaveBeenCalled());
+    expect(bridge.createProfile).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish("profile-2"));
+    expect(bridge.createProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("chooses files to import once for a double click on New", async () => {
+    const slow = pendingCall<string | null>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportFiles: vi.fn().mockReturnValue(slow.promise),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const add = await screen.findByRole("button", { ...IMPORT_BUTTON });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    expect(bridge.pickImportFiles).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish(null));
+    expect(bridge.pickImportFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("links a clinic once for a form sent twice", async () => {
+    const slow = pendingCall<never>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...snapshotWithRecord,
+          recoveryKeySetAtMs: 5,
+          portalLinkingEnabled: true,
+          portalLinks: [],
+        } as VaultSnapshot),
+      ),
+      connectPortal: vi.fn().mockReturnValue(slow.promise),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGH",
+    );
+    const form = screen
+      .getByRole("button", { name: "Connect and request approval" })
+      .closest("form")!;
+    // Two separate submits: the state the first one leaves (connecting, the code cleared) would
+    // stop the second anyway. The next test sends both with no render between.
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+  });
+
+  // ---- A notice pending when the vault locks is not on the lock screen or at the next unlock ----
+
+  // The PROPERTY, not the sinks: every translation call in the sources whose parameters are
+  // name-like (a name, a person, a clinic, a title, a file, a folder, where) is a place a
+  // patient's words can reach the screen, however the text then travels (`setNotice`, `report`,
+  // `holdForUnlock`, a dialog's own error, a helper that returns the string). Each is classified
+  // by what happens to it when the vault locks. A new one fails the guard below until it is placed
+  // here, which is the moment to decide whether it needs a case.
+  //  - unmounted: shown inside the library or a dialog, which the lock removes (or the lock
+  //    screen's own fixed words).
+  //  - replaced: a notice line the lock replaces with its own reason text (cases below).
+  //  - held: kept on purpose for the next unlock, once, by `pendingOutcomeRef`,
+  //    `pendingSharedOutcomeRef` or the transfer's outcome (the held case below).
+  //  - fixed: the parameter is a fixed label, not a patient's word.
+  type AtLock = "unmounted" | "replaced" | "held" | "fixed";
+  // This is a reading of each site, backed by tests for the groups that act on the lock: the
+  // `replaced` cases and the `held` case below, and (for `unmounted`) the tests that nothing of
+  // the library, a dialog, a selection or a search survives a lock and an unlock.
+  const NAME_PARAMETERS: Record<string, AtLock> = {
+    // A backup or import cut off by a lock: the note it carries is kept for the next unlock
+    // (`holdForUnlock` in `run`'s catch, with the transfer's outcome). The held case below runs
+    // the same holder with a damaged-document message.
+    "VaultApp.tsx notice.backupCutOff": "held",
+    // What a received (shared) file's outcome says. CLASSIFIED, NOT RUN here: it is held in
+    // `pendingSharedOutcomeRef`, a different holder from the one the held case below runs, and
+    // only while the page is concealed or hidden during the intake (`deferIfPrivate`); an outcome
+    // that arrives after the lock is dropped. Those behaviours are pinned by the shared-file
+    // tests "does not restore an old share notice or new badge after locking during refresh
+    // (#53)" and "discards a shared-file refusal name that arrives after Lock".
+    "VaultApp.tsx interface.notice.alreadyShared": "held",
+    "VaultApp.tsx interface.notice.notPdf": "held",
+    "VaultApp.tsx interface.notice.receivedNotOpened": "held",
+    // A dialog that is only rendered while unlocked (`status === "unlocked"`).
+    "VaultApp.tsx interface.received.confirmTitleOne": "unmounted",
+    "native/AiModelSetting.tsx ai.model.accepted": "unmounted",
+    "native/FileUnder.tsx fileUnder.clinicWords": "unmounted",
+    "native/FileUnder.tsx fileUnder.confirm": "unmounted",
+    "native/FileUnder.tsx fileUnder.saveDetails": "unmounted",
+    "native/FileUnder.tsx fileUnder.saveDetailsOnly": "unmounted",
+    "native/FileUnder.tsx fileUnder.what.both": "unmounted",
+    "native/FileUnder.tsx fileUnder.what.name": "unmounted",
+    "native/HiddenDocuments.tsx interface.hidden.record": "unmounted",
+    "native/HiddenDocuments.tsx interface.hidden.restore": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.arrived.body": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.arrived.move": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.arrived.title": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.confirm.body": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.confirm.hide": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.confirm.title": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.handOverFor": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.hideFor": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.restoreFor": "unmounted",
+    "native/LibraryItems.tsx library.document.details": "unmounted",
+    "native/LibraryItems.tsx library.document.label": "unmounted",
+    "native/LibraryItems.tsx library.folder.label": "unmounted",
+    "native/LibraryItems.tsx library.folder.open": "unmounted",
+    "native/LibraryItems.tsx library.folder.rename": "unmounted",
+    "native/LibraryItems.tsx library.select": "unmounted",
+    "native/LibrarySidebar.tsx sidebar.folderOfPerson": "unmounted",
+    "native/MoveTargetSelect.tsx interface.person.records": "unmounted",
+    "native/PersonDetails.tsx personDetails.editFor": "unmounted",
+    "native/PersonDetails.tsx personDetails.for": "unmounted",
+    "native/PersonSuggestion.tsx personSuggestion.moveLabel": "unmounted",
+    "native/PersonSuggestion.tsx personSuggestion.offer": "unmounted",
+    "native/PhotoViewer.tsx photo.alt": "unmounted",
+    // The clinic card's own status line, inside the clinic view.
+    "native/PortalDocuments.tsx portal.clinicIssue": "unmounted",
+    // The confirmation for removing a clinic link (main's #476): a dialog of the clinic view, gone
+    // with the library when the vault locks.
+    "native/PortalDocuments.tsx portal.removeBody": "unmounted",
+    "native/ProfileHandover.tsx handover.export.done": "unmounted",
+    "native/ProfileHandover.tsx handover.export.hideOffer": "unmounted",
+    "native/ProfileHandover.tsx handover.export.summary": "unmounted",
+    "native/ProfileHandover.tsx handover.import.done": "unmounted",
+    "native/ProfileHandover.tsx handover.import.previousNames": "unmounted",
+    "native/ProfileHandover.tsx handover.import.says": "unmounted",
+    "native/ProfileHandover.tsx hiddenPeople.confirm.body": "unmounted",
+    "native/RecordDetails.tsx fileUnder.words": "unmounted",
+    "native/RecordDialog.tsx interface.RecordDialog.recordAVideoFor":
+      "unmounted",
+    "native/RecordSource.tsx library.source.clinic": "unmounted",
+    "native/RecordingRecovery.tsx interface.RecordingRecovery.name":
+      "unmounted",
+    "native/RefusedDeliveries.tsx portal.tryAgainFor": "unmounted",
+    // The "Shared with me" label is a fixed word, as is a count of waiting shares.
+    "native/RenameDialog.tsx create.profile.sharedTaken": "fixed",
+    "native/RenameDialog.tsx interface.LibrarySidebar.sharedWithMe": "fixed",
+    "native/SecuritySettings.tsx create.profile.sharedTaken": "fixed",
+    "native/SecuritySettings.tsx interface.LibrarySidebar.sharedWithMe":
+      "fixed",
+    "native/SecuritySettings.tsx security.oldBackups.named": "unmounted",
+    "native/SecuritySettings.tsx security.oldBackups.namedWithSize":
+      "unmounted",
+    "native/VaultAuth.tsx create.profile.sharedTaken": "fixed",
+    "native/VaultAuth.tsx interface.LibrarySidebar.sharedWithMe": "fixed",
+    "native/VaultAuth.tsx unlock.waiting": "fixed",
+    "native/VaultAuth.tsx unlock.waiting.one": "fixed",
+    // Notice lines the lock replaces with its own reason text.
+    "native/VaultLibrary.tsx handover.nowVerified": "replaced",
+    "native/VaultLibrary.tsx interface.notice.alreadyFiled": "replaced",
+    "native/VaultLibrary.tsx interface.notice.folderCreated": "replaced",
+    "native/VaultLibrary.tsx interface.notice.folderMovedNamed": "replaced",
+    "native/VaultLibrary.tsx interface.notice.hidden": "replaced",
+    "native/VaultLibrary.tsx interface.notice.movedMany": "replaced",
+    "native/VaultLibrary.tsx interface.notice.movedNamed": "replaced",
+    "native/VaultLibrary.tsx interface.notice.pdfUnlocked": "replaced",
+    "native/VaultLibrary.tsx interface.notice.personAdded": "replaced",
+    "native/VaultLibrary.tsx interface.notice.restored": "replaced",
+    "native/VaultLibrary.tsx interface.notice.whereFolder": "replaced",
+    // The library's polite announcement line: library state, unmounted by the lock.
+    "native/VaultLibrary.tsx hiddenPeople.hidden": "unmounted",
+    "native/VaultLibrary.tsx hiddenPeople.restored": "unmounted",
+    "native/VaultLibrary.tsx interface.RecordDetails.encryptedDocument":
+      "fixed",
+    "native/VaultLibrary.tsx interface.person.records": "unmounted",
+    "native/VaultLibrary.tsx personDetails.reminder": "unmounted",
+    "native/VaultLibrary.tsx rename.profile.action": "unmounted",
+    "native/VaultLibrary.tsx sidebar.myRecords": "fixed",
+    "native/VideoViewer.tsx interface.VideoViewer.player": "unmounted",
+    // What a clinic check found, said as a notice (and so replaced by the lock).
+    "native/documentCheck.ts portal.arrivedForHidden": "replaced",
+    "native/documentCheck.ts portal.clinicIssue": "replaced",
+    "native/documentCheck.ts portal.errorIncomplete": "replaced",
+    // A damaged document and its person, in the error text of a backup or export a lock cut off:
+    // held for the next unlock, once.
+    "vault.ts error.damaged": "held",
+    "vault.ts error.damaged.where": "held",
+    "vault.ts error.damaged.whereFor": "held",
+  };
+
+  /** The app's own sources (not tests), read as text. */
+  const noticeSources = () =>
+    Object.entries(
+      import.meta.glob("/src/**/*.{ts,tsx}", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }) as Record<string, string>,
+    ).filter(([path]) => !/\.test\.|\/test\//.test(path));
+
+  /** Every (file, message key) whose translation call has a name-like parameter. The call is read
+   * with its brackets matched, so a key chosen by a ternary, a call over several lines and a
+   * shorthand parameter (`{ name }`) are all seen. */
+  const nameLikeCalls = () => {
+    const call =
+      /\b(?:t|translateNow|translateCurrent|translate|translatePlain|tPlain)\(/g;
+    const nameLike =
+      /^(name|names|person|clinic|clinicName|title|file|display\w*|folder|where|note|term|deviceName)$/;
+    const found = new Set<string>();
+    for (const [path, text] of noticeSources()) {
+      for (const start of text.matchAll(call)) {
+        // The text of the call: from its "(" to the matching ")".
+        let depth = 1;
+        let end = start.index! + start[0].length;
+        for (; end < text.length && depth > 0; end += 1) {
+          if (text[end] === "(") depth += 1;
+          else if (text[end] === ")") depth -= 1;
+        }
+        const inside = text.slice(start.index! + start[0].length, end - 1);
+        const keys = [
+          ...inside.matchAll(/"([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)"/g),
+        ].map((match) => match[1]);
+        const object = /\{([^]*)\}/.exec(inside)?.[1];
+        if (!keys.length || object === undefined) continue;
+        // The parameter names: what stands before a ":" or alone before a "," or the end.
+        const parameters = object
+          .split(",")
+          .map((part) => part.trim().split(/\s*:/)[0].trim())
+          .filter(Boolean);
+        if (parameters.some((parameter) => nameLike.test(parameter)))
+          for (const key of keys)
+            found.add(`${path.replace("/src/", "")} ${key}`);
+      }
+    }
+    return Array.from(found).sort();
+  };
+
+  it("classifies every translation with a name-like parameter by what the lock does to it: a new one has to be placed", () => {
+    expect(nameLikeCalls()).toEqual(Object.keys(NAME_PARAMETERS).sort());
+  });
+
+  /** A notice a patient's action leaves on screen: how to cause it, a name that is in it, and
+   * words only the notice says (names can come back with the vault's own lists). */
+  type NoticeCase = {
+    label: string;
+    name: string;
+    words: RegExp;
+    run: (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
+    bridge: () => Partial<VaultBridge>;
+  };
+  const noticeCases = (): NoticeCase[] => {
+    const record = {
+      ...snapshotWithRecord.records[0],
+      displayName: "FAKE_Leak_Hide.pdf",
+    };
+    let recordHidden = false;
+    let personAdded = false;
+    let personHidden = false;
+    let personRestored = false;
+    let folderMade = false;
+    let sharedMoved = false;
+    const robin = {
+      id: "profile-2",
+      displayName: "FAKE Robin",
+      createdAtMs: 2,
+    };
+    const casey = {
+      id: "profile-9",
+      displayName: "FAKE Casey Leakname",
+      hiddenAtMs: 1_700_000_000_000,
+      documents: 1,
+    };
+    return [
+      {
+        label: "hiding a document",
+        name: "FAKE_Leak_Hide",
+        words: /was hidden\. It stays in the vault under Hidden/,
+        bridge: () => ({
+          snapshot: vi.fn().mockImplementation(async () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              records: recordHidden ? [] : [record],
+            }),
+          ),
+          unlock: vi.fn().mockImplementation(async () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              records: recordHidden ? [] : [record],
+            }),
+          ),
+          hideRecord: vi.fn().mockImplementation(async () => {
+            recordHidden = true;
+          }),
+        }),
+        run: async (user) => {
+          await user.click(
+            await screen.findByText(humanText("FAKE_Leak_Hide.pdf")),
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Hide") }),
+          );
+        },
+      },
+      {
+        label: "importing a document",
+        name: "FAKE_Leak_Import",
+        words: /encrypted and added/,
+        bridge: () => ({
+          pickImportFiles: vi.fn().mockResolvedValue("pick-1"),
+          importPickedFiles: vi.fn().mockResolvedValue({
+            imported: ["FAKE_Leak_Import.pdf"],
+            skippedDuplicates: [],
+          }),
+        }),
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { ...IMPORT_BUTTON }),
+          );
+        },
+      },
+      {
+        label: "adding a person",
+        name: "FAKE Leak Person",
+        words: /was added\./,
+        bridge: () => {
+          const withPerson = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: personAdded
+                ? [
+                    ...snapshotWithRecord.profiles,
+                    {
+                      id: "profile-3",
+                      displayName: "FAKE Leak Person",
+                      createdAtMs: 3,
+                    },
+                  ]
+                : snapshotWithRecord.profiles,
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => withPerson()),
+            unlock: vi.fn().mockImplementation(async () => withPerson()),
+            createProfile: vi.fn().mockImplementation(async () => {
+              personAdded = true;
+              return "profile-3";
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { name: humanText(/Security/) }),
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Add profile") }),
+          );
+          const field = await screen.findByLabelText(
+            humanText(/New profile name/),
+          );
+          await user.type(field, "FAKE Leak Person");
+          fireEvent.submit(field.closest("form")!);
+        },
+      },
+      {
+        label: "hiding a person",
+        name: "FAKE Robin",
+        words: /is now hidden\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: personHidden
+                ? snapshotWithRecord.profiles
+                : [...snapshotWithRecord.profiles, robin],
+              hiddenProfiles: personHidden
+                ? [{ ...casey, id: "profile-2", displayName: "FAKE Robin" }]
+                : [],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            hideProfile: vi.fn().mockImplementation(async () => {
+              personHidden = true;
+            }),
+            restoreProfile: vi.fn().mockResolvedValue([]),
+            updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { name: humanText(/Security/) }),
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Hide FAKE Robin") }),
+          );
+          await user.click(
+            within(await screen.findByRole("alertdialog")).getByRole("button", {
+              name: humanText("Hide FAKE Robin"),
+            }),
+          );
+        },
+      },
+      {
+        label: "restoring a person",
+        name: "FAKE Casey Leakname",
+        words: /is back in the library\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: personRestored
+                ? [
+                    ...snapshotWithRecord.profiles,
+                    {
+                      id: "profile-9",
+                      displayName: "FAKE Casey Leakname",
+                      createdAtMs: 9,
+                    },
+                  ]
+                : snapshotWithRecord.profiles,
+              hiddenProfiles: personRestored ? [] : [casey],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            hideProfile: vi.fn().mockResolvedValue(undefined),
+            restoreProfile: vi.fn().mockImplementation(async () => {
+              personRestored = true;
+              return [];
+            }),
+            updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { name: humanText(/Security/) }),
+          );
+          await user.click(
+            screen.getByRole("button", {
+              name: humanText("Restore FAKE Casey Leakname"),
+            }),
+          );
+        },
+      },
+      {
+        label: "creating a folder",
+        name: "FAKE Leak Folder",
+        words: /was created\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              folders: folderMade
+                ? [
+                    {
+                      id: "folder-1",
+                      profileId: "profile-1",
+                      parentId: null,
+                      name: "FAKE Leak Folder",
+                      createdAtMs: 5,
+                    },
+                  ]
+                : [],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            createFolder: vi.fn().mockImplementation(async () => {
+              folderMade = true;
+              return "folder-1";
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText("New folder"),
+            }),
+          );
+          const field = await screen.findByLabelText(humanText("Folder name"));
+          await user.type(field, "FAKE Leak Folder");
+          fireEvent.submit(field.closest("form")!);
+        },
+      },
+      {
+        label: "moving a shared document to a person",
+        name: "FAKE_Leak_Moved",
+        words: /moved to /,
+        bridge: () => {
+          const shared = {
+            id: "shared-1",
+            displayName: "Shared with me",
+            createdAtMs: 3,
+          };
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: [...snapshotWithRecord.profiles, shared],
+              sharedProfileId: "shared-1",
+              records: [
+                {
+                  ...snapshotWithRecord.records[0],
+                  id: "record-shared",
+                  profileId: sharedMoved ? "profile-1" : "shared-1",
+                  displayName: "FAKE_Leak_Moved.pdf",
+                },
+              ],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            moveToPerson: vi.fn().mockImplementation(async () => {
+              sharedMoved = true;
+              return { moved: ["record-shared"], alreadyThere: [] };
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText(/^Shared with me/),
+            }),
+          );
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText(/^Select FAKE_Leak_Moved/),
+            }),
+          );
+          await user.click(
+            await screen.findByRole("button", { name: humanText("Move") }),
+          );
+        },
+      },
+    ];
+  };
+
+  it("keeps a backup's damaged-document message, with its names, for the next unlock only: not on the lock screen, said once, not repeated", async () => {
+    const user = userEvent.setup();
+    const person = {
+      id: "profile-2",
+      displayName: "FAKE Leak Person",
+      createdAtMs: 2,
+    };
+    const record = {
+      ...snapshotWithRecord.records[0],
+      id: "record-leak",
+      profileId: "profile-2",
+      displayName: "FAKE_Leak_Doc.pdf",
+    };
+    const current = () =>
+      captureSnapshot({
+        ...snapshotWithRecord,
+        profiles: [...snapshotWithRecord.profiles, person],
+        records: [record],
+      });
+    let failSave: (error: unknown) => void = () => {};
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current()),
+      unlock: vi.fn().mockImplementation(async () => current()),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn(
+        () =>
+          new Promise<SavedBackup>((_, reject) => {
+            failSave = reject;
+          }),
+      ),
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    const setVisibility = (state: DocumentVisibilityState) =>
+      act(async () => {
+        visibilityState = state;
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
+    // A lock falls due during the backup: it is held, then the backup is cut off and says why.
+    await setVisibility("hidden");
+    expect(bridge.lock).not.toHaveBeenCalled();
+    await act(async () =>
+      failSave({
+        code: "damaged_document",
+        message: "A document in the vault is damaged.",
+        recordId: "record-leak",
+      }),
+    );
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    // The lock screen says neither the document nor the person.
+    for (const private_ of [
+      "FAKE_Leak_Doc",
+      "FAKE Leak Person",
+      "No backup was saved",
+    ])
+      expect(document.body.textContent).not.toContain(private_);
+    await setVisibility("visible");
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    // The first unlock says it, once, with the names.
+    const said = humanText(
+      /No backup was saved: the document "FAKE_Leak_Doc\.pdf" \(added [^)]+, in FAKE Leak Person's records\)/,
+    );
+    expect(await screen.findByText(said)).toBeVisible();
+    expect(screen.getAllByText(said)).toHaveLength(1);
+    // The next lock and unlock does not repeat it.
+    fireEvent.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(document.body.textContent).not.toContain("No backup was saved");
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await screen.findByRole("button", { name: humanText(/Security/) });
+    await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS * 3));
+    expect(document.body.textContent).not.toContain("No backup was saved");
+  });
+
+  it.each(noticeCases().map((c) => c.label))(
+    "a notice from %s that is on screen when the vault locks is not on the lock screen, nor at the next unlock",
+    async (label) => {
+      const user = userEvent.setup();
+      const one = noticeCases().find((c) => c.label === label)!;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        ...one.bridge(),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await one.run(user);
+      // The notice is on screen (so the lock really has something to clear).
+      await screen.findByText(humanText(one.words));
+      fireEvent.click(windowLock());
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      });
+      expect(document.body.textContent).not.toMatch(one.words);
+      expect(document.body.textContent).not.toContain(one.name);
+      await user.type(
+        screen.getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      await screen.findByRole("button", { name: humanText(/Security/) });
+      // The unlock's own messages are said a moment after it (see the handover control).
+      await new Promise((resolve) =>
+        setTimeout(resolve, ANNOUNCE_DELAY_MS * 3),
+      );
+      expect(document.body.textContent).not.toMatch(one.words);
+    },
+  );
+
+  /** The link form on a vault with a clinic portal, a first address and code typed in. */
+  async function linkFormReady(bridgeOverrides: Partial<VaultBridge>) {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...snapshotWithRecord,
+          recoveryKeySetAtMs: 5,
+          portalLinkingEnabled: true,
+          portalLinks: [],
+        } as VaultSnapshot),
+      ),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      ...bridgeOverrides,
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    const typeCode = async (code: string) => {
+      const field = screen.getByLabelText("Linking code");
+      await user.clear(field);
+      await user.type(field, code);
+    };
+    await typeCode("01234567-89ABCDEFGH");
+    const form = () =>
+      screen
+        .getByRole("button", { name: "Connect and request approval" })
+        .closest("form")!;
+    return { bridge, user, typeCode, form };
+  }
+
+  it("links a clinic once for a form sent twice with no render between: the page's markers or the app's clinic-job join stop that", async () => {
+    // Either of the two markers (`submitting`, and the code's revision already sent) alone is
+    // enough, so deleting only one of them leaves this passing: an equivalent mutant.
+    const slow = pendingCall<never>();
+    const { bridge, form } = await linkFormReady({
+      connectPortal: vi.fn().mockReturnValue(slow.promise),
+    });
+    const target = form();
+    act(() => {
+      fireEvent.submit(target);
+      fireEvent.submit(target);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a new code be linked after a link attempt failed: the one-at-a-time marker is released", async () => {
+    let failFirst: (error: unknown) => void = () => {};
+    const { bridge, typeCode, form } = await linkFormReady({
+      connectPortal: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              failFirst = reject;
+            }),
+        )
+        .mockReturnValue(new Promise(() => {})),
+    });
+    fireEvent.submit(form());
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(1));
+    await act(async () =>
+      failFirst({ code: "portal_link_code_rejected", message: "FAKE refusal" }),
+    );
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+    // A different code can be sent now.
+    await typeCode("98765432-10ZYXWVUTS");
+    fireEvent.submit(form());
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
   });
 
   // ---- After a lock and an unlock: nothing from before the lock is left ----

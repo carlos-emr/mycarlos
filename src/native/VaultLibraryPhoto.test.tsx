@@ -18,6 +18,19 @@ import {
 } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// This file tests the library and the camera dialog around the save, not the encoding of the
+// picture: `photo.test.ts` tests `encodePhoto` itself. The real encoder draws the canvas as a JPEG
+// in a loop that lowers the quality until it is small enough, which took longer than a wait's
+// default second when the machine was busy (a full run, a coverage run) and made these tests
+// flaky. It is stood in for by one that gives a small JPEG-typed blob at once. The bytes are not
+// zeros: the test that checks the copy sent to the vault is wiped after the save needs something
+// to wipe, and a blob of zeros would pass that check without the wiping.
+vi.mock("./photo", async (original) => ({
+  ...(await original<typeof import("./photo")>()),
+  encodePhoto: async () =>
+    new Blob([new Uint8Array(64).fill(7)], { type: "image/jpeg" }),
+}));
+
 // One fake native runtime: stamp and clone when data is captured, before delivery.
 let snapshotSequence = 1;
 function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {

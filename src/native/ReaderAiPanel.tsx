@@ -405,6 +405,8 @@ export function ReaderAiPanel({
   // Not now. With a summary on screen (a kept one, asked to summarize
   // again), only the question goes: the summary stays, and the focus goes
   // back to Summarize again. With nothing else to show, the panel closes.
+  // (`onReturnFocus` below is a guard: the button is always there while a summary is shown, since
+  // `fromKept` stays set through a run of Again and `tooLong` only comes from a run starting.)
   const cancelQuestion = () => {
     if (summary) {
       setTooLong(null);
