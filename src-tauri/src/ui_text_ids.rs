@@ -596,7 +596,6 @@ pub enum MessageId {
     InterfaceSecuritySettingsWhatMyCarlosKeeps,
     InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword,
     InterfaceUnlockPdfDialogUnlocking,
-    InterfaceVaultAppChooseFilesToImport,
     InterfaceVaultAppFinishingTheTransfer,
     InterfaceVaultAppLockNowAndCancelTheTransfer,
     InterfaceVaultAppMyCarlosCouldNotLockTheVaultIts,
@@ -644,7 +643,6 @@ pub enum MessageId {
     InterfaceVaultLibraryMyCarlosCouldNotSaveAChangeTo,
     InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary,
     InterfaceVaultLibraryNameAZ,
-    InterfaceVaultLibraryNew,
     InterfaceVaultLibraryNewFolder,
     InterfaceVaultLibraryNewestFirst,
     InterfaceVaultLibraryNoFilesSelectedNothingChanged,
@@ -2036,7 +2034,6 @@ impl MessageId {
         Self::InterfaceSecuritySettingsWhatMyCarlosKeeps,
         Self::InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword,
         Self::InterfaceUnlockPdfDialogUnlocking,
-        Self::InterfaceVaultAppChooseFilesToImport,
         Self::InterfaceVaultAppFinishingTheTransfer,
         Self::InterfaceVaultAppLockNowAndCancelTheTransfer,
         Self::InterfaceVaultAppMyCarlosCouldNotLockTheVaultIts,
@@ -2084,7 +2081,6 @@ impl MessageId {
         Self::InterfaceVaultLibraryMyCarlosCouldNotSaveAChangeTo,
         Self::InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary,
         Self::InterfaceVaultLibraryNameAZ,
-        Self::InterfaceVaultLibraryNew,
         Self::InterfaceVaultLibraryNewFolder,
         Self::InterfaceVaultLibraryNewestFirst,
         Self::InterfaceVaultLibraryNoFilesSelectedNothingChanged,
@@ -3706,7 +3702,6 @@ impl MessageId {
                 "interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword"
             }
             Self::InterfaceUnlockPdfDialogUnlocking => "interface-UnlockPdfDialog-unlocking",
-            Self::InterfaceVaultAppChooseFilesToImport => "interface-VaultApp-chooseFilesToImport",
             Self::InterfaceVaultAppFinishingTheTransfer => {
                 "interface-VaultApp-finishingTheTransfer"
             }
@@ -3806,7 +3801,6 @@ impl MessageId {
                 "interface-VaultLibrary-myCarlosEncryptedRecordLibrary"
             }
             Self::InterfaceVaultLibraryNameAZ => "interface-VaultLibrary-nameAZ",
-            Self::InterfaceVaultLibraryNew => "interface-VaultLibrary-new",
             Self::InterfaceVaultLibraryNewFolder => "interface-VaultLibrary-newFolder",
             Self::InterfaceVaultLibraryNewestFirst => "interface-VaultLibrary-newestFirst",
             Self::InterfaceVaultLibraryNoFilesSelectedNothingChanged => {
@@ -4899,9 +4893,6 @@ impl MessageId {
                 Some(Self::InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword)
             }
             "interface.UnlockPdfDialog.unlocking" => Some(Self::InterfaceUnlockPdfDialogUnlocking),
-            "interface.VaultApp.chooseFilesToImport" => {
-                Some(Self::InterfaceVaultAppChooseFilesToImport)
-            }
             "interface.VaultLibrary.picturesNote" => Some(Self::InterfaceVaultLibraryPicturesNote),
             "interface.VaultApp.finishingTheTransfer" => {
                 Some(Self::InterfaceVaultAppFinishingTheTransfer)
@@ -5008,7 +4999,6 @@ impl MessageId {
                 Some(Self::InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary)
             }
             "interface.VaultLibrary.nameAZ" => Some(Self::InterfaceVaultLibraryNameAZ),
-            "interface.VaultLibrary.new" => Some(Self::InterfaceVaultLibraryNew),
             "interface.VaultLibrary.newFolder" => Some(Self::InterfaceVaultLibraryNewFolder),
             "interface.VaultLibrary.newestFirst" => Some(Self::InterfaceVaultLibraryNewestFirst),
             "interface.VaultLibrary.noFilesSelectedNothingChanged" => {

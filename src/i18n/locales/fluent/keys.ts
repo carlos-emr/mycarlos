@@ -119,7 +119,6 @@ export const MESSAGE_KEYS = [
   "interface.SecuritySettings.whatMyCarlosKeeps",
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking",
-  "interface.VaultApp.chooseFilesToImport",
   "interface.VaultLibrary.picturesNote",
   "interface.VaultApp.finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer",
@@ -164,7 +163,6 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo",
   "interface.VaultLibrary.myCarlosEncryptedRecordLibrary",
   "interface.VaultLibrary.nameAZ",
-  "interface.VaultLibrary.new",
   "interface.VaultLibrary.newFolder",
   "interface.VaultLibrary.newestFirst",
   "interface.VaultLibrary.noFilesSelectedNothingChanged",
@@ -1595,8 +1593,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword":
     "interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking": "interface-UnlockPdfDialog-unlocking",
-  "interface.VaultApp.chooseFilesToImport":
-    "interface-VaultApp-chooseFilesToImport",
   "interface.VaultLibrary.picturesNote": "interface-VaultLibrary-picturesNote",
   "interface.VaultApp.finishingTheTransfer":
     "interface-VaultApp-finishingTheTransfer",
@@ -1672,7 +1668,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.myCarlosEncryptedRecordLibrary":
     "interface-VaultLibrary-myCarlosEncryptedRecordLibrary",
   "interface.VaultLibrary.nameAZ": "interface-VaultLibrary-nameAZ",
-  "interface.VaultLibrary.new": "interface-VaultLibrary-new",
   "interface.VaultLibrary.newFolder": "interface-VaultLibrary-newFolder",
   "interface.VaultLibrary.newestFirst": "interface-VaultLibrary-newestFirst",
   "interface.VaultLibrary.noFilesSelectedNothingChanged":
@@ -3292,7 +3287,6 @@ export interface MessageArgsByKey {
   "interface.SecuritySettings.whatMyCarlosKeeps": undefined;
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword": undefined;
   "interface.UnlockPdfDialog.unlocking": undefined;
-  "interface.VaultApp.chooseFilesToImport": undefined;
   "interface.VaultLibrary.picturesNote": undefined;
   "interface.VaultApp.finishingTheTransfer": undefined;
   "interface.VaultApp.lockNowAndCancelTheTransfer": undefined;
@@ -3337,7 +3331,6 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo": undefined;
   "interface.VaultLibrary.myCarlosEncryptedRecordLibrary": undefined;
   "interface.VaultLibrary.nameAZ": undefined;
-  "interface.VaultLibrary.new": undefined;
   "interface.VaultLibrary.newFolder": undefined;
   "interface.VaultLibrary.newestFirst": undefined;
   "interface.VaultLibrary.noFilesSelectedNothingChanged": undefined;

@@ -80,7 +80,7 @@ export type VideoRefusal =
   | "damaged";
 
 /**
- * What "+ New" picked: documents and pictures, one video (each kept natively under its `pickId`), or
+ * What the Add menu's "Import a file" picked: documents and pictures, one video (each kept natively under its `pickId`), or
  * a choice no import takes (a video chosen with other files). A refusal is an answer, not an error.
  */
 export type ImportPick =
@@ -837,7 +837,7 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<ImportOutcome>;
-  /** Opens the one picker "+ New" uses (PDF documents, pictures and videos). Resolves to what was
+  /** Opens the one picker the Add menu's "Import a file" uses (PDF documents, pictures and videos). Resolves to what was
    * picked, or null when it was cancelled. A "documents" pick is added with `importPickedFiles`, a
    * "video" pick with `importPickedVideo`. */
   pickImportAny?(
