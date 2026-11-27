@@ -59,7 +59,7 @@ import { PreferencesSettings } from "./PreferencesSettings";
 import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
-import { SecuritySettings } from "./SecuritySettings";
+import { SecuritySettings, speedTestShownByBuild } from "./SecuritySettings";
 import { ArrivedWhileHiddenDialog } from "./HiddenPeople";
 import { FileUnderDialog, fileUnderPlan } from "./FileUnder";
 import { RecordDetails } from "./RecordDetails";
@@ -253,6 +253,27 @@ export function VaultLibrary({
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  // Whether the app's build has the passphrase speed test (#579): its answer when it can be asked
+  // (the Security row stays hidden until it says yes, and for a release build always), the build
+  // flags of a browser run when there is no app to ask.
+  const [speedTestInBuild, setSpeedTestInBuild] = useState<boolean>(() =>
+    bridge.speedTestInBuild ? false : speedTestShownByBuild(),
+  );
+  useEffect(() => {
+    if (!bridge.speedTestInBuild) return;
+    let live = true;
+    bridge
+      .speedTestInBuild()
+      .then((answer) => {
+        if (live) setSpeedTestInBuild(answer ?? speedTestShownByBuild());
+      })
+      .catch(() => {
+        // Not told: the row stays hidden.
+      });
+    return () => {
+      live = false;
+    };
+  }, [bridge]);
   useEffect(() => {
     if (section === "security") void onSecurityEntry?.();
   }, [section, onSecurityEntry]);
@@ -3061,6 +3082,7 @@ export function VaultLibrary({
                 }}
                 onBackupSize={backupSize}
                 onSpeedTest={() => bridge.benchmarkKdf()}
+                showSpeedTest={speedTestInBuild}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
             )}

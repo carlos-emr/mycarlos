@@ -721,6 +721,7 @@ describe("each bridge method invokes its native command with its arguments", () 
   // than send one command: a new bridge method that is in neither place fails the next test.
   const testedBelow = new Set([
     "platform",
+    "speedTestInBuild",
     "videoAppend",
     "videoOpen",
     "savePhoto",
@@ -753,6 +754,25 @@ describe("each bridge method invokes its native command with its arguments", () 
     invoke.mockResolvedValue({ platform: "android" });
     await expect(full().platform()).resolves.toBe("android");
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
+  });
+
+  it("reports whether the app's build has the passphrase speed test, and null when it does not say (#579)", async () => {
+    // A development or evaluation build says true, a release build false.
+    invoke.mockResolvedValue({ platform: "windows", speedTest: true });
+    await expect(full().speedTestInBuild!()).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("runtime_info");
+    invoke.mockResolvedValue({ platform: "windows", speedTest: false });
+    await expect(full().speedTestInBuild!()).resolves.toBe(false);
+    // An answer that is not a boolean, or none at all, is "not said", never a guess.
+    for (const answer of [
+      { platform: "windows" },
+      { platform: "windows", speedTest: "yes" },
+      { platform: "windows", speedTest: 1 },
+      { platform: "windows", speedTest: null },
+    ]) {
+      invoke.mockResolvedValue(answer);
+      await expect(full().speedTestInBuild!()).resolves.toBeNull();
+    }
   });
 
   it("opens a video and gives the address the webview shows for it", async () => {

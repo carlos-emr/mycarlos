@@ -196,6 +196,10 @@ struct RuntimeInfo {
     architecture: String,
     app_version: String,
     message: String,
+    /// Whether this build has the passphrase speed test (`kdf_benchmark`): only a build with debug
+    /// assertions (development and the evaluation builds, made with `--debug`) has the command, so
+    /// the renderer shows the Security row only when this is true (#579). A release build says false.
+    speed_test: bool,
 }
 
 struct PublicError {
@@ -2100,6 +2104,7 @@ fn current_runtime_info() -> RuntimeInfo {
         architecture: std::env::consts::ARCH.to_owned(),
         app_version: env!("CARGO_PKG_VERSION").to_owned(),
         message: "Hello from the Tauri Rust boundary".to_owned(),
+        speed_test: cfg!(debug_assertions),
     }
 }
 
@@ -3272,6 +3277,8 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
     }
 }
 
+// Only the debug-assertions `kdf_benchmark` makes one (#579); a release build has no use for it.
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SpeedTestReport {
@@ -3370,11 +3377,16 @@ impl From<history::HistoryEntry> for AuditHistoryEntry {
 /// ARGON2_BENCHMARK.md. It uses a made-up passphrase, reads no vault and
 /// changes nothing.
 ///
-/// For testers, in the evaluation builds: to be taken out, with its section
-/// in Security, before a release to patients.
+/// For testers: **only in a build with debug assertions** (development and the evaluation builds,
+/// which are made with `--debug`). A release build neither contains this command nor registers it
+/// (`#[cfg(debug_assertions)]` here and on its entry in the handler list), and the Security row is
+/// hidden when `runtime_info` says `speedTest: false` (#579). The permission that `build.rs` and the
+/// capability file name for it stays in every build: a permission for a command that does not exist
+/// allows nothing. `the_passphrase_speed_test_is_not_in_a_release_build` pins all of this.
 ///
 /// Admission shares the vault's KDF guard, so a speed test cannot overlap
 /// another passphrase operation. Locking remains available throughout.
+#[cfg(debug_assertions)]
 #[tauri::command]
 async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTestReport> {
     let store = store.pin();
@@ -8682,6 +8694,7 @@ pub fn run() {
             ai_model_speed,
             ai_explain,
             ai_cancel,
+            #[cfg(debug_assertions)]
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
@@ -9188,6 +9201,68 @@ mod tests {
         assert_eq!(info.architecture, std::env::consts::ARCH);
         assert_eq!(info.app_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(info.message, "Hello from the Tauri Rust boundary");
+        // Whether the speed test is in this build: only a build with debug assertions has it (#579).
+        assert_eq!(info.speed_test, cfg!(debug_assertions));
+        let json = serde_json::to_value(current_runtime_info()).unwrap();
+        assert_eq!(json["speedTest"], serde_json::json!(cfg!(debug_assertions)));
+    }
+
+    /// #579: the passphrase speed test is in development and evaluation builds (made with `--debug`)
+    /// only. A release build must neither contain the command nor register it, and must tell the
+    /// renderer so, so that the Security row is hidden. This reads this file's code (not its tests):
+    /// the command and its entry in the handler list are behind `cfg(debug_assertions)`, nothing else
+    /// names the command, and `runtime_info` reports `speedTest` from the same condition.
+    #[test]
+    fn the_passphrase_speed_test_is_not_in_a_release_build() {
+        let source = include_str!("lib.rs");
+        let production = source.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+        let code: Vec<&str> = production
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
+        // The command: the attributes just above its `async fn` include the cfg.
+        let definition = code
+            .iter()
+            .position(|line| line.starts_with("async fn kdf_benchmark("))
+            .expect("kdf_benchmark is defined");
+        let attributes: Vec<&str> = code[..definition]
+            .iter()
+            .rev()
+            .take_while(|line| line.trim_start().starts_with("#["))
+            .copied()
+            .collect();
+        assert!(
+            attributes
+                .iter()
+                .any(|line| line.trim() == "#[cfg(debug_assertions)]"),
+            "kdf_benchmark must be #[cfg(debug_assertions)]: {attributes:?}"
+        );
+        // Its entry in the handler list.
+        let list_start = code
+            .iter()
+            .position(|line| line.contains("tauri::generate_handler!["))
+            .expect("the handler list");
+        let entry = code[list_start..]
+            .iter()
+            .position(|line| line.trim() == "kdf_benchmark,")
+            .expect("kdf_benchmark is registered")
+            + list_start;
+        assert_eq!(
+            code[entry - 1].trim(),
+            "#[cfg(debug_assertions)]",
+            "the handler entry must be behind the same cfg"
+        );
+        // Nothing else names the command (a second registration, a helper that calls it).
+        let mentions = code
+            .iter()
+            .filter(|line| line.contains("kdf_benchmark"))
+            .count();
+        assert_eq!(mentions, 2, "only the definition and its handler entry");
+        // And the renderer is told from the same condition.
+        assert!(
+            production.contains("speed_test: cfg!(debug_assertions),"),
+            "runtime_info reports speedTest from debug assertions"
+        );
     }
     #[test]
     fn a_picked_file_that_is_gone_is_not_a_storage_error() {

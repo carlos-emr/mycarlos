@@ -1766,6 +1766,9 @@ impl VaultStore {
         self.start_kdf_work().expect("no derivation is running")
     }
 
+    // The passphrase speed test: only the debug-assertions `kdf_benchmark` command uses it (#579), so a
+    // release build, which does not have that command, would report it unused.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn benchmark_kdf(&self) -> Result<KdfBenchmark, VaultError> {
         self.benchmark_kdf_with(benchmark_kdf)
     }
@@ -1773,6 +1776,7 @@ impl VaultStore {
     /// `measure` is given a check that says whether the vault is still open.
     /// It asks before each derivation, so a lock during the test ends it there
     /// instead of holding off the next unlock (busy) for the derivations left.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     fn benchmark_kdf_with<T>(
         &self,
         measure: impl FnOnce(&dyn Fn() -> bool) -> Result<T, VaultError>,
@@ -6603,10 +6607,12 @@ fn lowercase(text: &str) -> Zeroizing<String> {
 }
 
 /// How many times the speed test derives a key.
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 pub const KDF_BENCHMARK_SAMPLES: usize = 5;
 
 /// How long this device takes to derive a key from a passphrase, with the
 /// settings every vault uses. See ARGON2_BENCHMARK.md.
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KdfBenchmark {
@@ -6617,9 +6623,11 @@ pub struct KdfBenchmark {
     pub samples_ms: Vec<u64>,
     pub median_ms: u64,
     pub max_ms: u64,
-    /// Whether this is a release build. The evaluation builds are not,
-    /// though the key derivation in them is optimized (see the dev profile
-    /// in Cargo.toml).
+    /// Whether this is a release build. Since #579 the speed test is only in
+    /// development and evaluation builds, so this is always false where a report
+    /// is made (the key derivation in them is optimized, see the dev profile in
+    /// Cargo.toml); the field stays so the report's shape, and its line for
+    /// testers, do not change.
     pub release: bool,
     /// Whether this is an iOS Simulator build, whose timings are not a
     /// device's.
@@ -6630,6 +6638,7 @@ pub struct KdfBenchmark {
 /// made-up passphrase and salt, reads no vault and keeps nothing. Before each
 /// derivation it asks `still_open`, and stops with `Locked` once the vault has
 /// been locked.
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 fn benchmark_kdf(still_open: &dyn Fn() -> bool) -> Result<KdfBenchmark, VaultError> {
     let config = kdf_config_with_salt([0x5a_u8; 16]);
     let mut samples_ms = Vec::with_capacity(KDF_BENCHMARK_SAMPLES);

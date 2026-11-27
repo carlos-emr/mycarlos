@@ -2474,3 +2474,67 @@ describe("VaultLibrary folder tools that are not a drag", () => {
     expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Letters");
   });
 });
+
+// #579: the passphrase speed test is in development and evaluation builds only; the app says whether
+// its build has it (runtime_info.speedTest), and Security shows the row only when it does. A browser
+// run (no app to ask) goes by the build flags: DEV is on in these tests.
+describe("VaultLibrary passphrase speed test row", () => {
+  const speedButton = () =>
+    screen.queryByRole("button", { name: humanText("Run speed test") });
+  const openSecurity = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+
+  it("hides the row in a release build, which says it has no speed test, even where the build flags would show it", async () => {
+    const { bridge } = renderLibrary(snapshot, 0, {
+      speedTestInBuild: vi.fn().mockResolvedValue(false),
+    });
+    openSecurity();
+    await vi.waitFor(() => expect(bridge.speedTestInBuild).toHaveBeenCalled());
+    expect(speedButton()).toBeNull();
+  });
+
+  it("shows the row once a development or evaluation build says it has the speed test", async () => {
+    renderLibrary(snapshot, 0, {
+      speedTestInBuild: vi.fn().mockResolvedValue(true),
+    });
+    openSecurity();
+    await vi.waitFor(() => expect(speedButton()).not.toBeNull());
+  });
+
+  it("keeps the row hidden until the app has answered, and when it cannot be asked", async () => {
+    let answer!: (value: boolean) => void;
+    renderLibrary(snapshot, 0, {
+      speedTestInBuild: vi.fn(
+        () => new Promise<boolean>((resolve) => (answer = resolve)),
+      ),
+    });
+    openSecurity();
+    expect(speedButton()).toBeNull();
+    answer(true);
+    await vi.waitFor(() => expect(speedButton()).not.toBeNull());
+    cleanup();
+    let refuse!: (error: Error) => void;
+    const speedTestInBuild = vi.fn(
+      () => new Promise<boolean>((_, reject) => (refuse = reject)),
+    );
+    renderLibrary(snapshot, 0, { speedTestInBuild });
+    openSecurity();
+    expect(speedTestInBuild).toHaveBeenCalled();
+    await act(async () => refuse(new Error("no app")));
+    expect(speedButton()).toBeNull();
+  });
+
+  it("goes by the build flags when there is no app to ask (a browser run)", () => {
+    renderLibrary();
+    openSecurity();
+    expect(speedButton()).not.toBeNull();
+  });
+
+  it("treats an app that does not say as the build flags do", async () => {
+    renderLibrary(snapshot, 0, {
+      speedTestInBuild: vi.fn().mockResolvedValue(null),
+    });
+    openSecurity();
+    await vi.waitFor(() => expect(speedButton()).not.toBeNull());
+  });
+});
