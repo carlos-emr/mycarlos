@@ -575,6 +575,38 @@ jobs:
           --target aarch64-linux-android --target x86_64-linux-android
       - run: npm ci
       - run: npm run tauri android init -- --ci
+      # Maven Central refused downloads with 429 on busy hours (#440, #472, #477): keep what Gradle
+      # fetched, and let it wait and retry. The key needs the generated Gradle files, so these steps
+      # come after `tauri android init`. The cache holds ~/.gradle/caches/modules-2, which is also
+      # where the :buildSrc classpath is kept (kotlin-stdlib, kotlin-gradle-plugin and the plugin
+      # portal's artifacts): the place the 429 stopped those runs.
+      - name: Key for the Gradle cache
+        id: gradle-key
+        run: >-
+          echo "key=gradle-v1-${{ runner.os }}-${{ hashFiles('package-lock.json',
+          'src-tauri/gen/android/**/*.gradle', 'src-tauri/gen/android/**/*.gradle.kts',
+          'src-tauri/gen/android/**/gradle-wrapper.properties',
+          'src-tauri/gen/android/**/*.versions.toml') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore Gradle dependencies and wrapper
+        id: gradle-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}
+          restore-keys: |
+            ${{ steps.gradle-key.outputs.key }}-partial
+            gradle-v1-${{ runner.os }}-
+      - name: Make Gradle wait and retry a refused download
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "systemProp.org.gradle.internal.repository.max.tentatives=8"
+            echo "systemProp.org.gradle.internal.repository.initial.backoff=2000"
+            echo "systemProp.org.gradle.internal.http.connectionTimeout=60000"
+            echo "systemProp.org.gradle.internal.http.socketTimeout=120000"
+          } >> ~/.gradle/gradle.properties
       - name: Disable Android cloud and device-transfer backup
         run: npm run android:secure
       - name: Verify Android backup and device transfer remain disabled
@@ -584,6 +616,26 @@ jobs:
           grep -q '<device-transfer>' src-tauri/gen/android/app/src/main/res/xml/mycarlos_data_extraction_rules.xml
       # One APK for phones (arm64) and for emulators on a PC (x86_64).
       - run: npm run tauri android build -- --debug --apk --target aarch64 x86_64 --ci
+      - name: Save Gradle dependencies (main only, after a good build)
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}
+      # A run that failed part way (a 429 in the middle of the downloads) still keeps what it got,
+      # under a key of its own, so that the next run starts from it; the complete cache is saved
+      # by the next good run, because this key is not the exact one the restore step looks for.
+      - name: Save what Gradle fetched so far (main only, after a failed build)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}-partial
       - name: Compile Android mobile development proxy
         run: |
           export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
