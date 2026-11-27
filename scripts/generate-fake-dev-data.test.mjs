@@ -123,7 +123,7 @@ test("committed dev-data matches the generator byte for byte", async () => {
 
 function boxes(bytes, start = 0, end = bytes.length) {
   const found = [];
-  for (let at = start; at < end;) {
+  for (let at = start; at < end; ) {
     const size = bytes.readUInt32BE(at);
     assert.ok(size >= 8 && at + size <= end, "box size");
     found.push({
@@ -184,7 +184,7 @@ test("the demo pictures are valid, carry FAKE metadata and are listed in the man
     const { crc32, inflateSync } = await import("node:zlib");
     const kinds = [];
     let rows;
-    for (let at = 8; at < png.length;) {
+    for (let at = 8; at < png.length; ) {
       const length = png.readUInt32BE(at);
       const body = png.subarray(at + 4, at + 8 + length);
       if (crc32) {
