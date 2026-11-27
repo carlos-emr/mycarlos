@@ -4,6 +4,7 @@ export type IconName =
   | "activity"
   | "camera"
   | "clock"
+  | "fast-forward"
   | "flask"
   | "folder"
   | "folder-plus"
@@ -22,15 +23,22 @@ export type IconName =
   | "play"
   | "plus"
   | "reset"
+  | "rewind"
   | "search"
   | "settings"
   | "shield"
+  | "skip-end"
+  | "skip-start"
   | "sparkle"
   | "sort"
   | "star"
   | "text-size"
   | "trash"
-  | "video";
+  | "video"
+  | "volume"
+  | "volume-down"
+  | "volume-off"
+  | "volume-up";
 
 export function Icon({ name }: { name: IconName }) {
   let content: ReactNode;
@@ -248,6 +256,54 @@ export function Icon({ name }: { name: IconName }) {
       break;
     case "reset":
       content = <path d="M4 9V4l3 3a8 8 0 1 1-2 8" />;
+      break;
+    // The video player's buttons (#359). Each says what pressing it does.
+    case "rewind":
+      content = <path d="m11 6-6 6 6 6M19 6l-6 6 6 6" />;
+      break;
+    case "fast-forward":
+      content = <path d="m13 6 6 6-6 6M5 6l6 6-6 6" />;
+      break;
+    case "skip-start":
+      // A bar and a triangle pointing at it: to the start.
+      content = <path d="M6 5v14M19 5v14l-9-7Z" />;
+      break;
+    case "skip-end":
+      content = <path d="M18 5v14M5 5v14l9-7Z" />;
+      break;
+    case "volume":
+      // A speaker and its sound: unmute.
+      content = (
+        <>
+          <path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4Z" />
+          <path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.5 7.5 0 0 1 0 10.4" />
+        </>
+      );
+      break;
+    case "volume-off":
+      // A speaker struck through: mute.
+      content = (
+        <>
+          <path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4Z" />
+          <path d="m16 9.5 5 5M21 9.5l-5 5" />
+        </>
+      );
+      break;
+    case "volume-up":
+      content = (
+        <>
+          <path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4Z" />
+          <path d="M16 12h5M18.5 9.5v5" />
+        </>
+      );
+      break;
+    case "volume-down":
+      content = (
+        <>
+          <path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4Z" />
+          <path d="M16 12h5" />
+        </>
+      );
       break;
   }
 

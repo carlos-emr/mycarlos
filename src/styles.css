@@ -3763,14 +3763,38 @@ p {
 .video-frame {
   padding: 12px 20px;
 }
+/* Four groups (playback, skip, volume, jump). The gap inside a group is the same everywhere, and
+   a wider one, the same everywhere too, sits between groups; each group wraps by itself, so that a
+   narrow phone (320 px) never needs a sideways scroll and a long label breaks inside its button
+   rather than past the edge. */
 .video-controls {
   display: flex;
   flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 0 20px 8px;
+}
+.video-control-group {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0 20px 12px;
+  max-width: 100%;
 }
 .video-controls .button {
   min-height: 44px;
+  max-width: 100%;
+  text-align: center;
+}
+.video-key-hint {
+  margin: 0;
+  padding: 0 20px 12px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+/* The line names keys: a screen that is only touch has no keyboard to press them on. */
+@media (pointer: coarse) and (hover: none) {
+  .video-key-hint {
+    display: none;
+  }
 }
 .video-player {
   display: block;

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Icon, type IconName } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import { useI18n } from "../i18n";
 
-/** Seconds a left or right arrow skips, and a J or L key (the usual player
- * keys) skips. */
+/** Seconds a left or right arrow key skips (the usual player behaviour). It has no button: the
+ * buttons skip BIG_SKIP_SECONDS, which the J and L keys do too. */
 export const SKIP_SECONDS = 5;
 export const BIG_SKIP_SECONDS = 10;
 const VOLUME_STEP = 0.1;
@@ -20,7 +21,8 @@ type Action =
   | "start"
   | "end";
 
-/** The keys and what they do (the buttons under the video do the same, and say the key). */
+/** The keys and what they do (the buttons under the video do the same and say the key, except the
+ * arrows' 5 s skip: those two have no button, and a line under the buttons says them). */
 const ACTION_OF_KEY: Record<string, Action | undefined> = {
   " ": "playPause",
   k: "playPause",
@@ -59,6 +61,11 @@ export function VideoViewer({
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
   const [muted, setMuted] = useState(false);
+  // Whether the video is playing as the play button sees it: from the element's own play and
+  // pause events, so the button's icon is never from counting its own presses.
+  const [playing, setPlaying] = useState(false);
+  // A different video starts not playing, whatever the parent does with this component.
+  useEffect(() => setPlaying(false), [url]);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -177,61 +184,79 @@ export function VideoViewer({
       video.focus({ preventScroll: true });
   };
 
-  const controls: { action: Action; label: string; shortcut: string }[] = [
-    {
-      action: "playPause",
-      label: t("interface.VideoViewer.playPause"),
-      shortcut: "k Space",
-    },
-    {
-      action: "back",
-      label: t("interface.VideoViewer.back", { seconds: SKIP_SECONDS }),
-      shortcut: "ArrowLeft",
-    },
-    {
-      action: "forward",
-      label: t("interface.VideoViewer.forward", { seconds: SKIP_SECONDS }),
-      shortcut: "ArrowRight",
-    },
-    {
-      action: "backBig",
-      label: t("interface.VideoViewer.backBig", { seconds: BIG_SKIP_SECONDS }),
-      shortcut: "j",
-    },
-    {
-      action: "forwardBig",
-      label: t("interface.VideoViewer.forwardBig", {
-        seconds: BIG_SKIP_SECONDS,
-      }),
-      shortcut: "l",
-    },
-    {
-      action: "volumeUp",
-      label: t("interface.VideoViewer.volumeUp"),
-      shortcut: "ArrowUp",
-    },
-    {
-      action: "volumeDown",
-      label: t("interface.VideoViewer.volumeDown"),
-      shortcut: "ArrowDown",
-    },
-    {
-      action: "mute",
-      label: t(
-        muted ? "interface.VideoViewer.unmute" : "interface.VideoViewer.mute",
-      ),
-      shortcut: "m",
-    },
-    {
-      action: "start",
-      label: t("interface.VideoViewer.start"),
-      shortcut: "Home",
-    },
-    {
-      action: "end",
-      label: t("interface.VideoViewer.end"),
-      shortcut: "End",
-    },
+  type Control = {
+    action: Action;
+    icon: IconName;
+    label: string;
+    shortcut: string;
+  };
+  // The buttons in four groups (playback, skip, volume, jump), each a row that wraps by itself.
+  // Every icon shows what pressing the button does, as its label says: Pause while playing, Play
+  // while not, Unmute while muted. The icon is drawing only (aria-hidden); the label, which names
+  // the key, is the button's visible text and its accessible name.
+  const controls: Control[][] = [
+    [
+      {
+        action: "playPause",
+        icon: playing ? "pause" : "play",
+        label: t("interface.VideoViewer.playPause"),
+        shortcut: "k Space",
+      },
+    ],
+    [
+      {
+        action: "backBig",
+        icon: "rewind",
+        label: t("interface.VideoViewer.backBig", {
+          seconds: BIG_SKIP_SECONDS,
+        }),
+        shortcut: "j",
+      },
+      {
+        action: "forwardBig",
+        icon: "fast-forward",
+        label: t("interface.VideoViewer.forwardBig", {
+          seconds: BIG_SKIP_SECONDS,
+        }),
+        shortcut: "l",
+      },
+    ],
+    [
+      {
+        action: "volumeUp",
+        icon: "volume-up",
+        label: t("interface.VideoViewer.volumeUp"),
+        shortcut: "ArrowUp",
+      },
+      {
+        action: "volumeDown",
+        icon: "volume-down",
+        label: t("interface.VideoViewer.volumeDown"),
+        shortcut: "ArrowDown",
+      },
+      {
+        action: "mute",
+        icon: muted ? "volume" : "volume-off",
+        label: t(
+          muted ? "interface.VideoViewer.unmute" : "interface.VideoViewer.mute",
+        ),
+        shortcut: "m",
+      },
+    ],
+    [
+      {
+        action: "start",
+        icon: "skip-start",
+        label: t("interface.VideoViewer.start"),
+        shortcut: "Home",
+      },
+      {
+        action: "end",
+        icon: "skip-end",
+        label: t("interface.VideoViewer.end"),
+        shortcut: "End",
+      },
+    ],
   ];
 
   return (
@@ -265,11 +290,20 @@ export function VideoViewer({
             playsInline
             aria-label={t("interface.VideoViewer.player", { name })}
             onClick={keepFocusInPlayer}
-            onPlay={keepFocusInPlayer}
             onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
+            onPlay={() => {
+              setPlaying(true);
+              keepFocusInPlayer();
+            }}
             onPlaying={() => say(true)}
-            onPause={() => say(false)}
-            onEnded={() => say(false)}
+            onPause={() => {
+              setPlaying(false);
+              say(false);
+            }}
+            onEnded={() => {
+              setPlaying(false);
+              say(false);
+            }}
             // Waiting for data is not playing; `playing` says so again when it
             // goes on. (Not `stalled`: it can fire while the video still plays
             // from what it has buffered.)
@@ -286,23 +320,36 @@ export function VideoViewer({
           </p>
         ) : (
           // The keys, as buttons that say their key: each does what its key does.
-          <div
-            className="video-controls"
-            role="group"
-            aria-label={t("interface.VideoViewer.controls")}
-          >
-            {controls.map(({ action, label, shortcut }) => (
-              <button
-                key={action}
-                className="button"
-                type="button"
-                aria-keyshortcuts={shortcut}
-                onClick={() => act(action)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <>
+            <div
+              className="video-controls"
+              role="group"
+              aria-label={t("interface.VideoViewer.controls")}
+            >
+              {controls.map((group) => (
+                <div key={group[0].action} className="video-control-group">
+                  {group.map(({ action, icon, label, shortcut }) => (
+                    <button
+                      key={action}
+                      className="button"
+                      type="button"
+                      aria-keyshortcuts={shortcut}
+                      onClick={() => act(action)}
+                    >
+                      <Icon name={icon} />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+            {/* The arrow keys skip too, but have no button: this says so. */}
+            <p className="video-key-hint">
+              {t("interface.VideoViewer.arrowKeys", {
+                seconds: SKIP_SECONDS,
+              })}
+            </p>
+          </>
         )}
         <footer className="dialog-actions">
           <button
