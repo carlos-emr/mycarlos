@@ -59,6 +59,7 @@ interface SecuritySettingsProps {
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
   onLock: () => Promise<void>;
+  onSignOut?: () => void;
   onChangePassphrase: (current: string, replacement: string) => Promise<void>;
   onCreateProfile: (name: string, details?: PersonDetails) => Promise<boolean>;
   people?: PatientProfile[];
@@ -208,6 +209,7 @@ export function SecuritySettings({
   autoLockMinutes,
   onAutoLockMinutes,
   onLock,
+  onSignOut,
   onChangePassphrase,
   onCreateProfile,
   hiddenCount,
@@ -700,6 +702,11 @@ export function SecuritySettings({
               >
                 {translateNow("security.lockNow")}
               </button>
+              {onSignOut && (
+                <button className="button" type="button" onClick={onSignOut}>
+                  {translateNow("security.signOut")}
+                </button>
+              )}
             </div>
             <p>{translateNow("security.autoLock.body")}</p>
           </div>

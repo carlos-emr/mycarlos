@@ -898,6 +898,8 @@ notice-iosKeepOpen = Keep myCarlos open: switching apps pauses this transfer.
 
 notice-locked = Vault locked.
 
+notice-signedOut = Signed out.
+
 notice-lockedHidden = Locked because myCarlos was minimized or sent to the background.
 
 notice-lockedIdle =
@@ -1217,6 +1219,8 @@ security-erase-submit = Erase entire vault
 security-erase-title = Erase entire vault
 
 security-lockNow = Lock now
+
+security-signOut = Sign out
 
 security-oldBackups-deleteOlder = Delete the older backups: files whose names start with “myCarlos backup”, and any you renamed, other than the new one and its copies. They are wherever you saved them: a folder, a USB stick, or on a phone the Files app or a cloud drive.
 

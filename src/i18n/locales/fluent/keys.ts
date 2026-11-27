@@ -405,6 +405,7 @@ export const MESSAGE_KEYS = [
   "notice.recovered",
   "notice.recoveredReadOnly",
   "notice.restored",
+  "notice.signedOut",
   "notice.transferUnfinished",
   "notice.unlocked",
   "notice.unlockedRecovery",
@@ -582,6 +583,7 @@ export const MESSAGE_KEYS = [
   "security.recoveryKey.setUp",
   "security.recoveryKey.setUpOn",
   "security.recoveryKey.title",
+  "security.signOut",
   "security.speed.body",
   "security.speed.measuring",
   "security.speed.run",
@@ -1974,6 +1976,7 @@ const FLUENT_IDS_BY_KEY = {
   "notice.recovered": "notice-recovered",
   "notice.recoveredReadOnly": "notice-recoveredReadOnly",
   "notice.restored": "notice-restored",
+  "notice.signedOut": "notice-signedOut",
   "notice.transferUnfinished": "notice-transferUnfinished",
   "notice.unlocked": "notice-unlocked",
   "notice.unlockedRecovery": "notice-unlockedRecovery",
@@ -2153,6 +2156,7 @@ const FLUENT_IDS_BY_KEY = {
   "security.recoveryKey.setUp": "security-recoveryKey-setUp",
   "security.recoveryKey.setUpOn": "security-recoveryKey-setUpOn",
   "security.recoveryKey.title": "security-recoveryKey-title",
+  "security.signOut": "security-signOut",
   "security.speed.body": "security-speed-body",
   "security.speed.measuring": "security-speed-measuring",
   "security.speed.run": "security-speed-run",
@@ -3679,6 +3683,7 @@ export interface MessageArgsByKey {
   "notice.recovered": undefined;
   "notice.recoveredReadOnly": undefined;
   "notice.restored": undefined;
+  "notice.signedOut": undefined;
   "notice.transferUnfinished": undefined;
   "notice.unlocked": undefined;
   "notice.unlockedRecovery": undefined;
@@ -3869,6 +3874,7 @@ export interface MessageArgsByKey {
   "security.recoveryKey.setUp": undefined;
   "security.recoveryKey.setUpOn": { date: FluentArgument };
   "security.recoveryKey.title": undefined;
+  "security.signOut": undefined;
   "security.speed.body": undefined;
   "security.speed.measuring": undefined;
   "security.speed.run": undefined;

@@ -109,6 +109,7 @@ const ACTIVITY_EVENTS = [
 const LOCK_WARNING_MS = 30_000;
 /** Why the vault locked by itself, said on the unlock screen (#68). */
 type LockReason = "idle" | "hidden";
+type LockIntent = "lock" | "signOut";
 // Dispatched on the document when a picker this app opened settles.
 const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 // Time in a picker counts as activity for at most this long, the longest
@@ -157,6 +158,7 @@ export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
 function NativeVault({ bridge }: { bridge: VaultBridge }) {
   useI18n();
   const [status, setStatusState] = useState<VaultStatus | "loading">("loading");
+  const [signedOut, setSignedOut] = useState(false);
   const statusRef = useRef(status);
   const answerEpochRef = useRef(0);
   const answerRef = useRef<AnswerActivity | null>(null);
@@ -179,6 +181,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         answerRef.current = null;
       }
       statusRef.current = value;
+      if (value !== "locked") setSignedOut(false);
       setStatusState(value);
     },
     [],
@@ -553,7 +556,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // `native` is false only when the native side has already locked the vault itself (adding another
   // vault does, #357): the screen then follows it, ending the session as any lock does.
   const lock = useCallback(
-    async (native: boolean = true) => {
+    async (native: boolean = true, intent: LockIntent = "lock") => {
       if (lockingRef.current) return;
       lockingRef.current = true;
       // A transfer this lock ends, or waited for, reports how it went.
@@ -586,6 +589,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         holdLock(false);
         mediaHoldsRef.current.clear();
         setAddingVault(false);
+        setSignedOut(intent === "signOut");
         setStatus("locked");
         if (endsTransfer && transferOutcomeRef.current)
           holdForUnlock(transferOutcomeRef.current);
@@ -595,11 +599,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         const minutes = autoLockMinutesRef.current;
         setNotice(
           deferredText(() =>
-            reason === "idle"
-              ? translateCurrent("notice.lockedIdle", { count: minutes })
-              : reason === "hidden"
-                ? translateCurrent("notice.lockedHidden")
-                : translateCurrent("notice.locked"),
+            intent === "signOut"
+              ? translateCurrent("notice.signedOut")
+              : reason === "idle"
+                ? translateCurrent("notice.lockedIdle", { count: minutes })
+                : reason === "hidden"
+                  ? translateCurrent("notice.lockedHidden")
+                  : translateCurrent("notice.locked"),
           ),
         );
       } catch (error) {
@@ -629,7 +635,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   );
 
   const requestLock = useCallback(
-    (concealImmediately = false) => {
+    (concealImmediately = false, intent: LockIntent = "lock") => {
       if (concealImmediately) {
         // A failure left by an earlier manual attempt is not this attempt's.
         // Retries from the concealed screen keep theirs, so the alert is not
@@ -639,7 +645,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         // At once, for a lock that fails before the screen is drawn again.
         concealedRef.current = true;
       }
-      void lock();
+      void lock(true, intent);
     },
     [lock],
   );
@@ -652,6 +658,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const requestLockAsked = useCallback(() => {
     lockReasonRef.current = null;
     requestLock(true);
+  }, [requestLock]);
+  const signOut = useCallback(() => {
+    lockReasonRef.current = null;
+    requestLock(true, "signOut");
   }, [requestLock]);
 
   // Automatic locks: during a transfer, hide content and lock once the
@@ -1874,6 +1884,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // A restored vault is locked: it opens with its own passphrase or key.
   const restored = () => {
     forgetReplacedVault();
+    setSignedOut(false);
     setStatus("locked");
     setNotice(deferredText(() => translateCurrent("notice.restored")));
   };
@@ -2116,6 +2127,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         severalVaults={
           bridge.unlockNamed && bridge.findOtherVaults && bridge.nameFoundVaults
             ? {
+                highlightChoice: signedOut,
                 onFind: async (passphrase) => {
                   // Counted as passphrase tries by the native side; a wait or a refusal is shown
                   // as for any unlock.
@@ -2341,6 +2353,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         refresh={refresh}
         onLock={lockAsked}
         onRequestLock={requestLockAsked}
+        onSignOut={signOut}
         onSetUpNewVault={
           bridge.addVault ? () => setAddingVault(true) : undefined
         }

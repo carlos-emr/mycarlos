@@ -920,6 +920,8 @@ notice-iosKeepOpen = Mantenha o myCarlos aberto: trocar de app pausa esta transf
 
 notice-locked = Cofre bloqueado.
 
+notice-signedOut = Você saiu do cofre.
+
 notice-lockedHidden = Bloqueado porque o myCarlos foi minimizado ou enviado para segundo plano.
 
 notice-lockedIdle =
@@ -1245,6 +1247,8 @@ security-erase-submit = Apagar todo o cofre
 security-erase-title = Apagar todo o cofre
 
 security-lockNow = Bloquear agora
+
+security-signOut = Sair
 
 security-oldBackups-deleteOlder = Exclua as cópias de segurança anteriores: os arquivos cujo nome começa com “myCarlos backup” e as que você renomeou, exceto a nova e as cópias dela. Elas estão onde você as salvou: uma pasta, um pen drive ou, no celular, o app Arquivos ou um armazenamento na nuvem.
 
