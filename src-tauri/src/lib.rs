@@ -2102,44 +2102,86 @@ fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     path.rsplit('/').next().unwrap_or_default().to_owned()
 }
 
-/// How long one file's provider is given to say its name (Android). Asking only reads a column,
-/// but a provider backed by a cloud service may fetch first.
-#[cfg(target_os = "android")]
-const PROVIDER_NAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-
 /// The longest display name an Android provider is believed (characters). A longer one is
 /// not used: the id's own tail is, as before.
 const MAX_PROVIDED_NAME_CHARS: usize = 255;
-
-/// The invisible direction controls `char::is_control` misses (they are format characters, not
-/// control characters): the left-to-right and right-to-left marks, the Arabic letter mark, the
-/// embeddings and overrides (U+202A to U+202E) and the isolates (U+2066 to U+2069). A name holding
-/// one can be shown as another ("clip.mp4" made to read "4pm.pilc"), so it is not used.
-fn is_bidi_or_mark_control(c: char) -> bool {
-    matches!(
-        c,
-        '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
-    )
-}
 
 /// The name a pick is routed and stored under: the one the document provider reported
 /// (`OpenableColumns.DISPLAY_NAME`) when it is a plain file name, otherwise the tail of the id
 /// (`picked_name_tail`). An opaque Android id (`msf:31`) says nothing about the file, while the
 /// provider's name ("clip.mp4") does. The provider's name is another app's text, so it is used
 /// only when it is one path-free line with a stem and an extension, of a bounded length; anything
-/// else is as if the provider had given none.
+/// else is as if the provider had given none. "Plain" is the vault's own rule for what a stored
+/// name keeps: no character `vault::is_hidden_name_char` names (controls, zero-width and direction
+/// characters, line and paragraph separators, the word joiner, the byte order mark), the same
+/// predicate `sanitize_basename` drops, so nothing the routing accepts is later changed by the store.
 fn routing_name(tail: &str, provided: Option<&str>) -> String {
     let usable = provided.map(str::trim).filter(|name| {
-        let named = name
-            .rsplit_once('.')
-            .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty());
-        named
+        has_stem_and_extension(name)
             && name.chars().count() <= MAX_PROVIDED_NAME_CHARS
             && !name
                 .chars()
-                .any(|c| c.is_control() || c == '/' || c == '\\' || is_bidi_or_mark_control(c))
+                .any(|c| vault::is_hidden_name_char(c) || c == '/' || c == '\\')
     });
     usable.unwrap_or(tail).to_owned()
+}
+
+/// Whether `name` ends in `.extension` after a stem (`clip.mp4`, not `31`, `.pdf` or `name.`). A
+/// tail of an Android document id that does not is **opaque** (`msf:31`): it says nothing about the
+/// file, so only then is the provider asked what it calls it.
+fn has_stem_and_extension(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+}
+
+/// How long one file's provider is given to say its name (Android). Asking only reads a column,
+/// but a provider backed by a cloud service may fetch first.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How long a whole pick may spend asking providers, however many files it holds: a slow provider
+/// is given at most this much in all, not 3 seconds for each of up to 100 files. Once it is spent
+/// the rest are not asked and keep the tail of their ids, as if the provider had given no name.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAMES_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Asks for the names of the files `askable` says to ask about, one after another, within ONE
+/// time budget: each question gets at most `each`, and at most what is left of `budget`; when
+/// nothing is left a file is not asked. An unanswered, late or refused question is `None`. The
+/// asking itself is `ask` (the Android plugin call), so the rule is the same, and testable, on
+/// every platform.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+async fn ask_names_within<F, Fut>(
+    count: usize,
+    askable: impl Fn(usize) -> bool,
+    budget: std::time::Duration,
+    each: std::time::Duration,
+    mut ask: F,
+) -> Vec<Option<String>>
+where
+    F: FnMut(usize) -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let deadline = std::time::Instant::now() + budget;
+    let mut names = Vec::with_capacity(count);
+    for index in 0..count {
+        if !askable(index) {
+            names.push(None);
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            names.push(None);
+            continue;
+        }
+        names.push(
+            tokio::time::timeout(left.min(each), ask(index))
+                .await
+                .ok()
+                .flatten(),
+        );
+    }
+    names
 }
 
 /// What each picked file's provider calls it. Only an Android `content://` pick is asked
@@ -2151,24 +2193,29 @@ async fn provider_display_names(
 ) -> Vec<Option<String>> {
     #[cfg(target_os = "android")]
     {
-        let mut names = Vec::with_capacity(paths.len());
-        for path in paths {
-            names.push(match path {
+        // Only an opaque `content://` id is asked (a tail that already names a file needs no
+        // question), and the whole pick shares one time budget.
+        let tails: Vec<String> = paths.iter().map(picked_name_tail).collect();
+        let urls: Vec<Option<String>> = paths
+            .iter()
+            .map(|path| match path {
                 tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content" => {
-                    // A provider that fetches before it answers (a cloud one) must not hold the
-                    // pick: no answer in time is no name.
-                    tokio::time::timeout(
-                        PROVIDER_NAME_TIMEOUT,
-                        tauri_plugin_android_pdf::display_name(_app, url.as_str()),
-                    )
-                    .await
-                    .ok()
-                    .flatten()
+                    Some(url.as_str().to_owned())
                 }
                 _ => None,
-            });
-        }
-        names
+            })
+            .collect();
+        ask_names_within(
+            paths.len(),
+            |index| urls[index].is_some() && !has_stem_and_extension(&tails[index]),
+            PROVIDER_NAMES_BUDGET,
+            PROVIDER_NAME_TIMEOUT,
+            |index| {
+                let url = urls[index].clone().unwrap_or_default();
+                async move { tauri_plugin_android_pdf::display_name(_app, &url).await }
+            },
+        )
+        .await
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -11855,6 +11902,16 @@ mod tests {
             "clip\u{200E}.mp4",
             "clip\u{200F}.mp4",
             "clip\u{061C}.mp4",
+            // The invisible characters the vault's stored names drop too (one predicate): the
+            // zero-width ones, the byte order mark, the line and paragraph separators and the word
+            // joiner.
+            "clip\u{200B}.mp4",
+            "clip\u{200C}.mp4",
+            "clip\u{200D}.mp4",
+            "\u{FEFF}clip.mp4",
+            "clip\u{2028}.mp4",
+            "clip\u{2029}.mp4",
+            "clip\u{2060}.mp4",
         ] {
             assert_eq!(routing_name(&tail, Some(unusable)), "31", "{unusable:?}");
         }
@@ -11925,6 +11982,131 @@ mod tests {
     }
 
     #[cfg(all(unix, desktop))]
+    #[test]
+    fn the_routing_and_the_stored_name_drop_exactly_the_same_hidden_characters() {
+        // Every character there is: the routing accepts a provider's name that holds it exactly
+        // when the vault's one predicate does not name it (a path separator never), and the store
+        // drops it exactly when that predicate names it. So a character the routing lets through
+        // is never one the store then silently drops (the two filters used to differ).
+        for code in 0..=0x10_FFFF_u32 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let name = format!("a{c}b.mp4");
+            let routed = routing_name("31", Some(&name));
+            if vault::is_hidden_name_char(c) || c == '/' || c == '\\' {
+                assert_eq!(routed, "31", "U+{code:04X} must not route");
+            } else {
+                assert_eq!(routed, name, "U+{code:04X} must route");
+            }
+            if vault::is_hidden_name_char(c) {
+                assert_eq!(
+                    vault::sanitize_basename(&name),
+                    "ab.mp4",
+                    "U+{code:04X} must be dropped from a stored name"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_an_opaque_id_is_asked_what_its_file_is_called() {
+        // An id's tail that already names a file (a stem and an extension) needs no question; the
+        // tail of an opaque document id ("msf:31" leaves "31") does.
+        for named in ["clip.mp4", "FAKE Scan 10.30.pdf", "a.b", "photo.jpeg"] {
+            assert!(has_stem_and_extension(named), "{named}");
+        }
+        for opaque in ["31", "", ".pdf", "name.", "msf", "raw:", "noextension"] {
+            assert!(!has_stem_and_extension(opaque), "{opaque:?}");
+        }
+    }
+
+    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+        tauri::async_runtime::block_on(future)
+    }
+
+    #[test]
+    fn a_whole_pick_asks_its_providers_within_one_budget_not_one_each() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Six files, a provider that needs 250 ms for each, and a budget of 400 ms in all: the old
+        // rule (a limit per file) would spend 6 x 250 ms; the budget spends about 400 ms and the
+        // files after it are not asked at all.
+        let asked = AtomicUsize::new(0);
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            6,
+            |_| true,
+            Duration::from_millis(400),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    Some(format!("clip{index}.mp4"))
+                }
+            },
+        ));
+        let spent = started.elapsed();
+        assert_eq!(names.len(), 6);
+        // The first answered in time; the second ran out of budget; the rest were never asked.
+        assert_eq!(names[0].as_deref(), Some("clip0.mp4"));
+        assert!(names[1..].iter().all(Option::is_none), "{names:?}");
+        assert!(asked.load(Ordering::SeqCst) <= 3, "asked {asked:?}");
+        assert!(spent < Duration::from_millis(1200), "spent {spent:?}");
+    }
+
+    #[test]
+    fn one_slow_question_is_cut_at_its_own_limit_and_a_spent_budget_asks_nothing() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Each question is cut at `each`, however much of the budget is left.
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            3,
+            |_| true,
+            Duration::from_secs(30),
+            Duration::from_millis(60),
+            |_| async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Some("never.mp4".to_owned())
+            },
+        ));
+        assert_eq!(names, vec![None, None, None]);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        // A budget that is already spent asks nobody.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |_| true,
+            Duration::ZERO,
+            Duration::from_secs(3),
+            |_| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async { Some("late.mp4".to_owned()) }
+            },
+        ));
+        assert_eq!(names, vec![None, None, None, None]);
+        assert_eq!(asked.load(Ordering::SeqCst), 0);
+        // Only the files `askable` says are asked, and each one only once.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |index| index % 2 == 1,
+            Duration::from_secs(5),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move { Some(format!("n{index}.mp4")) }
+            },
+        ));
+        assert_eq!(
+            names,
+            vec![None, Some("n1.mp4".into()), None, Some("n3.mp4".into())]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
+    }
+
     #[test]
     fn local_import_rejects_symbolic_links() {
         use std::os::unix::fs::symlink;
