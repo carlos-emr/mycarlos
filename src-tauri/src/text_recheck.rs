@@ -1169,7 +1169,9 @@ mod tests {
     }
 
     // The look-alikes page code folds to Latin letters (`matchingCopy`): each one, as a vault name
-    // written with them must be found as the name written with Latin letters.
+    // written with them must be found as the name written with Latin letters. This table is a copy
+    // of the Rust arms, so it pins them and does not by itself catch the page's list drifting from
+    // them (that would take a shared fixture read by both sides, as `date-forms.json` is).
     #[test]
     fn every_look_alike_folds_to_the_latin_letters_page_code_folds_it_to() {
         let table: &[(&str, &str)] = &[
@@ -1372,7 +1374,7 @@ mod tests {
         let hits = identifier_hits("né le 1er avril 1961.", &[], &birth);
         assert_eq!(ranges(&hits), vec![(6, 20)]);
         assert!(identifier_hits("né le 2 avril 1961.", &[], &birth).is_empty());
-        assert!(date_hits("Vu le 17 avril 2026.").len() == 1);
+        assert_eq!(date_hits("Vu le 17 avril 2026.").len(), 1);
     }
 
     #[test]

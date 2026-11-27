@@ -1213,6 +1213,21 @@ mod tests {
     use super::fake::*;
     use super::*;
 
+    #[test]
+    fn every_movie_error_says_what_was_wrong_in_its_own_words() {
+        for (error, words) in [
+            (Mp4Error::Malformed, "malformed MP4"),
+            (Mp4Error::TooLarge, "an MP4 box is too large"),
+            (Mp4Error::NoInit, "a fragment came before the movie header"),
+            (Mp4Error::Timeline, "an MP4 time is out of range"),
+        ] {
+            assert_eq!(error.to_string(), words, "{error:?}");
+        }
+        // It is a std error, so it can be boxed with `?` where a caller wants a trait object.
+        let boxed: Box<dyn std::error::Error> = Box::new(Mp4Error::Malformed);
+        assert_eq!(boxed.to_string(), "malformed MP4");
+    }
+
     fn run(stream: &[u8], piece: usize) -> (Mp4Normaliser, Vec<u8>) {
         let mut normaliser = Mp4Normaliser::new();
         let mut out = Vec::new();
