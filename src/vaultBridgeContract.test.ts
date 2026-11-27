@@ -347,7 +347,8 @@ const CASES: [string, (bridge: Bridge) => unknown, string, unknown?][] = [
     "pickExportDestination",
     (b) => b.pickExportDestination("r1"),
     "vault_export_pick",
-    { request: { recordId: "r1" } },
+    // The page sends today's date, which the native side puts in the suggested file name.
+    { request: { recordId: "r1", localDate: "2026-10-07" } },
   ],
   [
     "exportToPicked",

@@ -731,6 +731,8 @@ native-filter-pictures = JPEG 和 PNG 图片
 
 native-filter-pdfAndPictures = PDF 文档以及 JPEG 和 PNG 图片
 
+native-filter-pdfPicturesAndVideos = PDF 文档、JPEG 和 PNG 图片以及视频（MP4 或 MOV）
+
 native-kit-text =
     myCarlos 恢复工具包
 
@@ -950,6 +952,8 @@ recoveryKey-reason-legend = 为什么要更换？
 
 recoveryKey-reason-routine = 我只是想换新密钥；目前的工具包仍安全
 
+recoveryKey-kitCloudWarning = 此文件未加密。同步到云端的文件夹（OneDrive、iCloud Drive、Dropbox、Google Drive）会将其上传，请保存到不会同步的位置。
+
 recoveryKey-saveKit = 保存恢复工具包…
 
 recoveryKey-threeMisses = 连续三次输入不相符。请再次查看恢复密钥，然后重新检查。
@@ -1065,6 +1069,8 @@ security-autoLock-shorter = 缩短延迟时间
 security-autoLock-title = 自动锁定
 
 security-backup-body = 一个文件即可保存整个保险库，且内容仍会加密。请将备份存放在此设备以外的位置，例如 USB 闪存盘。备份使用保存当下的密码短语或恢复密钥打开，即使您之后变更密钥，它们仍可打开此备份。若要还原备份，请先锁定保险库，再选择「从备份还原」。
+
+security-backup-cloudWarning = 此文件已加密，但仍会显示其中有多少份文档以及每份的大小。同步到云端的文件夹（OneDrive、iCloud Drive、Dropbox、Google Drive）会将其上传。
 
 security-backup-save = 保存加密备份…
 
@@ -2183,6 +2189,7 @@ notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检
 noticesStep-title = 来自诊所的文档
 noticesStep-intro = 您的诊所已关联。myCarlos 可以为您检查新文档，并在可显示通知的电脑上于新文档到达时通知您。除非您勾选，否则不会开启任何选项。
 noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变更这些设置：{ $notices }。
+noticesStep-laterBackground = 您随时可以在 { $settings } 的 { $preferences } 中变更后台运行的设置：{ $background }。
 noticesStep-done = 完成
 noticesStep-notNow = 暂不
 
@@ -2281,6 +2288,8 @@ reader-android-zoomOut = 缩小
 
 interface-video-name = 视频，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 录制视频
+interface-RecordDialog-recordAVideoFor = 为 { $name } 录制视频
+interface-RecordDialog-recordingSettings = 录制设置
 interface-RecordDialog-unavailable = 此设备上无法录制视频。
 interface-RecordDialog-why = 为什么？
 interface-RecordDialog-startingTheCameraAndMicrophone = 正在启动相机和麦克风…
@@ -2296,6 +2305,9 @@ interface-RecordDialog-unnamedCamera = 摄像头 { $number }
 interface-RecordDialog-unnamedMicrophone = 麦克风 { $number }
 interface-RecordDialog-systemDefaultDevice = 系统默认
 interface-RecordDialog-deviceFellBack = 上次使用的摄像头或麦克风未连接，因此正在使用系统默认设备。
+interface-RecordDialog-deviceNotSwitched = 无法打开您选择的摄像头或麦克风，因此仍在使用原来的设备。
+interface-RecordDialog-saySomething = 说点什么：指示条应该会动。
+interface-RecordDialog-settingsNote = 视频会加密保存。myCarlos 会在此设备上记住这些选择。
 interface-RecordDialog-testMicrophone = 测试麦克风
 interface-RecordDialog-stopTestingMicrophone = 停止测试
 interface-RecordDialog-microphoneLevel = 麦克风音量
@@ -2486,7 +2498,7 @@ handover-import-opening = 正在打开…
 
 handover-import-error-typo = 该密钥看起来不对，请与您拿到的密钥核对。
 
-handover-import-error-recovery = 这是恢复密钥，不是此文件的密钥。请索取为该文件生成的密钥。
+handover-import-error-recovery = 这看起来像恢复密钥，而不是此文件的密钥。请核对您拿到的该文件密钥，并检查是否输错。如果没有拿到，请索取为该文件生成的密钥。
 
 handover-import-error-wrong = 这无法打开此文件。
 
@@ -2668,6 +2680,8 @@ notifications-testWait = 请等待几秒钟后再试。
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
 
+native-backupExclusionFailed = 这部手机无法让保险库不被设备备份。请重试。
+
 interface-AddVideo-add = 添加视频
 
 interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。
@@ -2689,6 +2703,8 @@ interface-AddVideo-duplicate = 此视频已在这里，未添加任何内容。
 interface-AddVideo-cancelled = 已取消，未添加任何内容。
 
 interface-AddVideo-notVideo = 此文件不是 myCarlos 可以添加的视频。请选择 MP4 或 MOV 视频。
+
+interface-AddVideo-videoAlone = 视频需单独添加。请只选择一个视频，或者选择文档和图片，不能同时选择。未添加任何内容。
 
 interface-AddVideo-hevc = 此视频使用 H.265（HEVC），许多电脑无法播放。请另存为 H.264 MP4 后再添加。
 

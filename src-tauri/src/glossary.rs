@@ -707,3 +707,6 @@ mod tests {
         assert!(explain(&long, "en").is_none());
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

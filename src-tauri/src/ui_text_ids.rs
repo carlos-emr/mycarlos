@@ -360,6 +360,7 @@ pub enum MessageId {
     InterfaceAddVideoTooBig,
     InterfaceAddVideoTooLarge,
     InterfaceAddVideoTooManyTracks,
+    InterfaceAddVideoVideoAlone,
     InterfaceAddVideoVideoCodec,
     InterfaceAiHelperNoticeContinue,
     InterfaceAnonymizePreviewCheckPicked,
@@ -525,6 +526,7 @@ pub enum MessageId {
     InterfaceRecordDialogCamera,
     InterfaceRecordDialogCameraAndMicrophone,
     InterfaceRecordDialogDeviceFellBack,
+    InterfaceRecordDialogDeviceNotSwitched,
     InterfaceRecordDialogHigh,
     InterfaceRecordDialogKeepRecording,
     InterfaceRecordDialogLowOnRoom,
@@ -538,13 +540,17 @@ pub enum MessageId {
     InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
     InterfaceRecordDialogPictureQuality,
     InterfaceRecordDialogRecordAVideo,
+    InterfaceRecordDialogRecordAVideoFor,
     InterfaceRecordDialogRecorded,
     InterfaceRecordDialogRecording,
     InterfaceRecordDialogRecordingAt,
     InterfaceRecordDialogRecordingPaused,
     InterfaceRecordDialogRecordingResumed,
+    InterfaceRecordDialogRecordingSettings,
     InterfaceRecordDialogResumeRecording,
     InterfaceRecordDialogSavingTheVideo,
+    InterfaceRecordDialogSaySomething,
+    InterfaceRecordDialogSettingsNote,
     InterfaceRecordDialogStandard,
     InterfaceRecordDialogStartRecording,
     InterfaceRecordDialogStartingTheCameraAndMicrophone,
@@ -910,6 +916,7 @@ pub enum MessageId {
     LockWarningTitle,
     NativeBackupNoteEmptied,
     NativeBackupNoteUntouched,
+    NativeBackupExclusionFailed,
     NativeCancel,
     NativeError01,
     NativeError02,
@@ -966,6 +973,7 @@ pub enum MessageId {
     NativeFilterModels,
     NativeFilterPdf,
     NativeFilterPdfAndPictures,
+    NativeFilterPdfPicturesAndVideos,
     NativeFilterPictures,
     NativeFilterVideo,
     NativeKitText,
@@ -1012,6 +1020,7 @@ pub enum MessageId {
     NoticesStepDone,
     NoticesStepIntro,
     NoticesStepLater,
+    NoticesStepLaterBackground,
     NoticesStepNotNow,
     NoticesStepTitle,
     NotificationsAllow,
@@ -1253,6 +1262,7 @@ pub enum MessageId {
     RecoveryKeyHiddenWhileSaving,
     RecoveryKeyInstructions,
     RecoveryKeyKeyboardHint,
+    RecoveryKeyKitCloudWarning,
     RecoveryKeyKitSaved,
     RecoveryKeyLabel,
     RecoveryKeyLeaveOffered,
@@ -1330,6 +1340,7 @@ pub enum MessageId {
     SecurityAutoLockShorter,
     SecurityAutoLockTitle,
     SecurityBackupBody,
+    SecurityBackupCloudWarning,
     SecurityBackupLeaveVideosOut,
     SecurityBackupLeaveVideosOutHelp,
     SecurityBackupSave,
@@ -1779,6 +1790,7 @@ impl MessageId {
         Self::InterfaceAddVideoTooBig,
         Self::InterfaceAddVideoTooLarge,
         Self::InterfaceAddVideoTooManyTracks,
+        Self::InterfaceAddVideoVideoAlone,
         Self::InterfaceAddVideoVideoCodec,
         Self::InterfaceAiHelperNoticeContinue,
         Self::InterfaceAnonymizePreviewCheckPicked,
@@ -1944,6 +1956,7 @@ impl MessageId {
         Self::InterfaceRecordDialogCamera,
         Self::InterfaceRecordDialogCameraAndMicrophone,
         Self::InterfaceRecordDialogDeviceFellBack,
+        Self::InterfaceRecordDialogDeviceNotSwitched,
         Self::InterfaceRecordDialogHigh,
         Self::InterfaceRecordDialogKeepRecording,
         Self::InterfaceRecordDialogLowOnRoom,
@@ -1957,13 +1970,17 @@ impl MessageId {
         Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
         Self::InterfaceRecordDialogPictureQuality,
         Self::InterfaceRecordDialogRecordAVideo,
+        Self::InterfaceRecordDialogRecordAVideoFor,
         Self::InterfaceRecordDialogRecorded,
         Self::InterfaceRecordDialogRecording,
         Self::InterfaceRecordDialogRecordingAt,
         Self::InterfaceRecordDialogRecordingPaused,
         Self::InterfaceRecordDialogRecordingResumed,
+        Self::InterfaceRecordDialogRecordingSettings,
         Self::InterfaceRecordDialogResumeRecording,
         Self::InterfaceRecordDialogSavingTheVideo,
+        Self::InterfaceRecordDialogSaySomething,
+        Self::InterfaceRecordDialogSettingsNote,
         Self::InterfaceRecordDialogStandard,
         Self::InterfaceRecordDialogStartRecording,
         Self::InterfaceRecordDialogStartingTheCameraAndMicrophone,
@@ -2329,6 +2346,7 @@ impl MessageId {
         Self::LockWarningTitle,
         Self::NativeBackupNoteEmptied,
         Self::NativeBackupNoteUntouched,
+        Self::NativeBackupExclusionFailed,
         Self::NativeCancel,
         Self::NativeError01,
         Self::NativeError02,
@@ -2385,6 +2403,7 @@ impl MessageId {
         Self::NativeFilterModels,
         Self::NativeFilterPdf,
         Self::NativeFilterPdfAndPictures,
+        Self::NativeFilterPdfPicturesAndVideos,
         Self::NativeFilterPictures,
         Self::NativeFilterVideo,
         Self::NativeKitText,
@@ -2431,6 +2450,7 @@ impl MessageId {
         Self::NoticesStepDone,
         Self::NoticesStepIntro,
         Self::NoticesStepLater,
+        Self::NoticesStepLaterBackground,
         Self::NoticesStepNotNow,
         Self::NoticesStepTitle,
         Self::NotificationsAllow,
@@ -2672,6 +2692,7 @@ impl MessageId {
         Self::RecoveryKeyHiddenWhileSaving,
         Self::RecoveryKeyInstructions,
         Self::RecoveryKeyKeyboardHint,
+        Self::RecoveryKeyKitCloudWarning,
         Self::RecoveryKeyKitSaved,
         Self::RecoveryKeyLabel,
         Self::RecoveryKeyLeaveOffered,
@@ -2749,6 +2770,7 @@ impl MessageId {
         Self::SecurityAutoLockShorter,
         Self::SecurityAutoLockTitle,
         Self::SecurityBackupBody,
+        Self::SecurityBackupCloudWarning,
         Self::SecurityBackupLeaveVideosOut,
         Self::SecurityBackupLeaveVideosOutHelp,
         Self::SecurityBackupSave,
@@ -3198,6 +3220,7 @@ impl MessageId {
             Self::InterfaceAddVideoTooBig => "interface-AddVideo-tooBig",
             Self::InterfaceAddVideoTooLarge => "interface-AddVideo-tooLarge",
             Self::InterfaceAddVideoTooManyTracks => "interface-AddVideo-tooManyTracks",
+            Self::InterfaceAddVideoVideoAlone => "interface-AddVideo-videoAlone",
             Self::InterfaceAddVideoVideoCodec => "interface-AddVideo-videoCodec",
             Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
             Self::InterfaceAnonymizePreviewCheckPicked => "interface-AnonymizePreview-checkPicked",
@@ -3527,6 +3550,9 @@ impl MessageId {
                 "interface-RecordDialog-cameraAndMicrophone"
             }
             Self::InterfaceRecordDialogDeviceFellBack => "interface-RecordDialog-deviceFellBack",
+            Self::InterfaceRecordDialogDeviceNotSwitched => {
+                "interface-RecordDialog-deviceNotSwitched"
+            }
             Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
             Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
             Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
@@ -3546,6 +3572,7 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogPictureQuality => "interface-RecordDialog-pictureQuality",
             Self::InterfaceRecordDialogRecordAVideo => "interface-RecordDialog-recordAVideo",
+            Self::InterfaceRecordDialogRecordAVideoFor => "interface-RecordDialog-recordAVideoFor",
             Self::InterfaceRecordDialogRecorded => "interface-RecordDialog-recorded",
             Self::InterfaceRecordDialogRecording => "interface-RecordDialog-recording",
             Self::InterfaceRecordDialogRecordingAt => "interface-RecordDialog-recordingAt",
@@ -3553,8 +3580,13 @@ impl MessageId {
             Self::InterfaceRecordDialogRecordingResumed => {
                 "interface-RecordDialog-recordingResumed"
             }
+            Self::InterfaceRecordDialogRecordingSettings => {
+                "interface-RecordDialog-recordingSettings"
+            }
             Self::InterfaceRecordDialogResumeRecording => "interface-RecordDialog-resumeRecording",
             Self::InterfaceRecordDialogSavingTheVideo => "interface-RecordDialog-savingTheVideo",
+            Self::InterfaceRecordDialogSaySomething => "interface-RecordDialog-saySomething",
+            Self::InterfaceRecordDialogSettingsNote => "interface-RecordDialog-settingsNote",
             Self::InterfaceRecordDialogStandard => "interface-RecordDialog-standard",
             Self::InterfaceRecordDialogStartRecording => "interface-RecordDialog-startRecording",
             Self::InterfaceRecordDialogStartingTheCameraAndMicrophone => {
@@ -4132,6 +4164,7 @@ impl MessageId {
             Self::LockWarningTitle => "lockWarning-title",
             Self::NativeBackupNoteEmptied => "native-backup-noteEmptied",
             Self::NativeBackupNoteUntouched => "native-backup-noteUntouched",
+            Self::NativeBackupExclusionFailed => "native-backupExclusionFailed",
             Self::NativeCancel => "native-cancel",
             Self::NativeError01 => "native-error-01",
             Self::NativeError02 => "native-error-02",
@@ -4188,6 +4221,7 @@ impl MessageId {
             Self::NativeFilterModels => "native-filter-models",
             Self::NativeFilterPdf => "native-filter-pdf",
             Self::NativeFilterPdfAndPictures => "native-filter-pdfAndPictures",
+            Self::NativeFilterPdfPicturesAndVideos => "native-filter-pdfPicturesAndVideos",
             Self::NativeFilterPictures => "native-filter-pictures",
             Self::NativeFilterVideo => "native-filter-video",
             Self::NativeKitText => "native-kit-text",
@@ -4234,6 +4268,7 @@ impl MessageId {
             Self::NoticesStepDone => "noticesStep-done",
             Self::NoticesStepIntro => "noticesStep-intro",
             Self::NoticesStepLater => "noticesStep-later",
+            Self::NoticesStepLaterBackground => "noticesStep-laterBackground",
             Self::NoticesStepNotNow => "noticesStep-notNow",
             Self::NoticesStepTitle => "noticesStep-title",
             Self::NotificationsAllow => "notifications-allow",
@@ -4475,6 +4510,7 @@ impl MessageId {
             Self::RecoveryKeyHiddenWhileSaving => "recoveryKey-hiddenWhileSaving",
             Self::RecoveryKeyInstructions => "recoveryKey-instructions",
             Self::RecoveryKeyKeyboardHint => "recoveryKey-keyboardHint",
+            Self::RecoveryKeyKitCloudWarning => "recoveryKey-kitCloudWarning",
             Self::RecoveryKeyKitSaved => "recoveryKey-kitSaved",
             Self::RecoveryKeyLabel => "recoveryKey-label",
             Self::RecoveryKeyLeaveOffered => "recoveryKey-leave-offered",
@@ -4552,6 +4588,7 @@ impl MessageId {
             Self::SecurityAutoLockShorter => "security-autoLock-shorter",
             Self::SecurityAutoLockTitle => "security-autoLock-title",
             Self::SecurityBackupBody => "security-backup-body",
+            Self::SecurityBackupCloudWarning => "security-backup-cloudWarning",
             Self::SecurityBackupLeaveVideosOut => "security-backup-leaveVideosOut",
             Self::SecurityBackupLeaveVideosOutHelp => "security-backup-leaveVideosOutHelp",
             Self::SecurityBackupSave => "security-backup-save",
@@ -5221,6 +5258,7 @@ impl MessageId {
             "native.filter.video" => Some(Self::NativeFilterVideo),
             "native.filter.pictures" => Some(Self::NativeFilterPictures),
             "native.filter.pdfAndPictures" => Some(Self::NativeFilterPdfAndPictures),
+            "native.filter.pdfPicturesAndVideos" => Some(Self::NativeFilterPdfPicturesAndVideos),
             "native.kit.text" => Some(Self::NativeKitText),
             "native.recovery.keep" => Some(Self::NativeRecoveryKeep),
             "native.recovery.replace" => Some(Self::NativeRecoveryReplace),
@@ -5311,6 +5349,7 @@ impl MessageId {
             "recoveryKey.hiddenWhileSaving" => Some(Self::RecoveryKeyHiddenWhileSaving),
             "recoveryKey.instructions" => Some(Self::RecoveryKeyInstructions),
             "recoveryKey.keyboardHint" => Some(Self::RecoveryKeyKeyboardHint),
+            "recoveryKey.kitCloudWarning" => Some(Self::RecoveryKeyKitCloudWarning),
             "recoveryKey.kitSaved" => Some(Self::RecoveryKeyKitSaved),
             "recoveryKey.label" => Some(Self::RecoveryKeyLabel),
             "recoveryKey.leave.offered" => Some(Self::RecoveryKeyLeaveOffered),
@@ -5381,6 +5420,7 @@ impl MessageId {
             "security.autoLock.shorter" => Some(Self::SecurityAutoLockShorter),
             "security.autoLock.title" => Some(Self::SecurityAutoLockTitle),
             "security.backup.body" => Some(Self::SecurityBackupBody),
+            "security.backup.cloudWarning" => Some(Self::SecurityBackupCloudWarning),
             "security.backup.save" => Some(Self::SecurityBackupSave),
             "security.backup.title" => Some(Self::SecurityBackupTitle),
             "security.copies.body" => Some(Self::SecurityCopiesBody),
@@ -6166,6 +6206,7 @@ impl MessageId {
             "noticesStep.title" => Some(Self::NoticesStepTitle),
             "noticesStep.intro" => Some(Self::NoticesStepIntro),
             "noticesStep.later" => Some(Self::NoticesStepLater),
+            "noticesStep.laterBackground" => Some(Self::NoticesStepLaterBackground),
             "noticesStep.done" => Some(Self::NoticesStepDone),
             "noticesStep.notNow" => Some(Self::NoticesStepNotNow),
             "ai.settings.subtitle" => Some(Self::AiSettingsSubtitle),
@@ -6227,6 +6268,12 @@ impl MessageId {
             "reader.android.zoomOut" => Some(Self::ReaderAndroidZoomOut),
             "interface.video.name" => Some(Self::InterfaceVideoName),
             "interface.RecordDialog.recordAVideo" => Some(Self::InterfaceRecordDialogRecordAVideo),
+            "interface.RecordDialog.recordAVideoFor" => {
+                Some(Self::InterfaceRecordDialogRecordAVideoFor)
+            }
+            "interface.RecordDialog.recordingSettings" => {
+                Some(Self::InterfaceRecordDialogRecordingSettings)
+            }
             "interface.RecordDialog.unavailable" => Some(Self::InterfaceRecordDialogUnavailable),
             "interface.RecordDialog.why" => Some(Self::InterfaceRecordDialogWhy),
             "interface.RecordDialog.startingTheCameraAndMicrophone" => {
@@ -6264,6 +6311,11 @@ impl MessageId {
             "interface.RecordDialog.deviceFellBack" => {
                 Some(Self::InterfaceRecordDialogDeviceFellBack)
             }
+            "interface.RecordDialog.deviceNotSwitched" => {
+                Some(Self::InterfaceRecordDialogDeviceNotSwitched)
+            }
+            "interface.RecordDialog.saySomething" => Some(Self::InterfaceRecordDialogSaySomething),
+            "interface.RecordDialog.settingsNote" => Some(Self::InterfaceRecordDialogSettingsNote),
             "interface.RecordDialog.testMicrophone" => {
                 Some(Self::InterfaceRecordDialogTestMicrophone)
             }
@@ -6576,6 +6628,7 @@ impl MessageId {
             "notifications.testOff" => Some(Self::NotificationsTestOff),
             "preferences.moreAutomatic" => Some(Self::PreferencesMoreAutomatic),
             "preferences.moreBackground" => Some(Self::PreferencesMoreBackground),
+            "native.backupExclusionFailed" => Some(Self::NativeBackupExclusionFailed),
             "interface.AddVideo.add" => Some(Self::InterfaceAddVideoAdd),
             "interface.AddVideo.hint" => Some(Self::InterfaceAddVideoHint),
             "interface.AddVideo.checking" => Some(Self::InterfaceAddVideoChecking),
@@ -6587,6 +6640,7 @@ impl MessageId {
             "interface.AddVideo.duplicate" => Some(Self::InterfaceAddVideoDuplicate),
             "interface.AddVideo.cancelled" => Some(Self::InterfaceAddVideoCancelled),
             "interface.AddVideo.notVideo" => Some(Self::InterfaceAddVideoNotVideo),
+            "interface.AddVideo.videoAlone" => Some(Self::InterfaceAddVideoVideoAlone),
             "interface.AddVideo.hevc" => Some(Self::InterfaceAddVideoHevc),
             "interface.AddVideo.videoCodec" => Some(Self::InterfaceAddVideoVideoCodec),
             "interface.AddVideo.audioCodec" => Some(Self::InterfaceAddVideoAudioCodec),

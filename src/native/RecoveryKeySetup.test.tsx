@@ -199,6 +199,27 @@ describe("RecoveryKeySetup", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("says beside Save recovery kit that the file is not encrypted and that a folder that syncs to the cloud uploads it, and only on the key step", async () => {
+    const user = userEvent.setup();
+    setUp({ initialKey: KEY });
+    const warning = screen.getByText(
+      "This file is not encrypted. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it, so save it somewhere that does not sync.",
+    );
+    // Before the buttons, in the same dialog, so it is read before Save is reached.
+    const save = screen.getByRole("button", { name: "Save recovery kit…" });
+    expect(
+      warning.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toContainElement(warning);
+    // It is plain text: the app looks at no path and shows nothing different per folder.
+    await user.click(save);
+    expect(warning).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Next: check your recovery key" }),
+    );
+    expect(screen.queryByText(/syncs to the cloud/)).not.toBeInTheDocument();
+  });
+
   it("saves the kit and says so", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ initialKey: KEY });

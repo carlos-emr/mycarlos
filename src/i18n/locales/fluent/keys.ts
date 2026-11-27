@@ -368,6 +368,7 @@ export const MESSAGE_KEYS = [
   "native.filter.video",
   "native.filter.pictures",
   "native.filter.pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -458,6 +459,7 @@ export const MESSAGE_KEYS = [
   "recoveryKey.hiddenWhileSaving",
   "recoveryKey.instructions",
   "recoveryKey.keyboardHint",
+  "recoveryKey.kitCloudWarning",
   "recoveryKey.kitSaved",
   "recoveryKey.label",
   "recoveryKey.leave.offered",
@@ -528,6 +530,7 @@ export const MESSAGE_KEYS = [
   "security.autoLock.shorter",
   "security.autoLock.title",
   "security.backup.body",
+  "security.backup.cloudWarning",
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
@@ -1083,6 +1086,7 @@ export const MESSAGE_KEYS = [
   "noticesStep.title",
   "noticesStep.intro",
   "noticesStep.later",
+  "noticesStep.laterBackground",
   "noticesStep.done",
   "noticesStep.notNow",
   "ai.settings.subtitle",
@@ -1144,6 +1148,8 @@ export const MESSAGE_KEYS = [
   "reader.android.zoomOut",
   "interface.video.name",
   "interface.RecordDialog.recordAVideo",
+  "interface.RecordDialog.recordAVideoFor",
+  "interface.RecordDialog.recordingSettings",
   "interface.RecordDialog.unavailable",
   "interface.RecordDialog.why",
   "interface.RecordDialog.startingTheCameraAndMicrophone",
@@ -1159,6 +1165,9 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.unnamedMicrophone",
   "interface.RecordDialog.systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack",
+  "interface.RecordDialog.deviceNotSwitched",
+  "interface.RecordDialog.saySomething",
+  "interface.RecordDialog.settingsNote",
   "interface.RecordDialog.testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone",
   "interface.RecordDialog.microphoneLevel",
@@ -1393,6 +1402,7 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "native.backupExclusionFailed",
   "interface.AddVideo.add",
   "interface.AddVideo.hint",
   "interface.AddVideo.checking",
@@ -1404,6 +1414,7 @@ export const MESSAGE_KEYS = [
   "interface.AddVideo.duplicate",
   "interface.AddVideo.cancelled",
   "interface.AddVideo.notVideo",
+  "interface.AddVideo.videoAlone",
   "interface.AddVideo.hevc",
   "interface.AddVideo.videoCodec",
   "interface.AddVideo.audioCodec",
@@ -1892,6 +1903,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.filter.video": "native-filter-video",
   "native.filter.pictures": "native-filter-pictures",
   "native.filter.pdfAndPictures": "native-filter-pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos": "native-filter-pdfPicturesAndVideos",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -1982,6 +1994,7 @@ const FLUENT_IDS_BY_KEY = {
   "recoveryKey.hiddenWhileSaving": "recoveryKey-hiddenWhileSaving",
   "recoveryKey.instructions": "recoveryKey-instructions",
   "recoveryKey.keyboardHint": "recoveryKey-keyboardHint",
+  "recoveryKey.kitCloudWarning": "recoveryKey-kitCloudWarning",
   "recoveryKey.kitSaved": "recoveryKey-kitSaved",
   "recoveryKey.label": "recoveryKey-label",
   "recoveryKey.leave.offered": "recoveryKey-leave-offered",
@@ -2052,6 +2065,7 @@ const FLUENT_IDS_BY_KEY = {
   "security.autoLock.shorter": "security-autoLock-shorter",
   "security.autoLock.title": "security-autoLock-title",
   "security.backup.body": "security-backup-body",
+  "security.backup.cloudWarning": "security-backup-cloudWarning",
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
@@ -2727,6 +2741,7 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.title": "noticesStep-title",
   "noticesStep.intro": "noticesStep-intro",
   "noticesStep.later": "noticesStep-later",
+  "noticesStep.laterBackground": "noticesStep-laterBackground",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "ai.settings.subtitle": "ai-settings-subtitle",
@@ -2788,6 +2803,10 @@ const FLUENT_IDS_BY_KEY = {
   "reader.android.zoomOut": "reader-android-zoomOut",
   "interface.video.name": "interface-video-name",
   "interface.RecordDialog.recordAVideo": "interface-RecordDialog-recordAVideo",
+  "interface.RecordDialog.recordAVideoFor":
+    "interface-RecordDialog-recordAVideoFor",
+  "interface.RecordDialog.recordingSettings":
+    "interface-RecordDialog-recordingSettings",
   "interface.RecordDialog.unavailable": "interface-RecordDialog-unavailable",
   "interface.RecordDialog.why": "interface-RecordDialog-why",
   "interface.RecordDialog.startingTheCameraAndMicrophone":
@@ -2814,6 +2833,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack":
     "interface-RecordDialog-deviceFellBack",
+  "interface.RecordDialog.deviceNotSwitched":
+    "interface-RecordDialog-deviceNotSwitched",
+  "interface.RecordDialog.saySomething": "interface-RecordDialog-saySomething",
+  "interface.RecordDialog.settingsNote": "interface-RecordDialog-settingsNote",
   "interface.RecordDialog.testMicrophone":
     "interface-RecordDialog-testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone":
@@ -3087,6 +3110,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "native.backupExclusionFailed": "native-backupExclusionFailed",
   "interface.AddVideo.add": "interface-AddVideo-add",
   "interface.AddVideo.hint": "interface-AddVideo-hint",
   "interface.AddVideo.checking": "interface-AddVideo-checking",
@@ -3098,6 +3122,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AddVideo.duplicate": "interface-AddVideo-duplicate",
   "interface.AddVideo.cancelled": "interface-AddVideo-cancelled",
   "interface.AddVideo.notVideo": "interface-AddVideo-notVideo",
+  "interface.AddVideo.videoAlone": "interface-AddVideo-videoAlone",
   "interface.AddVideo.hevc": "interface-AddVideo-hevc",
   "interface.AddVideo.videoCodec": "interface-AddVideo-videoCodec",
   "interface.AddVideo.audioCodec": "interface-AddVideo-audioCodec",
@@ -3542,6 +3567,7 @@ export interface MessageArgsByKey {
   "native.filter.video": undefined;
   "native.filter.pictures": undefined;
   "native.filter.pdfAndPictures": undefined;
+  "native.filter.pdfPicturesAndVideos": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;
@@ -3639,6 +3665,7 @@ export interface MessageArgsByKey {
   "recoveryKey.hiddenWhileSaving": undefined;
   "recoveryKey.instructions": undefined;
   "recoveryKey.keyboardHint": undefined;
+  "recoveryKey.kitCloudWarning": undefined;
   "recoveryKey.kitSaved": undefined;
   "recoveryKey.label": { label: FluentArgument };
   "recoveryKey.leave.offered": undefined;
@@ -3709,6 +3736,7 @@ export interface MessageArgsByKey {
   "security.autoLock.shorter": undefined;
   "security.autoLock.title": undefined;
   "security.backup.body": undefined;
+  "security.backup.cloudWarning": undefined;
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
@@ -4317,6 +4345,11 @@ export interface MessageArgsByKey {
     preferences: FluentArgument;
     settings: FluentArgument;
   };
+  "noticesStep.laterBackground": {
+    background: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
   "ai.settings.subtitle": undefined;
@@ -4382,6 +4415,8 @@ export interface MessageArgsByKey {
   "reader.android.zoomOut": undefined;
   "interface.video.name": { date: FluentArgument; time: FluentArgument };
   "interface.RecordDialog.recordAVideo": undefined;
+  "interface.RecordDialog.recordAVideoFor": { name: FluentArgument };
+  "interface.RecordDialog.recordingSettings": undefined;
   "interface.RecordDialog.unavailable": undefined;
   "interface.RecordDialog.why": undefined;
   "interface.RecordDialog.startingTheCameraAndMicrophone": undefined;
@@ -4397,6 +4432,9 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.unnamedMicrophone": { number: FluentArgument };
   "interface.RecordDialog.systemDefaultDevice": undefined;
   "interface.RecordDialog.deviceFellBack": undefined;
+  "interface.RecordDialog.deviceNotSwitched": undefined;
+  "interface.RecordDialog.saySomething": undefined;
+  "interface.RecordDialog.settingsNote": undefined;
   "interface.RecordDialog.testMicrophone": undefined;
   "interface.RecordDialog.stopTestingMicrophone": undefined;
   "interface.RecordDialog.microphoneLevel": undefined;
@@ -4637,6 +4675,7 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "native.backupExclusionFailed": undefined;
   "interface.AddVideo.add": undefined;
   "interface.AddVideo.hint": undefined;
   "interface.AddVideo.checking": undefined;
@@ -4648,6 +4687,7 @@ export interface MessageArgsByKey {
   "interface.AddVideo.duplicate": undefined;
   "interface.AddVideo.cancelled": undefined;
   "interface.AddVideo.notVideo": undefined;
+  "interface.AddVideo.videoAlone": undefined;
   "interface.AddVideo.hevc": undefined;
   "interface.AddVideo.videoCodec": undefined;
   "interface.AddVideo.audioCodec": undefined;
