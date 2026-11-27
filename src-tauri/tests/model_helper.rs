@@ -60,7 +60,7 @@ fn a_start_that_expects_the_verified_model_refuses_the_stub() {
     );
     assert_eq!(
         runner.start(),
-        Err("Start(\"not the verified model\")".to_owned())
+        Err("start: not the verified model".to_owned())
     );
     assert!(!runner.is_running());
 }
@@ -98,7 +98,7 @@ fn a_cancel_stops_the_request_in_flight_and_the_helper_within_seconds() {
     std::thread::sleep(Duration::from_millis(500));
     let cancelled_at = Instant::now();
     runner.cancel();
-    assert_eq!(asked.join().unwrap(), Err("Cancelled".to_owned()));
+    assert_eq!(asked.join().unwrap(), Err("cancelled".to_owned()));
     assert!(cancelled_at.elapsed() < Duration::from_secs(5));
     assert!(!runner.is_running());
     // The next request starts it again.
@@ -120,7 +120,7 @@ fn a_lock_stops_the_helper_while_it_works() {
     };
     std::thread::sleep(Duration::from_millis(500));
     runner.lock();
-    assert_eq!(asked.join().unwrap(), Err("Cancelled".to_owned()));
+    assert_eq!(asked.join().unwrap(), Err("cancelled".to_owned()));
     assert!(!runner.is_running());
 }
 
@@ -129,7 +129,7 @@ fn an_answer_that_takes_too_long_stops_the_helper() {
     let runner = StubRunner::new(executable(), 0, Duration::from_millis(800), None);
     runner.start().unwrap();
     let started = Instant::now();
-    assert_eq!(runner.probe("hang"), Err("Timeout".to_owned()));
+    assert_eq!(runner.probe("hang"), Err("timeout".to_owned()));
     assert!(started.elapsed() < Duration::from_secs(5));
     assert!(!runner.is_running());
 }
