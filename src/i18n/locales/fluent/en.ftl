@@ -468,6 +468,8 @@ interface-UnlockPdfDialog-unlocking = Unlocking…
 
 interface-VaultApp-chooseFilesToImport = Choose files to import
 
+interface-VaultLibrary-picturesNote = Place, time and camera details are removed from pictures you add.
+
 interface-VaultApp-finishingTheTransfer = Finishing the transfer
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Lock now and cancel the transfer
@@ -748,7 +750,7 @@ native-error-20 = Choose a less predictable passphrase that is not based on comm
 
 native-error-21 = Choose no more than 100 files in one import.
 
-native-error-22 = One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.
+native-error-22 = One of the files is not a PDF document or a JPEG or PNG picture, so nothing was added. myCarlos keeps PDF documents and JPEG and PNG pictures. If it is an iPhone picture (HEIC), share it as a JPEG instead.
 
 native-error-23 = This document is locked with a password. Enter the document password from your patient portal.
 
@@ -798,7 +800,7 @@ native-error-45 = myCarlos could not open that file. If it is in a cloud or shar
 
 native-error-46 = A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.
 
-native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.
+native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG or PNG picture (not an animated one) of at most 25 MB, 8,192 pixels on each side and 50 million pixels in all (24 million on a phone). Nothing was changed.
 
 native-error-48 = The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.
 
@@ -807,6 +809,13 @@ native-error-speedTest = The speed test stopped before it finished. Nothing was 
 native-filter-backups = myCarlos backups
 
 native-filter-pdf = PDF documents
+
+native-filter-video = Videos (MP4 or MOV)
+native-filter-pictures = JPEG and PNG pictures
+
+native-filter-pdfAndPictures = PDF documents and JPEG and PNG pictures
+
+native-filter-pdfPicturesAndVideos = PDF documents, JPEG and PNG pictures and videos (MP4 or MOV)
 
 native-kit-text =
     myCarlos recovery kit
@@ -1035,6 +1044,8 @@ recoveryKey-reason-legend = Why are you replacing it?
 
 recoveryKey-reason-routine = I just want a new key: its kit is safe
 
+recoveryKey-kitCloudWarning = This file is not encrypted. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it, so save it somewhere that does not sync.
+
 recoveryKey-saveKit = Save recovery kit…
 
 recoveryKey-threeMisses = That did not match three times. Look at your recovery key again, then check it.
@@ -1170,6 +1181,8 @@ security-autoLock-shorter = Shorter delay
 security-autoLock-title = Lock automatically
 
 security-backup-body = One file holding your whole vault, still encrypted. Keep it somewhere other than this device, such as a USB drive. It opens with the passphrase or recovery key you have when you save it, and keeps opening with them even after you change them here. To restore one, lock the vault and choose Restore from a backup.
+
+security-backup-cloudWarning = This file is encrypted, but it shows how many documents it holds and how large each one is. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it.
 
 security-backup-save = Save encrypted backup…
 
@@ -1676,6 +1689,8 @@ interface-history-event-portalLinkStarted = Clinic link started
 
 interface-history-event-portalLinked = Clinic linked
 
+interface-history-event-portalLinkRemoved = Clinic link removed
+
 interface-history-event-profileCreated = Patient profile added
 
 interface-history-event-profileDetailsChanged = Personal details changed
@@ -1838,6 +1853,21 @@ portal-tryAgainFor = Try again for { $clinic }
 
 portal-linkAnother = Link another clinic
 
+portal-removeLink = Remove this link
+
+portal-removeTitle = Remove this link?
+
+portal-removeBody = { $clinic }, device “{ $device }”. This device stops being linked here, and its saved device keys are erased from this device. Earlier backups of your vault still hold those keys until they are replaced. Your clinic may still list this device.
+
+portal-removeConfirm = Remove link
+
+portal-removeKept = Documents from this clinic are saved in your vault, so this link stays.
+
+portal-removeNotices = Document notices are on for this clinic. Turn them off first, then remove the link.
+
+portal-removed = Link removed.
+
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words
@@ -1860,11 +1890,11 @@ aiHelper-resultLabelInfo = What “AI draft” means
 
 ai-label-settingsTitle = Warning on AI answers
 
-ai-label-settingsBody = Each AI answer says it was written by AI and may be wrong. After “Don't show this again”, a short “AI draft” tag stands in for the full sentence. The tag is never removed. The choice is kept on this device, and starts over if the model or the tool changes.
+ai-label-settingsBody = AI answers can be wrong. Each one says so. If you choose “Don't show this again” on an answer, later answers show a short “AI draft” label instead of the full sentence.
 
 ai-label-settingsShowFull = Show the full warning again
 
-ai-label-settingsFullShown = The full warning is shown on every AI answer.
+ai-label-settingsFullBack = The full warning is back on every AI answer.
 
 ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
 
@@ -2358,22 +2388,26 @@ interface-AiHelperNotice-continue = Continue
 
 interface-AnonymizePreview-footerNote = The file will end with this line:
 
-notifications-title = Notices after document checks
-notifications-help = When a clinic document is saved after a manual check, Windows can show a generic notice. Open myCarlos normally to read it. Documents are not checked automatically.
-notifications-allow = Allow document arrival notices
+notifications-title = Checking for documents
+notifications-allow = Show a notice when a document arrives
 notifications-blocked = Windows is blocking notifications. Review its notification settings.
 notifications-unknown = Windows notification permission could not be checked.
-notifications-error = This setting could not be saved. Notices are off for this session.
-notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
-notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
+notifications-error = This setting could not be saved. Notices and automatic checks are off for this session.
+notifications-unavailable = These settings are unavailable right now. Open myCarlos normally to check your documents.
+notifications-helpAutomatic = myCarlos can check for new clinic documents by itself while it is open and unlocked. New documents then appear in your library.
+notifications-notYetAsked = Windows has not shown a myCarlos notice yet, so it has no setting for it. Notices are allowed until you turn them off in Windows settings.
+notifications-blockedMac = macOS is not allowing notifications from myCarlos. Turn them on in System Settings, under Notifications.
+notifications-notYetAskedMac = macOS has not been asked yet. It will ask when you turn on notices.
 notifications-autoAllow = Check for clinic documents automatically while unlocked
-notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
-notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
+notifications-autoConsent = Turning this on lets myCarlos contact your clinic's portal on a schedule, at least two minutes apart, only while it is open and unlocked. Turn it off to stop.
+notifications-noticesHelp = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
+notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. New documents appear in your library. Locking the vault or closing the app stops further checks. Notices are a separate choice and are not needed for this.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Connected clinics and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
-noticesStep-title = Notices from your clinic
-noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.
+noticesStep-title = Documents from your clinic
+noticesStep-intro = Your clinic is linked. myCarlos can check for new documents for you, and show a notice when one arrives on a computer that can. Nothing is turned on unless you tick it.
 noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-laterBackground = You can change the background choices any time in { $settings }, under { $preferences }: { $background }.
 noticesStep-done = Done
 noticesStep-notNow = Not now
 
@@ -2472,6 +2506,8 @@ reader-android-zoomOut = Zoom out
 
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Record a video
+interface-RecordDialog-recordAVideoFor = Record a video for { $name }
+interface-RecordDialog-recordingSettings = Recording settings
 interface-RecordDialog-unavailable = Video recording isn't available on this device.
 interface-RecordDialog-why = Why?
 interface-RecordDialog-startingTheCameraAndMicrophone = Starting the camera and microphone…
@@ -2480,6 +2516,19 @@ interface-RecordDialog-yourPhoneAsksOnce = Your phone asks once whether myCarlos
 interface-RecordDialog-theCameraAndMicrophoneAreOn = The camera and microphone are on only while you record. They turn off when you stop, close this window, or myCarlos locks.
 interface-RecordDialog-theCameraAndMicrophoneAreOnNow = The camera and microphone are on, but nothing is recorded until you choose Start recording.
 interface-RecordDialog-pictureQuality = Picture quality
+interface-RecordDialog-cameraAndMicrophone = Camera and microphone
+interface-RecordDialog-camera = Camera
+interface-RecordDialog-microphone = Microphone
+interface-RecordDialog-unnamedCamera = Camera { $number }
+interface-RecordDialog-unnamedMicrophone = Microphone { $number }
+interface-RecordDialog-systemDefaultDevice = System default
+interface-RecordDialog-deviceFellBack = The camera or microphone you used last is not connected, so the system's default is in use.
+interface-RecordDialog-deviceNotSwitched = The camera or microphone you chose could not be opened, so the one in use is still on.
+interface-RecordDialog-saySomething = Say something: the bar should move.
+interface-RecordDialog-settingsNote = The video is saved encrypted. myCarlos remembers these choices on this device.
+interface-RecordDialog-testMicrophone = Test microphone
+interface-RecordDialog-stopTestingMicrophone = Stop testing
+interface-RecordDialog-microphoneLevel = Microphone level
 interface-RecordDialog-standard = Standard (720p)
 interface-RecordDialog-high = High (1080p)
 interface-RecordDialog-aboutStandardPerHour = About 1.1 GB an hour
@@ -2509,7 +2558,18 @@ interface-RecordDialog-videoSavedSlow = Recording stopped because the video coul
 interface-VideoViewer-video = Video
 interface-VideoViewer-player = Video player: { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = This video could not be played.
-interface-VideoViewer-keys = Space plays or pauses. Left and right arrows skip { $seconds } seconds. Up and down change the volume. M mutes.
+interface-VideoViewer-controls = Player controls
+interface-VideoViewer-playPause = Play/Pause (k)
+interface-VideoViewer-back = Back { $seconds } s (←)
+interface-VideoViewer-forward = Forward { $seconds } s (→)
+interface-VideoViewer-backBig = Back { $seconds } s (j)
+interface-VideoViewer-forwardBig = Forward { $seconds } s (l)
+interface-VideoViewer-volumeUp = Volume up (↑)
+interface-VideoViewer-volumeDown = Volume down (↓)
+interface-VideoViewer-mute = Mute (m)
+interface-VideoViewer-unmute = Unmute (m)
+interface-VideoViewer-start = To the start (Home)
+interface-VideoViewer-end = To the end (End)
 interface-VideoViewer-playVideo = Play video
 interface-VideoHelp-title = Why can't I record video here?
 interface-VideoHelp-engine = Recording a video needs this device's built-in web engine to record MP4 video with sound. This device's engine does not offer that.
@@ -2668,7 +2728,7 @@ handover-import-opening = Opening…
 
 handover-import-error-typo = That key does not look right. Check it against what you were given.
 
-handover-import-error-recovery = That is a recovery key, not the key for this file. Ask for the key made for the file.
+handover-import-error-recovery = That looks like a recovery key, not the key for this file. Check the key you were given for the file, and check for a typo. If you were not given one, ask for the key made for the file.
 
 handover-import-error-wrong = That does not open this file.
 
@@ -2872,7 +2932,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+notifications-autoSummary = myCarlos collects new clinic documents on its own only while it is open and unlocked. While it is locked in the background, it can only tell you that something is waiting.
 
 background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
 
@@ -2887,8 +2947,57 @@ native-notice-test = This is a test notice from myCarlos.
 notifications-testButton = Show a test notice
 
 notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+notifications-testSentMac = Test notice sent. If you do not see it, check System Settings, under Notifications.
 
 notifications-testWait = Wait a few seconds, then try again.
 
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
+
+native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.
+
+interface-AddVideo-add = Add a video
+
+interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and the device's name and model it carries are removed first.
+
+interface-AddVideo-checking = Checking the video…
+
+interface-AddVideo-storing = Adding the video: { $percent }%
+
+interface-AddVideo-progressLabel = Adding the video
+
+interface-AddVideo-cancel = Cancel
+
+interface-AddVideo-cancelling = Cancelling…
+
+interface-AddVideo-added = The video was added.
+
+interface-AddVideo-duplicate = That video is already here. Nothing was added.
+
+interface-AddVideo-cancelled = Cancelled. Nothing was added.
+
+interface-AddVideo-notVideo = This file is not a video myCarlos can add. Choose an MP4 or MOV video.
+
+interface-AddVideo-videoAlone = A video is added on its own. Choose one video, or choose documents and pictures, but not both together. Nothing was added.
+
+interface-AddVideo-hevc = This video uses H.265 (HEVC), which many computers cannot play. Save it as an H.264 MP4 and add it again.
+
+interface-AddVideo-videoCodec = This video uses a picture format myCarlos cannot play. Save it as an H.264 MP4 and add it again.
+
+interface-AddVideo-audioCodec = The sound of this video uses a format myCarlos cannot play. Save it with AAC sound and add it again.
+
+interface-AddVideo-noVideo = This file has no picture, so it is not a video. Choose an MP4 or MOV video.
+
+interface-AddVideo-tooManyTracks = This video has more pictures or sounds than myCarlos can add. Save a simple copy with one picture and one sound, and add it again.
+
+interface-AddVideo-external = Part of this video is stored outside the file, so it cannot be added. Save a complete copy and add it again.
+
+interface-AddVideo-fragmented = This video is in a streaming format. Save it as an ordinary MP4 and add it again.
+
+interface-AddVideo-tooBig = The picture of this video is larger than myCarlos can add. Save a smaller copy and add it again.
+
+interface-AddVideo-tooLarge = This video is larger than myCarlos can add on this device (2 GB on a computer, 1 GB on a phone). Save a smaller copy and add it again.
+
+interface-AddVideo-damaged = This video is damaged or cut short, so it cannot be added. Copy it again from where it came from and try again.
+
+interface-AddVideo-adding = Adding the video…

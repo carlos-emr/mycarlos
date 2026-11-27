@@ -325,6 +325,9 @@ pub(crate) fn validate_stored(value: &StoredSummary) -> Result<(), Error> {
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     fn model() -> ModelInfo {

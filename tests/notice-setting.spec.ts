@@ -11,7 +11,7 @@ import {
 } from "./support/noticeFake";
 import { fakeVaultWith, myRecords, sidebar } from "./support/vaultFake";
 
-// Settings > Preferences > Notices after document checks: the Windows
+// Settings > Preferences > Checking for documents: the Windows
 // document-arrival notices and the automatic checks while unlocked (#193).
 // Until now only the unit tests covered them: the e2e vault fake says they
 // are unsupported, so the row never showed. The native side is faked
@@ -51,7 +51,7 @@ test("is not shown where the notices are not supported", async ({ page }) => {
   await expectOnlyFakedCommands(page);
 });
 
-test("allowing the notices, then the automatic checks, saves each choice", async ({
+test("the automatic checks and the notices are two choices, each saved on its own", async ({
   page,
 }) => {
   const row = await preferences(page, {});
@@ -59,19 +59,22 @@ test("allowing the notices, then the automatic checks, saves each choice", async
   const notices = box(row, "notifications.allow");
   const checks = box(row, "notifications.autoAllow");
   await expect(notices).not.toBeChecked();
-  // The automatic checks need the notices first.
-  await expect(checks).toBeDisabled();
+  await expect(checks).not.toBeChecked();
+  // The automatic check does not wait for the notices, and says what it contacts.
+  await expect(checks).toBeEnabled();
+  await expect(row.getByText(en("notifications.autoConsent"))).toBeVisible();
+  await checks.check();
+  await expect(checks).toBeChecked();
+  await expect(notices).not.toBeChecked();
   await notices.check();
   await expect(notices).toBeChecked();
-  await expect(checks).toBeEnabled();
-  await checks.check();
   await expect(checks).toBeChecked();
   const saved = (await noticeCalls(page)).filter(
     (call) => call.command !== NOTICE_COMMANDS.status,
   );
   expect(saved).toEqual([
-    { command: NOTICE_COMMANDS.setNotices, args: { enabled: true } },
     { command: NOTICE_COMMANDS.setChecks, args: { enabled: true } },
+    { command: NOTICE_COMMANDS.setNotices, args: { enabled: true } },
   ]);
   // The language goes along with each status, for a later notice's words.
   const asked = (await noticeCalls(page)).find(
@@ -82,7 +85,7 @@ test("allowing the notices, then the automatic checks, saves each choice", async
   await expectOnlyFakedCommands(page);
 });
 
-test("turning the notices off turns the automatic checks off too", async ({
+test("turning the notices off leaves the automatic checks on", async ({
   page,
 }) => {
   const row = await preferences(page, {
@@ -92,26 +95,37 @@ test("turning the notices off turns the automatic checks off too", async ({
   const checks = box(row, "notifications.autoAllow");
   await expect(checks).toBeChecked();
   await box(row, "notifications.allow").uncheck();
-  await expect(checks).not.toBeChecked();
-  await expect(checks).toBeDisabled();
+  await expect(checks).toBeChecked();
+  await expect(checks).toBeEnabled();
+});
+
+test("where no notice can be shown, only the automatic check is offered", async ({
+  page,
+}) => {
+  const row = await preferences(page, {
+    noticesSupported: false,
+    permission: "unavailable",
+  });
+  await expect(box(row, "notifications.autoAllow")).toBeEnabled();
+  await expect(row.getByRole("checkbox")).toHaveCount(1);
+  await expect(testButton(row)).toHaveCount(0);
+  await expectNoAxeViolations(page, "Preferences without notices");
 });
 
 for (const [permission, key] of [
   ["blocked", "notifications.blocked"],
   ["unknown", "notifications.unknown"],
+  ["not_yet_asked", "notifications.notYetAsked"],
 ] as const) {
   test(`a ${permission} Windows permission is said, and read with each box`, async ({
     page,
   }) => {
     const row = await preferences(page, { permission });
     await expect(row.getByText(en(key))).toBeVisible();
-    for (const each of [
-      "notifications.allow",
-      "notifications.autoAllow",
-    ] as const)
-      await expect(box(row, each)).toHaveAccessibleDescription(
-        new RegExp(en(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-      );
+    // The permission line belongs to the notice box (the automatic check does not need it).
+    await expect(box(row, "notifications.allow")).toHaveAccessibleDescription(
+      new RegExp(en(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   });
 }
 

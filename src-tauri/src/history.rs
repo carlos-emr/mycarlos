@@ -75,6 +75,10 @@ pub enum HistoryEvent {
     SetAside,
     PortalLinkStarted,
     PortalLinked,
+    /// The patient removed a clinic link that never delivered a document (#160). Its private
+    /// keys, remembered refusals, waiting reading aids and push registration went with it. No
+    /// clinic is told: the clinic may still list the device.
+    PortalLinkRemoved,
     DeviceApprovalRequested,
     DeviceApprovalVerified,
     DeviceApprovalStatusChanged,
@@ -104,15 +108,18 @@ pub enum HistoryEvent {
 }
 
 /// A folder as it was named at the time of the event.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FolderAtTheTime {
     pub id: Uuid,
     pub name: String,
 }
+redact_debug!(FolderAtTheTime);
 
 /// One event. The field order is the canonical order: do not reorder.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HistoryEntry {
     pub seq: u64,
@@ -174,6 +181,7 @@ pub struct HistoryEntry {
     /// The hash of the entry before this one.
     pub prev: String,
 }
+redact_debug!(HistoryEntry);
 
 impl HistoryEntry {
     /// An event to append, before it has its place in the chain.

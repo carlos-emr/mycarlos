@@ -38,7 +38,11 @@ async function arrive(
     birthDate?: string;
     previousFullNames?: string[];
   } = {},
-  words: { linkPerson?: string; matchingPeople?: string[] } = {},
+  words: {
+    linkPerson?: string;
+    linkedToHidden?: boolean;
+    matchingPeople?: string[];
+  } = {},
 ) {
   await fakeVaultWith(page, {
     start: "unlocked",
@@ -239,4 +243,21 @@ test("No promise that the next documents file themselves when the clinic's link 
   await expect(dialog).toContainText(en("fileUnder.notOnItsOwn"));
   await expect(dialog).not.toContainText("on their own");
   await expect(dialog.getByRole("checkbox")).toBeVisible();
+});
+
+test("A clinic link tied to a hidden person also makes no promise, and the screen is told only that it is hidden", async ({
+  page,
+}) => {
+  const details = await arrive(page, {}, { linkedToHidden: true });
+  await details
+    .getByRole("button", { name: en("fileUnder.button"), exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: en("fileUnder.title", { document: FAKE_CLINIC_DOCUMENT }),
+  });
+  await dialog
+    .getByLabel(en("fileUnder.person"))
+    .selectOption({ label: CHILD });
+  await expect(dialog).toContainText(en("fileUnder.notOnItsOwn"));
+  await expect(dialog).not.toContainText("on their own");
 });

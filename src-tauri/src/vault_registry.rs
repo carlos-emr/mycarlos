@@ -62,6 +62,30 @@ pub(crate) const NORMALISATION_VERSION: u32 = 1;
 /// attempts (this many, the real ones and decoys), so the timing of an unlock never says how many
 /// vaults share a name. A tampered file with more is cut to this many.
 pub(crate) const DUPLICATE_NAME_CAP: usize = 4;
+/// The work of one unlock attempt by name, from [`Registry::plan_for`]: the vaults to try the
+/// passphrase against, in registry order, and how many decoy derivations to add so the attempt does
+/// the same number whatever the name matched. `unlock_plan::run_plan` carries it out.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct UnlockPlan {
+    /// Vaults the name matched (never more than [`DUPLICATE_NAME_CAP`]).
+    pub(crate) real: Vec<SlotId>,
+    /// Derivations to run against a decoy.
+    pub(crate) decoys: usize,
+}
+
+impl UnlockPlan {
+    /// How many passphrase derivations the attempt makes: the same for every named attempt.
+    pub(crate) fn derivations(&self) -> usize {
+        self.real.len() + self.decoys
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Name hashes made on this thread, for the tests that count the work of an attempt.
+    pub(crate) static NAME_HASHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The registry's lock file, beside it: every read-modify-write of the registry holds it.
 const LOCK_NAME: &str = "vaults.v1.lock";
 
@@ -87,14 +111,14 @@ pub(crate) enum SlotId {
 }
 
 impl SlotId {
-    fn text(self) -> String {
+    pub(crate) fn text(self) -> String {
         match self {
             SlotId::Main => "main".to_owned(),
             SlotId::Extra(id) => id.hyphenated().to_string(),
         }
     }
 
-    fn parse(text: &str) -> Option<Self> {
+    pub(crate) fn parse(text: &str) -> Option<Self> {
         if text == "main" {
             return Some(SlotId::Main);
         }
@@ -105,7 +129,7 @@ impl SlotId {
 }
 
 /// What the registry cannot do.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum RegistryError {
     /// The file is not a registry this version wrote, or is not consistent: no registry.
     Damaged,
@@ -131,7 +155,7 @@ impl From<io::Error> for RegistryError {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NameError {
     /// Nothing left after normalising.
     Empty,
@@ -326,6 +350,8 @@ impl Registry {
 
     /// One Argon2id hash of a normalised name under this device's salt and cost.
     fn hash_name(&self, normalised: &str) -> [u8; NAME_HASH_BYTES] {
+        #[cfg(test)]
+        NAME_HASHES.with(|count| count.set(count.get() + 1));
         let mut out = [0u8; NAME_HASH_BYTES];
         let argon = self
             .cost
@@ -351,6 +377,25 @@ impl Registry {
             name_hash: Some(hash),
         });
         Ok(slot)
+    }
+
+    /// Lists a vault that already exists on disk under `slot` (its folder was found, and opened by
+    /// the owner's passphrase) with the name the owner now gives it (#357 4c-2). Never the default
+    /// unless the registry was empty. `slot` must be an extra one the registry does not list yet
+    /// (`UnknownSlot` otherwise), and the name follows the same cap as any other.
+    pub(crate) fn add_recovered(&mut self, slot: SlotId, name: &str) -> Result<(), RegistryError> {
+        if !matches!(slot, SlotId::Extra(_)) || self.contains(slot) {
+            return Err(RegistryError::UnknownSlot);
+        }
+        let name = checked_name(name).map_err(RegistryError::Name)?;
+        let hash = self.hash_name(&name);
+        self.refuse_a_name_taken_too_often(&hash, None)?;
+        self.entries.push(Entry {
+            slot,
+            default: self.entries.is_empty(),
+            name_hash: Some(hash),
+        });
+        Ok(())
     }
 
     /// A name may be shared (a check at the unlock screen would tell anyone there which names exist),
@@ -458,6 +503,22 @@ impl Registry {
         // The cap holds for what this version wrote; a tampered file cannot widen it.
         found.truncate(DUPLICATE_NAME_CAP);
         found
+    }
+
+    /// What one unlock attempt with a typed name must do (#357, PR 4a). **A named attempt always
+    /// makes [`DUPLICATE_NAME_CAP`] derivations**: the vaults the name matched (0 to the cap), then
+    /// decoys up to the cap, so 0, 1 or 4 matches cost the same and no one learns from the time how
+    /// many vaults share a name, or whether it names any. An empty name is the default vault alone,
+    /// ONE derivation as today (a known default reveals nothing). Costs one name hash for a named
+    /// attempt, none for an empty one.
+    pub(crate) fn plan_for(&self, typed: &str) -> UnlockPlan {
+        let named = !normalise_name(typed).is_empty();
+        let real = self.slots_named(typed);
+        let total = if named { DUPLICATE_NAME_CAP } else { 1 };
+        UnlockPlan {
+            decoys: total.saturating_sub(real.len()),
+            real,
+        }
     }
 
     // ---- the file ---------------------------------------------------------------------------
@@ -982,14 +1043,27 @@ mod tests {
 
     #[test]
     fn given_the_file_when_read_as_bytes_then_no_name_is_in_it_and_the_padding_is_random() {
+        // Names long enough that random bytes cannot spell them. A 3-letter name ("ana", "mum") has a
+        // real chance of appearing by luck among the random bytes of the salts, hashes and padding
+        // (about 1 in 10^4 for a file of this size), and this test failed in CI on both. A name of
+        // 12+ characters is a chance of about 2^-96. The whole file is searched, padding included:
+        // the point is that no name is anywhere in it.
+        let long_names = ["FAKE-Ana-Lopez-Example", "FAKE-Mumford-Household"];
         let mut registry = registry();
-        registry.add_extra("Ana Lopez").unwrap();
-        registry.add_extra("Mum").unwrap();
+        for name in long_names {
+            registry.add_extra(name).unwrap();
+        }
         let first = registry.to_bytes();
         let second = registry.to_bytes();
         let text = String::from_utf8_lossy(&first).to_lowercase();
-        for name in ["ana", "lopez", "mum"] {
-            assert!(!text.contains(name), "{name}");
+        for name in long_names {
+            let lowered = name.to_lowercase();
+            assert!(!text.contains(&lowered), "{name}");
+            assert!(!text.contains(&lowered.replace('-', " ")), "{name}");
+            // Each part of the name that is long enough not to be found by chance.
+            for part in lowered.split('-').filter(|part| part.len() >= 7) {
+                assert!(!text.contains(part), "{part}");
+            }
         }
         // Same registry, same content, different padding: padding is not a pattern to read.
         assert_ne!(first, second);

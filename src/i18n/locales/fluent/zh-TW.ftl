@@ -237,6 +237,8 @@ interface-UnlockPdfDialog-unlocking = 正在解鎖…
 
 interface-VaultApp-chooseFilesToImport = 選擇要匯入的檔案
 
+interface-VaultLibrary-picturesNote = 您新增的圖片會移除拍攝地點、時間和相機資訊。
+
 interface-VaultApp-finishingTheTransfer = 正在完成傳輸
 
 interface-VaultApp-lockNowAndCancelTheTransfer = 立即鎖定並取消傳輸
@@ -664,7 +666,7 @@ native-error-20 = 請選擇較不容易猜測的密語，不要使用常見密�
 
 native-error-21 = 每次匯入最多可選擇 100 個檔案。
 
-native-error-22 = 其中一個檔案不是 PDF 文件，因此沒有新增任何內容。myCarlos 只保留 PDF 文件。
+native-error-22 = 其中一個檔案既不是 PDF 文件也不是 JPEG 或 PNG 圖片，因此沒有新增任何內容。myCarlos 保留 PDF 文件以及 JPEG 和 PNG 圖片。如果是 iPhone 圖片（HEIC），請改以 JPEG 分享。
 
 native-error-23 = 此文件使用密碼鎖定。請輸入病患入口網站提供的文件密碼。
 
@@ -714,7 +716,7 @@ native-error-45 = myCarlos 無法開啟該檔案。如果檔案位於雲端或�
 
 native-error-46 = 保險庫中的文件已損毀且無法再讀取，因此沒有儲存備份。沒有變更任何內容。
 
-native-error-47 = myCarlos 無法儲存或顯示此相片：相片必須是完整的 JPEG 圖片、大小不得超過 25 MB，且每邊不得超過 8,192 像素。沒有變更任何內容。
+native-error-47 = myCarlos 無法儲存或顯示此相片：相片必須是完整的 JPEG 或 PNG 圖片（不能是動畫）、大小不得超過 25 MB，每邊不得超過 8,192 像素，總計不得超過 5,000 萬像素（手機上為 2,400 萬）。沒有變更任何內容。
 
 native-error-48 = 備份已檢查，但還原作業尚未完成。請關閉 myCarlos 再重新開啟以完成作業，接著使用建立備份時的密語或復原金鑰開啟保險庫。
 
@@ -723,6 +725,13 @@ native-error-speedTest = 速度測試尚未完成就停止了。沒有變更任�
 native-filter-backups = myCarlos 備份
 
 native-filter-pdf = PDF 文件
+
+native-filter-video = 影片（MP4 或 MOV）
+native-filter-pictures = JPEG 和 PNG 圖片
+
+native-filter-pdfAndPictures = PDF 文件以及 JPEG 和 PNG 圖片
+
+native-filter-pdfPicturesAndVideos = PDF 文件、JPEG 和 PNG 圖片以及影片（MP4 或 MOV）
 
 native-kit-text =
     myCarlos 復原套件
@@ -943,6 +952,8 @@ recoveryKey-reason-legend = 為什麼要更換？
 
 recoveryKey-reason-routine = 我只是想換新金鑰；目前的套件仍安全
 
+recoveryKey-kitCloudWarning = 此檔案未加密。同步到雲端的資料夾（OneDrive、iCloud Drive、Dropbox、Google Drive）會將其上傳，請儲存到不會同步的位置。
+
 recoveryKey-saveKit = 儲存復原套件…
 
 recoveryKey-threeMisses = 連續三次輸入不相符。請再次查看復原金鑰，然後重新檢查。
@@ -1058,6 +1069,8 @@ security-autoLock-shorter = 縮短延遲時間
 security-autoLock-title = 自動鎖定
 
 security-backup-body = 一個檔案即可保存整個保險庫，且內容仍會加密。請將備份存放在此裝置以外的位置，例如 USB 隨身碟。備份使用儲存當下的密語或復原金鑰開啟，即使您之後變更金鑰，它們仍可開啟此備份。若要還原備份，請先鎖定保險庫，再選擇「從備份還原」。
+
+security-backup-cloudWarning = 此檔案已加密，但仍會顯示其中有多少份文件以及每份的大小。同步到雲端的資料夾（OneDrive、iCloud Drive、Dropbox、Google Drive）會將其上傳。
 
 security-backup-save = 儲存加密備份…
 
@@ -1540,6 +1553,8 @@ interface-history-event-portalLinkStarted = 已開始連結診所
 
 interface-history-event-portalLinked = 已連結診所
 
+interface-history-event-portalLinkRemoved = 已移除診所連結
+
 interface-history-event-profileCreated = 病患檔案已新增
 
 interface-history-event-profileDetailsChanged = 個人資料已變更
@@ -1686,6 +1701,21 @@ portal-tryAgainFor = 重試：{ $clinic }
 
 portal-linkAnother = 連結另一家診所
 
+portal-removeLink = 移除此連結
+
+portal-removeTitle = 要移除此連結嗎？
+
+portal-removeBody = { $clinic }，裝置「{ $device }」。此裝置將不再在此處連結，其已儲存的裝置金鑰也會從此裝置清除。您保險庫的先前備份仍保留這些金鑰，直到被取代。診所仍可能列出此裝置。
+
+portal-removeConfirm = 移除連結
+
+portal-removeKept = 此診所的文件已儲存在您的保管庫中，因此保留此連結。
+
+portal-removeNotices = 已為這間診所開啟文件通知。請先關閉，再移除連結。
+
+portal-removed = 連結已移除。
+
+
 ai-summary-button = 摘要
 
 ai-summary-title = 淺白易懂的摘要
@@ -1708,11 +1738,11 @@ aiHelper-resultLabelInfo = 「AI 草稿」是什麼意思
 
 ai-label-settingsTitle = AI 回答上的提示
 
-ai-label-settingsBody = 每則 AI 回答都會說明由 AI 撰寫、可能有誤。選擇「不再顯示」後，完整的句子會由簡短的「AI 草稿」標籤取代。標籤不會被移除。此選擇儲存在本裝置上，模型或工具更換後會重新開始。
+ai-label-settingsBody = AI 回答可能有誤，每則回答都會這樣說明。如果您在某則回答上選擇「不再顯示」，之後的回答會顯示簡短的「AI 草稿」標籤，而不是完整的句子。
 
 ai-label-settingsShowFull = 再次顯示完整提示
 
-ai-label-settingsFullShown = 每則 AI 回答都顯示完整提示。
+ai-label-settingsFullBack = 完整警告已恢復顯示在每則 AI 回答上。
 
 ai-label-settingsShortShown = 在您選擇過的 AI 回答上，顯示簡短的「AI 草稿」標籤。
 
@@ -2140,22 +2170,26 @@ interface-AiHelperNotice-continue = 繼續
 
 interface-AnonymizePreview-footerNote = 檔案將以這一行結尾：
 
-notifications-title = 檢查文件後的通知
-notifications-help = 手動檢查後，診所文件儲存至 myCarlos 時，Windows 可顯示一則一般通知。請依平常方式開啟 myCarlos 閱讀文件。系統不會自動檢查文件。
-notifications-allow = 允許文件送達通知
+notifications-title = 檢查文件
+notifications-allow = 文件送達時顯示通知
 notifications-blocked = Windows 正在封鎖通知。請查看 Windows 通知設定。
 notifications-unknown = 無法檢查 Windows 通知權限。
-notifications-error = 無法儲存此設定。本次工作階段的通知已關閉。
-notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
-notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
+notifications-error = 無法儲存此設定。本次工作階段的通知和自動檢查已關閉。
+notifications-unavailable = 這些設定目前無法使用。請依平常方式開啟 myCarlos 查看文件。
+notifications-helpAutomatic = myCarlos 可以在開啟且已解鎖時自行檢查診所的新文件。新文件隨後會出現在您的紀錄庫中。
+notifications-notYetAsked = Windows 尚未顯示過 myCarlos 的通知，因此還沒有針對它的設定。在您於 Windows 設定中將其關閉之前，通知是允許的。
+notifications-blockedMac = macOS 不允許 myCarlos 傳送通知。請在「系統設定」的「通知」中開啟。
+notifications-notYetAskedMac = 尚未詢問 macOS。您開啟通知時，它會詢問。
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
-notifications-autoNeedsNotices = 請先允許文件送達通知，才能開啟此選項。
-notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
+notifications-autoConsent = 開啟後，myCarlos 會依排程聯絡您診所的入口網站，每次嘗試至少間隔兩分鐘，且僅在其開啟並已解鎖時進行。關閉即可停止。
+notifications-noticesHelp = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
+notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。新文件會出現在您的紀錄庫中。鎖定保險庫或關閉應用程式會停止後續檢查。通知是另一項獨立的選擇，與此無關。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「已連線的診所」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
-noticesStep-title = 來自診所的通知
-noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
+noticesStep-title = 來自診所的文件
+noticesStep-intro = 您的診所已連結。myCarlos 可以為您檢查新文件，並在可顯示通知的電腦上於新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
 noticesStep-later = 您隨時可以在 { $settings } 的 { $preferences } 中變更這些設定：{ $notices }。
+noticesStep-laterBackground = 您隨時可以在 { $settings } 的 { $preferences } 中變更背景執行的設定：{ $background }。
 noticesStep-done = 完成
 noticesStep-notNow = 暫不
 
@@ -2254,6 +2288,8 @@ reader-android-zoomOut = 縮小
 
 interface-video-name = 影片，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 錄製影片
+interface-RecordDialog-recordAVideoFor = 為 { $name } 錄製影片
+interface-RecordDialog-recordingSettings = 錄製設定
 interface-RecordDialog-unavailable = 此裝置無法錄製影片。
 interface-RecordDialog-why = 為什麼？
 interface-RecordDialog-startingTheCameraAndMicrophone = 正在啟動相機和麥克風…
@@ -2262,6 +2298,19 @@ interface-RecordDialog-yourPhoneAsksOnce = 手機會詢問一次 myCarlos 是否
 interface-RecordDialog-theCameraAndMicrophoneAreOn = 相機和麥克風只在錄製時開啟，停止錄製、關閉此視窗或 myCarlos 鎖定時會關閉。
 interface-RecordDialog-theCameraAndMicrophoneAreOnNow = 相機和麥克風已開啟，但在您選擇「開始錄製」之前不會錄製任何內容。
 interface-RecordDialog-pictureQuality = 畫質
+interface-RecordDialog-cameraAndMicrophone = 攝影機和麥克風
+interface-RecordDialog-camera = 攝影機
+interface-RecordDialog-microphone = 麥克風
+interface-RecordDialog-unnamedCamera = 攝影機 { $number }
+interface-RecordDialog-unnamedMicrophone = 麥克風 { $number }
+interface-RecordDialog-systemDefaultDevice = 系統預設
+interface-RecordDialog-deviceFellBack = 上次使用的攝影機或麥克風未連接，因此正在使用系統預設裝置。
+interface-RecordDialog-deviceNotSwitched = 無法開啟您選擇的攝影機或麥克風，因此仍在使用原來的裝置。
+interface-RecordDialog-saySomething = 說點什麼：指示條應該會動。
+interface-RecordDialog-settingsNote = 影片會加密儲存。myCarlos 會在這部裝置上記住這些選擇。
+interface-RecordDialog-testMicrophone = 測試麥克風
+interface-RecordDialog-stopTestingMicrophone = 停止測試
+interface-RecordDialog-microphoneLevel = 麥克風音量
 interface-RecordDialog-standard = 標準（720p）
 interface-RecordDialog-high = 高（1080p）
 interface-RecordDialog-aboutStandardPerHour = 每小時約 1.1 GB
@@ -2291,7 +2340,18 @@ interface-RecordDialog-videoSavedSlow = 錄製已停止，因為影片無法足�
 interface-VideoViewer-video = 影片
 interface-VideoViewer-player = 影片播放器：{ $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = 無法播放此影片。
-interface-VideoViewer-keys = 空白鍵播放或暫停。左右方向鍵快退或快進 { $seconds } 秒。上下方向鍵調整音量。M 鍵靜音。
+interface-VideoViewer-controls = 播放器控制項
+interface-VideoViewer-playPause = 播放/暫停 (k)
+interface-VideoViewer-back = 倒退 { $seconds } 秒 (←)
+interface-VideoViewer-forward = 快轉 { $seconds } 秒 (→)
+interface-VideoViewer-backBig = 倒退 { $seconds } 秒 (j)
+interface-VideoViewer-forwardBig = 快轉 { $seconds } 秒 (l)
+interface-VideoViewer-volumeUp = 調高音量 (↑)
+interface-VideoViewer-volumeDown = 調低音量 (↓)
+interface-VideoViewer-mute = 靜音 (m)
+interface-VideoViewer-unmute = 取消靜音 (m)
+interface-VideoViewer-start = 回到開頭 (Home)
+interface-VideoViewer-end = 跳到結尾 (End)
 interface-VideoViewer-playVideo = 播放影片
 interface-VideoHelp-title = 為什麼我無法在此錄製影片？
 interface-VideoHelp-engine = 錄製影片需要此裝置內建的網頁引擎能夠錄製含聲音的 MP4 影片，而此裝置的引擎不支援。
@@ -2438,7 +2498,7 @@ handover-import-opening = 正在開啟…
 
 handover-import-error-typo = 該金鑰看起來不對，請與您拿到的金鑰核對。
 
-handover-import-error-recovery = 這是復原金鑰，不是此檔案的金鑰。請索取為該檔案產生的金鑰。
+handover-import-error-recovery = 這看起來像復原金鑰，而不是此檔案的金鑰。請核對您拿到的該檔案金鑰，並檢查是否輸入錯誤。如果沒有拿到，請索取為該檔案產生的金鑰。
 
 handover-import-error-wrong = 這無法開啟此檔案。
 
@@ -2598,7 +2658,7 @@ library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來�
 handover-nowVerified = 透過移交檔案到來的 { $count } 份文件現已透過 { $clinic } 驗證，此保險庫持有其金鑰。
 
 
-notifications-autoSummary = 自動檢查僅在 myCarlos 開啟且已解鎖時進行。
+notifications-autoSummary = myCarlos 僅在開啟且已解鎖時才會自行收取診所的新文件。在背景處於鎖定狀態時，它只能告訴您有內容正在等待。
 
 background-keepRunningSummary = 關閉視窗後，myCarlos 可以留在背景執行。視窗關閉時，您的保險庫會鎖定。
 
@@ -2613,8 +2673,57 @@ native-notice-test = 這是來自 myCarlos 的測試通知。
 notifications-testButton = 顯示測試通知
 
 notifications-testSent = 測試通知已傳送。如果您沒有看到，請檢查 Windows 的通知設定。
+notifications-testSentMac = 已傳送測試通知。若沒有看到，請檢查「系統設定」中的「通知」。
 
 notifications-testWait = 請等候幾秒鐘後再試一次。
 
 notifications-testFailed = 無法顯示測試通知。
 notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。
+
+native-backupExclusionFailed = 這支手機無法讓保險庫不被裝置備份。請再試一次。
+
+interface-AddVideo-add = 新增影片
+
+interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點以及裝置名稱和型號會先被刪除。
+
+interface-AddVideo-checking = 正在檢查影片…
+
+interface-AddVideo-storing = 正在新增影片：{ $percent }%
+
+interface-AddVideo-progressLabel = 正在新增影片
+
+interface-AddVideo-cancel = 取消
+
+interface-AddVideo-cancelling = 正在取消…
+
+interface-AddVideo-added = 影片已新增。
+
+interface-AddVideo-duplicate = 此影片已在這裡，未新增任何內容。
+
+interface-AddVideo-cancelled = 已取消，未新增任何內容。
+
+interface-AddVideo-notVideo = 此檔案不是 myCarlos 可以新增的影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-videoAlone = 影片需單獨新增。請只選擇一部影片，或者選擇文件和圖片，不能同時選擇。未新增任何內容。
+
+interface-AddVideo-hevc = 此影片使用 H.265（HEVC），許多電腦無法播放。請另存為 H.264 MP4 後再新增。
+
+interface-AddVideo-videoCodec = 此影片的畫面格式 myCarlos 無法播放。請另存為 H.264 MP4 後再新增。
+
+interface-AddVideo-audioCodec = 此影片的聲音格式 myCarlos 無法播放。請另存為 AAC 聲音後再新增。
+
+interface-AddVideo-noVideo = 此檔案沒有畫面，所以不是影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-tooManyTracks = 此影片的畫面或聲音多於 myCarlos 可新增的數量。請另存為只有一路畫面和一路聲音的簡單副本後再新增。
+
+interface-AddVideo-external = 此影片的一部分存放在檔案之外，無法新增。請另存為完整副本後再新增。
+
+interface-AddVideo-fragmented = 此影片是串流格式。請另存為一般 MP4 後再新增。
+
+interface-AddVideo-tooBig = 此影片的畫面大於 myCarlos 可新增的尺寸。請另存為較小的副本後再新增。
+
+interface-AddVideo-tooLarge = 此影片大於 myCarlos 在此裝置上可新增的大小（電腦 2 GB，手機 1 GB）。請另存為較小的副本後再新增。
+
+interface-AddVideo-damaged = 此影片已損毀或被截斷，無法新增。請從來源處重新複製後再試。
+
+interface-AddVideo-adding = 正在新增影片…
