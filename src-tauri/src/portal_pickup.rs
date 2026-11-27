@@ -621,3 +621,90 @@ where
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod refusal_tests;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        portal_approval::{ApprovalReason, ApprovalState},
+        portal_link::LinkError,
+        vault::VaultError,
+    };
+
+    #[test]
+    fn a_failure_of_one_link_is_told_apart_from_one_that_ends_the_whole_check() {
+        // Ending the check: the vault locked, or the portal is not reachable at all.
+        for error in [
+            VaultError::Portal(LinkError::Cancelled),
+            VaultError::Portal(LinkError::Unavailable),
+        ] {
+            assert!(!is_per_link_failure(&error));
+        }
+        // One link's own failure: the others are still asked.
+        for error in [
+            VaultError::Portal(LinkError::Network),
+            VaultError::Portal(LinkError::DeviceRemoved),
+            VaultError::Portal(LinkError::Busy),
+            VaultError::Portal(LinkError::HttpRefused(503, Some(30))),
+            VaultError::ApprovalTerminal(
+                ApprovalState::Refused,
+                Some(ApprovalReason::StaffRequired),
+            ),
+            VaultError::ApprovalTerminal(ApprovalState::Expired, None),
+            VaultError::ApprovalRequestMissing,
+            VaultError::ApprovalNeedsClinic,
+            VaultError::NotFound,
+            VaultError::Invalid,
+        ] {
+            assert!(is_per_link_failure(&error), "{error:?}");
+        }
+        // Anything else is not a link's own failure.
+        assert!(!is_per_link_failure(&VaultError::PickupRefused));
+    }
+
+    #[test]
+    fn only_a_request_that_can_still_be_approved_is_open() {
+        for state in [ApprovalState::Pending, ApprovalState::ChallengeReady] {
+            assert!(still_open(state), "{state:?}");
+        }
+        for state in [
+            ApprovalState::Accepted,
+            ApprovalState::Refused,
+            ApprovalState::Expired,
+            ApprovalState::Cancelled,
+        ] {
+            assert!(!still_open(state), "{state:?}");
+        }
+    }
+
+    fn response(status: u16, body: &[u8]) -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status,
+            body: zeroize::Zeroizing::new(body.to_vec()),
+            date: None,
+            retry_after: None,
+        }
+    }
+
+    #[test]
+    fn a_portal_from_before_reading_aids_is_known_by_its_one_answer() {
+        assert!(refuses_unknown_query(&response(
+            400,
+            br#"{"code":"invalid_cursor"}"#
+        )));
+        // Another status, another code, a body that is not JSON, or no code at all: not that portal.
+        assert!(!refuses_unknown_query(&response(
+            500,
+            br#"{"code":"invalid_cursor"}"#
+        )));
+        assert!(!refuses_unknown_query(&response(
+            400,
+            br#"{"code":"invalid_request"}"#
+        )));
+        assert!(!refuses_unknown_query(&response(400, b"not json")));
+        assert!(!refuses_unknown_query(&response(400, br#"{"code":7}"#)));
+        assert!(!refuses_unknown_query(&response(400, br#"{}"#)));
+    }
+}

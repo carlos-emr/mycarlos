@@ -128,7 +128,8 @@ pub(crate) fn authenticate(
 }
 
 /// What CARLOS put inside the signed revision (A3's manifest note).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub v: u8,
@@ -149,8 +150,10 @@ pub struct Manifest {
     pub patient: ManifestPatient,
     pub document: ManifestDocument,
 }
+redact_debug!(Manifest);
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestPatient {
     #[serde(deserialize_with = "present_nullable")]
@@ -158,8 +161,10 @@ pub struct ManifestPatient {
     #[serde(deserialize_with = "present_nullable")]
     pub birth_date: Option<String>,
 }
+redact_debug!(ManifestPatient);
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestDocument {
     #[serde(deserialize_with = "present_nullable")]
@@ -170,6 +175,7 @@ pub struct ManifestDocument {
     pub service_date: Option<String>,
     pub media_type: String,
 }
+redact_debug!(ManifestDocument);
 
 /// Optional v1 values may explicitly be null; their members must still exist.
 /// Plain Option/default deserialization would incorrectly accept missing keys.
@@ -614,6 +620,9 @@ fn write_canonical(value: &serde_json::Value, out: &mut Vec<u8>) -> Option<()> {
     }
     Some(())
 }
+
+#[cfg(test)]
+mod refusal_tests;
 
 #[cfg(test)]
 mod tests {

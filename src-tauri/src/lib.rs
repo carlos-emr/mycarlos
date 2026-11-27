@@ -1,9 +1,36 @@
+/// A `Debug` that prints only a type's name, for a type that holds names, document text, an answer,
+/// a token or a code, so that a panic, a `{:?}` or an error chain can never carry them out. Use
+/// `redact_debug!` (below), not this, in the code.
+macro_rules! redact_debug_impl {
+    ($($type:ident),+ $(,)?) => {$(
+        impl ::std::fmt::Debug for $type {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                formatter.write_str(concat!(stringify!($type), " { .. }"))
+            }
+        }
+    )+};
+}
+
+/// The redaction for a release build: a test build derives `Debug` instead (an assertion failure
+/// then shows the values), so write `#[cfg_attr(test, derive(Debug))]` in place of `Debug` in the
+/// type's derive list and `redact_debug!(Type);` after the type. `redact_debug_impl!` is the same
+/// impl with no `cfg`, which a unit test applies to a probe type to show what it prints.
+macro_rules! redact_debug {
+    ($($type:ident),+ $(,)?) => {
+        #[cfg(not(test))]
+        redact_debug_impl!($($type),+);
+    };
+}
+
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
+#[cfg(test)]
+mod redact_debug_tests;
 mod ui_text;
 mod ui_text_ids;
 use ui_text::UiLocale;
 use ui_text_ids::MessageId;
+mod backup_exclusion;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod desktop_background;
@@ -26,6 +53,8 @@ pub mod document_notifications;
 // Its tests need the Linux memfd and /proc, so they run on the Linux host only.
 #[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 mod android_pdf;
+#[cfg(target_os = "android")]
+mod android_trust;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -586,6 +615,10 @@ impl From<VaultError> for PublicText {
                 code: "pdf_view_no_sandbox",
                 message_key: "native.error.33",
             },
+            VaultError::BackupExclusionFailed => Self {
+                code: "backup_exclusion_failed",
+                message_key: "native.backupExclusionFailed",
+            },
             VaultError::NoSpace => Self {
                 code: "no_space",
                 message_key: "native.error.34",
@@ -986,6 +1019,10 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`, for the name the save dialog
+    /// suggests. Optional: an older caller that sends none gets the UTC date.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -998,13 +1035,15 @@ struct PhotoRequest {
 /// photo request's body (see `split_photo_request`), as JSON
 /// `{"profileId", "folderIds", "name"}`. Custom headers do not reach the app
 /// on Windows (WebView2), so nothing rides in them.
-#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoTarget {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
     name: String,
 }
+redact_debug!(PhotoTarget);
 
 /// The most a photo request's target may take, before the JPEG.
 const MAX_PHOTO_TARGET_BYTES: usize = 4096;
@@ -1303,12 +1342,14 @@ fn locked_original_name(name: &str) -> String {
 }
 
 /// What unlocking a PDF did: the unlocked copy, and the original's new name.
-#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UnlockedPdf {
     record_id: Uuid,
     original_name: String,
 }
+redact_debug!(UnlockedPdf);
 
 /// Unlocks a stored PDF with the password the patient typed (#54). The
 /// document is opened by the PDF helper (`unlock`, `pdf_unlock::unlock_in_helper`
@@ -2083,7 +2124,12 @@ fn now_ms() -> u64 {
 /// The name given to a picked document whose Android id holds no file name.
 const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
 
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+/// What a picked file is called before any stand-in is chosen: a desktop path as it is, a file
+/// URL's decoded final segment, and for an Android document the tail of its id
+/// ("primary:Movies/clip.mp4" gives "clip.mp4"; an opaque id such as "msf:31" gives "31").
+/// Only the first colon of a document id separates the root from the path; a later one belongs
+/// to the file name ("primary:Documents/Scan 10:30.pdf").
+fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
     };
@@ -2097,13 +2143,140 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
+    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
+    path.rsplit('/').next().unwrap_or_default().to_owned()
+}
+
+/// The longest display name an Android provider is believed (characters). A longer one is
+/// not used: the id's own tail is, as before.
+const MAX_PROVIDED_NAME_CHARS: usize = 255;
+
+/// The name a pick is routed and stored under: the one the document provider reported
+/// (`OpenableColumns.DISPLAY_NAME`) when it is a plain file name, otherwise the tail of the id
+/// (`picked_name_tail`). An opaque Android id (`msf:31`) says nothing about the file, while the
+/// provider's name ("clip.mp4") does. The provider's name is another app's text, so it is used
+/// only when it is one path-free line with a stem and an extension, of a bounded length; anything
+/// else is as if the provider had given none. "Plain" is the vault's own rule for what a stored
+/// name keeps: no character `vault::is_hidden_name_char` names (controls, zero-width and direction
+/// characters, line and paragraph separators, the word joiner, the byte order mark), the same
+/// predicate `sanitize_basename` drops, so nothing the routing accepts is later changed by the store.
+fn routing_name(tail: &str, provided: Option<&str>) -> String {
+    let usable = provided.map(str::trim).filter(|name| {
+        has_stem_and_extension(name)
+            && name.chars().count() <= MAX_PROVIDED_NAME_CHARS
+            && !name
+                .chars()
+                .any(|c| vault::is_hidden_name_char(c) || c == '/' || c == '\\')
+    });
+    usable.unwrap_or(tail).to_owned()
+}
+
+/// Whether `name` ends in `.extension` after a stem (`clip.mp4`, not `31`, `.pdf` or `name.`). A
+/// tail of an Android document id that does not is **opaque** (`msf:31`): it says nothing about the
+/// file, so only then is the provider asked what it calls it.
+fn has_stem_and_extension(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+}
+
+/// How long one file's provider is given to say its name (Android). Asking only reads a column,
+/// but a provider backed by a cloud service may fetch first.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How long a whole pick may spend asking providers, however many files it holds: a slow provider
+/// is given at most this much in all, not 3 seconds for each of up to 100 files. Once it is spent
+/// the rest are not asked and keep the tail of their ids, as if the provider had given no name.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAMES_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Asks for the names of the files `askable` says to ask about, one after another, within ONE
+/// time budget: each question gets at most `each`, and at most what is left of `budget`; when
+/// nothing is left a file is not asked. An unanswered, late or refused question is `None`. The
+/// asking itself is `ask` (the Android plugin call), so the rule is the same, and testable, on
+/// every platform.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+async fn ask_names_within<F, Fut>(
+    count: usize,
+    askable: impl Fn(usize) -> bool,
+    budget: std::time::Duration,
+    each: std::time::Duration,
+    mut ask: F,
+) -> Vec<Option<String>>
+where
+    F: FnMut(usize) -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let deadline = std::time::Instant::now() + budget;
+    let mut names = Vec::with_capacity(count);
+    for index in 0..count {
+        if !askable(index) {
+            names.push(None);
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            names.push(None);
+            continue;
+        }
+        names.push(
+            tokio::time::timeout(left.min(each), ask(index))
+                .await
+                .ok()
+                .flatten(),
+        );
+    }
+    names
+}
+
+/// What each picked file's provider calls it. Only an Android `content://` pick is asked
+/// (`ContentResolver`, through the plugin); every other pick, and any answer that is missing or
+/// fails, is `None`, which `routing_name` treats as "use the tail of the id".
+async fn provider_display_names(
+    _app: &tauri::AppHandle,
+    paths: &[tauri_plugin_fs::FilePath],
+) -> Vec<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        // Only an opaque `content://` id is asked (a tail that already names a file needs no
+        // question), and the whole pick shares one time budget.
+        let tails: Vec<String> = paths.iter().map(picked_name_tail).collect();
+        let urls: Vec<Option<String>> = paths
+            .iter()
+            .map(|path| match path {
+                tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content" => {
+                    Some(url.as_str().to_owned())
+                }
+                _ => None,
+            })
+            .collect();
+        ask_names_within(
+            paths.len(),
+            |index| urls[index].is_some() && !has_stem_and_extension(&tails[index]),
+            PROVIDER_NAMES_BUDGET,
+            PROVIDER_NAME_TIMEOUT,
+            |index| {
+                let url = urls[index].clone().unwrap_or_default();
+                async move { tauri_plugin_android_pdf::display_name(_app, &url).await }
+            },
+        )
+        .await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        vec![None; paths.len()]
+    }
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
+    if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
+        return name;
+    }
     // The picker offers only PDFs and pictures, so a tail that does not end in
     // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
     // so that an export still suggests a file the platform can open.
-    // A document id is "<root>:<path>". Only the first colon separates them; a
-    // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
-    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
-    let name = path.rsplit('/').next().unwrap_or_default();
+    let name = name.as_str();
     let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
         !stem.is_empty()
             && ["pdf", "jpg", "jpeg", "png"]
@@ -2114,6 +2287,22 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         name.to_owned()
     } else {
         IMPORTED_DOCUMENT_NAME.to_owned()
+    }
+}
+
+/// The name given to a picked video whose Android id holds no file name.
+const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
+
+/// Name recorded for an imported video: the name it came with, or for an Android document id that
+/// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
+/// "Imported document.pdf", which a video must never be named.
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
+    let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
+    if content && !is_video_name(&name) {
+        IMPORTED_VIDEO_NAME.to_owned()
+    } else {
+        name
     }
 }
 
@@ -3247,6 +3436,9 @@ async fn vault_create(
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -3275,6 +3467,9 @@ async fn vault_unlock(
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -3294,7 +3489,7 @@ async fn vault_unlock(
     )
     .await?;
     refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
-    after_open(store.arc());
+    after_open(store.arc(), &store.all());
     run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
@@ -3512,16 +3707,61 @@ async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> Co
     Ok(())
 }
 
+/// The ids of the vaults on this device other than `store`'s, as their notice keys carry them (an
+/// open vault's own, a locked one's from its header), or `None` when one of them cannot be read:
+/// the caller then wipes nothing, because a key is kept rather than guessed about (#357).
+fn other_vault_ids(
+    store: &Arc<VaultStore>,
+    vaults: &[Arc<VaultStore>],
+) -> Option<std::collections::HashSet<Uuid>> {
+    let mut ids = std::collections::HashSet::new();
+    for other in vaults.iter().filter(|other| !Arc::ptr_eq(other, store)) {
+        match other.notice_key_vault() {
+            vault::NoticeKeyVault::Id(id) => {
+                ids.insert(id);
+            }
+            // A slot with no vault made in it holds no keys.
+            vault::NoticeKeyVault::None => {}
+            vault::NoticeKeyVault::Unknown => return None,
+        }
+    }
+    Some(ids)
+}
+
+/// After a vault is reset: its notice keys go, and every key of a vault the device does not hold;
+/// another vault's keys stay (#357). On a device with the one vault, that is every key.
+/// `reset_id` is the id the vault had before the reset (`NoticeKeyVault::id`), so its own keys go
+/// even when another vault's id cannot be read.
+async fn wipe_notice_keys_of_reset_vault(
+    store: &Arc<VaultStore>,
+    vaults: Vec<Arc<VaultStore>>,
+    reset_id: Option<Uuid>,
+) {
+    let store = Arc::clone(store);
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        notice_key::after_reset(reset_id, other_vault_ids(&store, &vaults).as_ref());
+    })
+    .await;
+}
+
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
 /// asked for) runs in the background, so opening never waits on the network.
-fn after_open(store: &Arc<VaultStore>) {
+fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
     #[cfg(target_os = "ios")]
     let for_push = Arc::clone(store);
     let store = Arc::clone(store);
+    let vaults = vaults.to_vec();
     let opened = tauri::async_runtime::spawn_blocking(move || {
-        // Notice keys of any other vault go (#230).
+        // Notice keys of a vault this device no longer holds go (#230); another vault's stay, so
+        // switching between vaults keeps each one's keys (#357). With the one vault, `held` is just
+        // it and every other key goes, as before. If another vault's id cannot be read, nothing is
+        // wiped now.
         if let Some(vault_id) = store.open_vault_id() {
-            notice_key::after_open(vault_id);
+            if let Some(held) =
+                notice_key::held_with_open(vault_id, other_vault_ids(&store, &vaults))
+            {
+                notice_key::after_open(&held);
+            }
         }
         // Keys whose link was removed before their wipe finished (#160). One read of the vault id
         // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
@@ -4618,6 +4858,9 @@ async fn vault_recover(
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
     let store = store.pin();
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -4636,7 +4879,7 @@ async fn vault_recover(
     )
     .await?;
     refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
-    after_open(store.arc());
+    after_open(store.arc(), &store.all());
     Ok(RecoverResponse {
         passphrase_replaced,
         snapshot: run_blocking(store.arc(), VaultStore::snapshot).await?,
@@ -4660,6 +4903,32 @@ fn is_plain_date(text: &str) -> bool {
             4 | 7 => *byte == b'-',
             _ => byte.is_ascii_digit(),
         })
+}
+
+/// The name a single-document export suggests in the save dialog: "Document <date>" plus the
+/// document's own extension, never the document's name, which can be a person's, a clinic's or a
+/// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
+/// so a patient who wants the original name can type it. The date is the patient's own day where
+/// the renderer gives one that reads as a date, else the UTC date. The suffix is kept, with its
+/// own case, only when it is a kind the vault stores (`EXPORT_NAME_KINDS`): any other dotted end
+/// of a name is part of the name ("Dr.Smith", "J.Lopez", "Lab results 14.30"), not a kind, and
+/// would put it back in the file name.
+fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    /// The kinds of document the vault stores, as file name suffixes (case does not matter).
+    const EXPORT_NAME_KINDS: [&str; 5] = ["pdf", "jpg", "jpeg", "png", "mp4"];
+    let date = local_date
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
+    match display_name.rsplit_once('.') {
+        Some((_, extension))
+            if EXPORT_NAME_KINDS
+                .iter()
+                .any(|kind| extension.eq_ignore_ascii_case(kind)) =>
+        {
+            format!("Document {date}.{extension}")
+        }
+        _ => format!("Document {date}"),
+    }
 }
 
 /// What a saved backup was: the name of the file written, where the
@@ -5611,6 +5880,8 @@ async fn vault_restore(
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
     let store = store.pin();
+    // A restore writes a vault into the data folder: the same refusal as creating one.
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
@@ -5868,12 +6139,14 @@ async fn vault_import_pick(
     let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
     let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        // PDF documents stay first (what the dialog shows by default); the others are one choice
-        // away. JPEG and PNG pictures only: HEIC is not accepted.
+        // The combined filter is first because the first filter is what the dialog shows by default
+        // (on Windows it is the one selected, and pictures stayed hidden behind a PDF-only list until
+        // the patient switched it by hand); PDF documents and pictures alone are one choice away,
+        // PDF first. JPEG and PNG pictures only: HEIC is not accepted.
         file_dialog(&app)
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .add_filter(&pdf_filter, &["pdf"])
             .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
-            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -5899,6 +6172,9 @@ async fn vault_import_picked(
         folder_ids: request.folder_ids.clone(),
     };
     let paths = picks.take_import(request.pick_id, &picked_for)?;
+    // The names the providers give (Android), asked before the blocking work: a stored name is a
+    // real one even where the id is opaque.
+    let provided = provider_display_names(&app, &paths).await;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.arc(), move |store| {
@@ -5907,13 +6183,121 @@ async fn vault_import_picked(
             // A provider may download a whole document before the open returns,
             // with no progress to report meanwhile.
             let _opening = Opening::new(store.idle());
-            for path in paths {
-                sources.push(open_import_source(&app, path)?);
+            for (path, provided) in paths.into_iter().zip(provided) {
+                sources.push(open_import_source(&app, path, provided.as_deref())?);
             }
         }
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
     })
     .await
+}
+
+/// What "+ New" picked: documents and pictures (added by `vault_import_picked`), one video (added
+/// by `vault_import_video_picked`), or a choice no import takes. A refusal is an answer, not an
+/// error, and nothing is kept for it: the page says why in a fixed sentence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum AnyPick {
+    Documents {
+        pick_id: Uuid,
+    },
+    Video {
+        pick_id: Uuid,
+    },
+    /// A video is added on its own, with its own progress and Cancel: it was chosen with other
+    /// files, or with another video.
+    VideoAlone,
+}
+
+/// Whether a picked file's name says it is a video (the import checks the bytes, as ever).
+fn is_video_name(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        ["mp4", "m4v", "mov"]
+            .iter()
+            .any(|video| extension.eq_ignore_ascii_case(video))
+    })
+}
+
+/// How a pick is routed: no video is documents and pictures; exactly one file that is a video is
+/// that video; a video among others, or two videos, is refused (`None`).
+fn route_pick(names: &[String]) -> Option<bool> {
+    let videos = names.iter().filter(|name| is_video_name(name)).count();
+    match (videos, names.len()) {
+        (0, _) => Some(false),
+        (1, 1) => Some(true),
+        _ => None,
+    }
+}
+
+/// Opens the one picker "+ New" uses: PDF documents, pictures and videos (one combined choice
+/// first, then each kind alone). Returns what was picked, or `None` when it was cancelled.
+#[tauri::command]
+async fn vault_import_any_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<AnyPick>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let all_filter = locale.text(MessageId::NativeFilterPdfPicturesAndVideos)?;
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    // The picker takes `app`; the providers' names are asked afterwards.
+    let names_app = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
+        // PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(
+                &all_filter,
+                &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"],
+            )
+            .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&video_filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(paths) = picked else {
+        return Ok(None);
+    };
+    vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
+    // The name the provider gave, not the display name: an Android document id that does not end in
+    // a known extension is shown as "Imported document.pdf", which would send a video down the
+    // document path. An opaque id ("msf:31") is routed by what the provider calls the file.
+    let provided = provider_display_names(&names_app, &paths).await;
+    let names: Vec<String> = paths
+        .iter()
+        .zip(&provided)
+        .map(|(path, provided)| routing_name(&picked_name_tail(path), provided.as_deref()))
+        .collect();
+    Ok(Some(match route_pick(&names) {
+        None => AnyPick::VideoAlone,
+        Some(video) => {
+            let pick_id = picks.store_import(session, request, paths);
+            if video {
+                AnyPick::Video { pick_id }
+            } else {
+                AnyPick::Documents { pick_id }
+            }
+        }
+    }))
 }
 
 /// Opens the picker for one video. Returns the id of the chosen file, or `None` when the picker
@@ -5972,10 +6356,14 @@ async fn vault_import_video_picked(
     let (Some(path), true) = (paths.pop(), paths.is_empty()) else {
         return Err(VaultError::ImportBatchLimit.into());
     };
+    let provided = provider_display_names(&app, std::slice::from_ref(&path))
+        .await
+        .pop()
+        .flatten();
     let job = picks.start_video_import()?;
     let running = Arc::clone(&job);
     let result = run_blocking(store.arc(), move |store| {
-        let name = import_display_name(&path);
+        let name = video_import_display_name(&path, provided.as_deref());
         let idle = Arc::clone(store.idle());
         // Opening a source can block (a network path, or a provider that fetches the file first).
         let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
@@ -6023,8 +6411,9 @@ fn vault_video_import_cancel(picks: State<'_, Arc<PendingPicks>>) {
 fn open_import_source(
     app: &tauri::AppHandle,
     path: tauri_plugin_fs::FilePath,
+    provided: Option<&str>,
 ) -> Result<ImportSource, VaultError> {
-    let display_name = import_display_name(&path);
+    let display_name = import_display_name(&path, provided);
     let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
         display_name: picture_import_name(display_name, kind),
@@ -7300,8 +7689,8 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
     received.receive(urls.len(), sources);
 }
 
-/// Opens the save picker with the record's name. Returns the id of the chosen
-/// destination, or `None` when the picker was cancelled. The copy itself is
+/// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
+/// id of the chosen destination, or `None` when the picker was cancelled. The copy itself is
 /// written by `vault_export_picked`.
 #[tauri::command]
 async fn vault_export_pick(
@@ -7312,9 +7701,15 @@ async fn vault_export_pick(
 ) -> CommandResult<Option<Uuid>> {
     let store = store.pin();
     let record_id = request.record_id;
+    let local_date = request.local_date;
     let session = picks.session();
-    let suggested_name =
-        run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
+    // `export_name` still refuses a lost or hidden record before a picker opens; only its answer
+    // (the document's own name) is not what the dialog is given.
+    let suggested_name = export_suggested_name(
+        &run_blocking(store.arc(), move |store| store.export_name(record_id)).await?,
+        local_date.as_deref(),
+        now_ms(),
+    );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         file_dialog(&app)
@@ -7762,7 +8157,7 @@ async fn vault_unlock_named(
         .map_err(Into::into)
     })
     .await?;
-    after_open(&opened);
+    after_open(&opened, &store.all());
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
@@ -7816,7 +8211,7 @@ async fn vault_add_vault(
     .map_err(PublicError::from)?;
     // The vault is made and stays registered; it is locked again and the screen is told no.
     refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
-    after_open(&opened);
+    after_open(&opened, &store.all());
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
@@ -8102,6 +8497,8 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    // The id the vault has now, for its notice keys after it is gone (#357).
+    let reset_id = run_blocking(store.arc(), |vault| Ok(vault.notice_key_vault().id())).await?;
     // The Keychain's digests of the iPhone push handles go with the vault. Best effort: the
     // destinations are known only while the vault is open, and a digest is not the token.
     #[cfg(target_os = "ios")]
@@ -8121,8 +8518,8 @@ async fn vault_reset(
         .await;
     }
     run_blocking(store.arc(), VaultStore::reset).await?;
-    // Its notice keys go with it (#230).
-    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
+    // Its notice keys go with it (#230); another vault's stay (#357).
+    wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
@@ -8303,6 +8700,8 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_trust::init());
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_ios_push::init());
     builder
@@ -8393,6 +8792,16 @@ pub fn run() {
             // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
             // nothing is written, so this is what it was. Each slot has its own notification ledger
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            // iOS: the whole data folder stays out of iCloud and computer backups (#422, guideline
+            // 5.1.3(ii)). Ben decided the exclusion is kept, so a failure refuses vault work.
+            if let Err(error) = backup_exclusion::configure(app.path().app_local_data_dir()?) {
+                // Not fatal to start: creating, unlocking and recovering a vault refuse until it
+                // can be set (and try again each time), so no health data is ever written first.
+                #[cfg(debug_assertions)]
+                eprintln!("could not exclude the data folder from backups: {error}");
+                #[cfg(not(debug_assertions))]
+                let _ = error;
+            }
             let slots = Arc::new(vault_slots::VaultSlots::open(
                 app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),
@@ -8587,6 +8996,7 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            vault_import_any_pick,
             vault_import_video_pick,
             vault_import_video_picked,
             vault_video_import_progress,
@@ -8673,6 +9083,63 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_name_is_a_video_by_its_extension_in_any_case() {
+        for name in ["a.mp4", "A.MP4", "clip.M4V", "x.y.mov", "Scan 10:30.MoV"] {
+            assert!(is_video_name(name), "{name}");
+        }
+        for name in [
+            "a.pdf",
+            "mp4",
+            ".mp4x",
+            "a.mp4.pdf",
+            "movie",
+            "a.jpeg",
+            "",
+            "a.",
+        ] {
+            // ".mp4x" and "mp4" are not videos; "a.mp4.pdf" ends in pdf
+            assert!(!is_video_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pick_goes_to_documents_to_one_video_or_is_refused() {
+        // No video: documents and pictures, as before.
+        assert_eq!(
+            route_pick(&names(&["a.pdf", "b.png", "c.jpg"])),
+            Some(false)
+        );
+        assert_eq!(route_pick(&names(&[])), Some(false));
+        // Exactly one file, and it is a video.
+        assert_eq!(route_pick(&names(&["Clip.MP4"])), Some(true));
+        // A video among others, or two videos, is one the video import does not take.
+        assert_eq!(route_pick(&names(&["a.pdf", "b.mp4"])), None);
+        assert_eq!(route_pick(&names(&["b.mov", "a.png"])), None);
+        assert_eq!(route_pick(&names(&["a.mp4", "b.m4v"])), None);
+    }
+
+    #[test]
+    fn a_pick_answer_names_its_kind_and_carries_no_path() {
+        let pick_id = Uuid::nil();
+        let documents = serde_json::to_value(AnyPick::Documents { pick_id }).unwrap();
+        assert_eq!(
+            documents,
+            serde_json::json!({"kind": "documents", "pickId": pick_id})
+        );
+        let video = serde_json::to_value(AnyPick::Video { pick_id }).unwrap();
+        assert_eq!(
+            video,
+            serde_json::json!({"kind": "video", "pickId": pick_id})
+        );
+        let refused = serde_json::to_value(AnyPick::VideoAlone).unwrap();
+        assert_eq!(refused, serde_json::json!({"kind": "videoAlone"}));
+    }
 
     #[test]
     fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
@@ -9091,6 +9558,71 @@ mod tests {
     }
 
     #[test]
+    fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+                                     // The document's name never reaches the dialog, whoever it names.
+        for (own, expected) in [
+            ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
+            ("Photo.jpg", "Document 2026-11-26.jpg"),
+            ("Holiday.JPEG", "Document 2026-11-26.JPEG"),
+            ("scan.final.png", "Document 2026-11-26.png"),
+            (".jpg", "Document 2026-11-26.jpg"),
+            ("no extension at all", "Document 2026-11-26"),
+            ("ends with a dot.", "Document 2026-11-26"),
+            ("odd.é", "Document 2026-11-26"),
+            ("long.extensions9", "Document 2026-11-26"),
+            ("slash.p/f", "Document 2026-11-26"),
+            ("clip.MP4", "Document 2026-11-26.MP4"),
+            ("Letter.Pdf", "Document 2026-11-26.Pdf"),
+            // A dotted end that is part of a name is not a kind of file: nothing of it is kept.
+            ("dots.p.d.f", "Document 2026-11-26"),
+            ("Dr.Smith", "Document 2026-11-26"),
+            ("J.Lopez", "Document 2026-11-26"),
+            ("Lab results 14.30", "Document 2026-11-26"),
+            ("Dr.Smith referral.pdf", "Document 2026-11-26.pdf"),
+        ] {
+            let name = export_suggested_name(own, Some("2026-11-26"), utc);
+            assert_eq!(name, expected, "{own}");
+            assert!(!name.to_lowercase().contains("ana"), "{own}");
+            assert!(!name.contains("Smith") && !name.contains("Lopez"), "{own}");
+        }
+    }
+
+    #[test]
+    fn a_single_document_export_names_the_patients_own_day_or_else_the_utc_day() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        assert_eq!(
+            export_suggested_name("a.pdf", Some("2026-09-27"), utc),
+            "Document 2026-09-27.pdf"
+        );
+        // A date that does not read as a date is never put in a file name.
+        for text in ["../2026-09-27", "2026-9-27", "2026-09-27\\x", ""] {
+            assert_eq!(
+                export_suggested_name("a.pdf", Some(text), utc),
+                "Document 2026-09-28.pdf",
+                "{text}"
+            );
+        }
+        assert_eq!(
+            export_suggested_name("a.pdf", None, utc),
+            "Document 2026-09-28.pdf"
+        );
+    }
+
+    #[test]
+    fn an_export_request_without_a_date_still_reads() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let without: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
+        assert!(without.local_date.is_none());
+        let with: ExportRequest = serde_json::from_str(&format!(
+            r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#
+        ))
+        .unwrap();
+        assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
+    }
+
+    #[test]
     fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
         use portal_link::LinkError;
         let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
@@ -9212,7 +9744,7 @@ mod tests {
                 "async fn vault_reset(",
                 concat!(
                     "VaultStore::reset).await?; ",
-                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await; ",
                     "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
@@ -9269,7 +9801,7 @@ mod tests {
         let refused = code
             .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
             .unwrap();
-        let shown = code.find("after_open(&opened)").unwrap();
+        let shown = code.find("after_open(&opened,").unwrap();
         assert!(started < work && work < refused && refused < shown);
     }
 
@@ -9291,6 +9823,64 @@ mod tests {
         assert!(other_vault_exists(&this, &all));
         // The vault asking is never counted as "another".
         assert!(!other_vault_exists(&other, std::slice::from_ref(&other)));
+    }
+
+    /// What an open of one vault keeps of the others (#357): the ids come from the open vault's own
+    /// manifest and a locked vault's header, a slot with no vault holds none, and an id that cannot
+    /// be read means "cannot tell" (the wipe is then skipped), never "no keys".
+    #[test]
+    fn the_other_vaults_ids_are_the_locked_ones_headers_and_an_unreadable_one_is_unknown() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = Arc::new(VaultStore::new(temp.path().join("this")));
+        let other = Arc::new(VaultStore::new(temp.path().join("other")));
+        let empty = Arc::new(VaultStore::new(temp.path().join("empty")));
+        let all = vec![Arc::clone(&this), Arc::clone(&other), Arc::clone(&empty)];
+        this.create("river-azimuth-cobalt-sparrow-934", "FAKE Person", 1)
+            .unwrap();
+        other
+            .create("harbor-quartz-meadow-lantern-512", "FAKE Other", 1)
+            .unwrap();
+        let other_id = other.open_vault_id().unwrap();
+        assert_ne!(this.open_vault_id().unwrap(), other_id);
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(empty.notice_key_vault(), vault::NoticeKeyVault::None);
+        // The other vault open: its own id. Locked: its header's. A slot with no vault: none.
+        assert_eq!(
+            other_vault_ids(&this, &all),
+            Some(std::collections::HashSet::from([other_id]))
+        );
+        other.lock();
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(
+            other_vault_ids(&this, &all),
+            Some(std::collections::HashSet::from([other_id]))
+        );
+        // The one vault alone on the device has no other.
+        assert_eq!(
+            other_vault_ids(&this, std::slice::from_ref(&this)),
+            Some(std::collections::HashSet::new())
+        );
+        // A vault whose header cannot be read is unknown, not absent: nothing may be guessed.
+        // Every header file there is is made unreadable in place (a removal goes only through
+        // remove_owned_file, #71, which a test in this module cannot reach).
+        let mut damaged = 0;
+        for name in ["header-0.json", "header-1.json", "header.json"] {
+            let path = temp.path().join("other").join(name);
+            if path.exists() {
+                std::fs::write(path, b"{").unwrap();
+                damaged += 1;
+            }
+        }
+        // The case is only this one if a header was there to damage.
+        assert!(damaged > 0, "the other vault has no header file to damage");
+        assert_eq!(other.notice_key_vault(), vault::NoticeKeyVault::Unknown);
+        assert_eq!(other_vault_ids(&this, &all), None);
     }
 
     #[test]
@@ -10372,7 +10962,7 @@ mod tests {
     ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
     ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
     ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
-    ///   - `file_dialog(&` is called at exactly the ten sites there are today (an eleventh must be added
+    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
     ///     here on purpose, and a lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
@@ -10434,8 +11024,8 @@ mod tests {
         assert_eq!(file_calls, 1, "only the helper builds a file dialog");
         assert_eq!(builders, 0, "a file dialog builder is made directly");
         assert_eq!(
-            sites, 10,
-            "the ten file dialog sites go through file_dialog"
+            sites, 11,
+            "the eleven file dialog sites go through file_dialog"
         );
         // The helper keeps its owner.
         let source = include_str!("lib.rs");
@@ -11704,7 +12294,10 @@ mod tests {
     #[test]
     fn mobile_imports_are_named_after_the_file_not_the_uri() {
         let named = |value: &str| {
-            import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
         };
         assert_eq!(
             named("file:///private/var/mobile/Inbox/My%20Report.pdf"),
@@ -11735,11 +12328,305 @@ mod tests {
             "Imported document.pdf"
         );
         assert_eq!(
-            import_display_name(&tauri_plugin_fs::FilePath::Path(
-                "/home/jamie/FAKE.pdf".into()
-            )),
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+                None
+            ),
             "/home/jamie/FAKE.pdf"
         );
+    }
+
+    #[test]
+    fn a_picked_video_is_recognised_from_the_name_the_provider_gave_not_the_display_name() {
+        let tail =
+            |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
+        // An Android document id that ends in a video extension is a video, though the document
+        // import would call it "Imported document.pdf".
+        let clip =
+            "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
+        assert_eq!(tail(clip), "clip.mp4");
+        assert_eq!(
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap()), None),
+            "Imported document.pdf"
+        );
+        assert!(is_video_name(&tail(clip)));
+        // A video among documents is therefore refused, not sent down the document path.
+        let pdf = "content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf";
+        assert_eq!(route_pick(&[tail(clip), tail(pdf)]), None);
+        assert_eq!(route_pick(&[tail(clip)]), Some(true));
+        // An opaque id says nothing: it is not a video, so it stays on the document path as before.
+        let opaque = "content://com.android.providers.downloads.documents/document/msf%3A31";
+        assert_eq!(tail(opaque), "31");
+        assert_eq!(route_pick(&[tail(opaque)]), Some(false));
+        // Desktop paths and file URLs are their own names.
+        assert!(is_video_name(&picked_name_tail(
+            &tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into())
+        )));
+        assert!(is_video_name(&tail(
+            "file:///private/var/mobile/Inbox/My%20Clip.m4v"
+        )));
+    }
+
+    #[test]
+    fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
+        let named = |value: &str| {
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
+        };
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
+            "clip.mp4"
+        );
+        assert_eq!(
+            named("content://com.android.providers.downloads.documents/document/msf%3A31"),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/My%20Clip.mov"),
+            "My Clip.mov"
+        );
+        assert_eq!(
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into()),
+                None
+            ),
+            "/home/x/clip.mp4"
+        );
+    }
+
+    #[test]
+    fn the_providers_own_name_routes_and_names_an_opaque_android_pick() {
+        let url = |value: &str| tauri_plugin_fs::FilePath::Url(value.parse().unwrap());
+        let opaque = url("content://com.android.providers.downloads.documents/document/msf%3A31");
+        let tail = picked_name_tail(&opaque);
+        assert_eq!(tail, "31");
+        // The provider's name wins over the tail of the id.
+        assert_eq!(routing_name(&tail, Some("clip.mp4")), "clip.mp4");
+        // No answer, or none that can be used, is as before.
+        assert_eq!(routing_name(&tail, None), "31");
+        for unusable in [
+            "",
+            "   ",
+            "noextension",
+            ".pdf",
+            "trailing.",
+            "a/b.mp4",
+            "a\\b.mp4",
+            "line\nbreak.mp4",
+            "nul\0.mp4",
+            // Direction controls that make a name read as another one.
+            "clip\u{202E}4pm.mp4",
+            "clip\u{202A}.mp4",
+            "clip\u{202D}.mp4",
+            "clip\u{2066}.mp4",
+            "clip\u{2069}.mp4",
+            "clip\u{200E}.mp4",
+            "clip\u{200F}.mp4",
+            "clip\u{061C}.mp4",
+            // The invisible characters the vault's stored names drop too (one predicate): the
+            // zero-width ones, the byte order mark, the line and paragraph separators and the word
+            // joiner.
+            "clip\u{200B}.mp4",
+            "clip\u{200C}.mp4",
+            "clip\u{200D}.mp4",
+            "\u{FEFF}clip.mp4",
+            "clip\u{2028}.mp4",
+            "clip\u{2029}.mp4",
+            "clip\u{2060}.mp4",
+        ] {
+            assert_eq!(routing_name(&tail, Some(unusable)), "31", "{unusable:?}");
+        }
+        let too_long = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS));
+        assert_eq!(routing_name(&tail, Some(&too_long)), "31");
+        let longest = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS - 4));
+        assert_eq!(routing_name(&tail, Some(&longest)), longest);
+        // Surrounding space is not part of the name; a space or a dot inside it is.
+        assert_eq!(
+            routing_name(&tail, Some("  FAKE Scan 10.30.pdf ")),
+            "FAKE Scan 10.30.pdf"
+        );
+
+        // The routing: an opaque id that the provider calls a video is that video, and a PDF
+        // beside it is a refused mix, as for ids that carry their names.
+        let route = |picks: &[(&tauri_plugin_fs::FilePath, Option<&str>)]| {
+            let names: Vec<String> = picks
+                .iter()
+                .map(|(path, provided)| routing_name(&picked_name_tail(path), *provided))
+                .collect();
+            route_pick(&names)
+        };
+        assert_eq!(route(&[(&opaque, Some("clip.mp4"))]), Some(true));
+        assert_eq!(route(&[(&opaque, None)]), Some(false));
+        let other = url("content://com.android.providers.downloads.documents/document/msf%3A32");
+        assert_eq!(
+            route(&[(&opaque, Some("clip.mp4")), (&other, Some("labs.pdf"))]),
+            None
+        );
+        assert_eq!(
+            route(&[(&opaque, Some("movie.mov")), (&other, Some("b.m4v"))]),
+            None
+        );
+        assert_eq!(route(&[(&opaque, Some("labs.pdf"))]), Some(false));
+
+        // The stored name is the provider's, not a stand-in.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("clip.mp4")),
+            "clip.mp4"
+        );
+        assert_eq!(
+            video_import_display_name(&opaque, None),
+            "Imported video.mp4"
+        );
+        // A name that is not a video's still gets the stand-in for a video import.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("labs.pdf")),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            import_display_name(&opaque, Some("FAKE labs.pdf")),
+            "FAKE labs.pdf"
+        );
+        assert_eq!(import_display_name(&opaque, None), "Imported document.pdf");
+        // Only what the picker offers is kept as a document's name.
+        assert_eq!(
+            import_display_name(&opaque, Some("photo.heic")),
+            "Imported document.pdf"
+        );
+        // A desktop path is its own name (only an Android `content://` pick is ever asked).
+        assert_eq!(
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/FAKE.pdf".into()),
+                None
+            ),
+            "/home/x/FAKE.pdf"
+        );
+    }
+
+    #[test]
+    fn the_routing_and_the_stored_name_drop_exactly_the_same_hidden_characters() {
+        // Every character there is: the routing accepts a provider's name that holds it exactly
+        // when the vault's one predicate does not name it (a path separator never), and the store
+        // drops it exactly when that predicate names it. So a character the routing lets through
+        // is never one the store then silently drops (the two filters used to differ).
+        for code in 0..=0x10_FFFF_u32 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let name = format!("a{c}b.mp4");
+            let routed = routing_name("31", Some(&name));
+            if vault::is_hidden_name_char(c) || c == '/' || c == '\\' {
+                assert_eq!(routed, "31", "U+{code:04X} must not route");
+            } else {
+                assert_eq!(routed, name, "U+{code:04X} must route");
+            }
+            if vault::is_hidden_name_char(c) {
+                assert_eq!(
+                    vault::sanitize_basename(&name),
+                    "ab.mp4",
+                    "U+{code:04X} must be dropped from a stored name"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_an_opaque_id_is_asked_what_its_file_is_called() {
+        // An id's tail that already names a file (a stem and an extension) needs no question; the
+        // tail of an opaque document id ("msf:31" leaves "31") does.
+        for named in ["clip.mp4", "FAKE Scan 10.30.pdf", "a.b", "photo.jpeg"] {
+            assert!(has_stem_and_extension(named), "{named}");
+        }
+        for opaque in ["31", "", ".pdf", "name.", "msf", "raw:", "noextension"] {
+            assert!(!has_stem_and_extension(opaque), "{opaque:?}");
+        }
+    }
+
+    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+        tauri::async_runtime::block_on(future)
+    }
+
+    #[test]
+    fn a_whole_pick_asks_its_providers_within_one_budget_not_one_each() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Six files, a provider that needs 250 ms for each, and a budget of 400 ms in all: the old
+        // rule (a limit per file) would spend 6 x 250 ms; the budget spends about 400 ms and the
+        // files after it are not asked at all.
+        let asked = AtomicUsize::new(0);
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            6,
+            |_| true,
+            Duration::from_millis(400),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    Some(format!("clip{index}.mp4"))
+                }
+            },
+        ));
+        let spent = started.elapsed();
+        assert_eq!(names.len(), 6);
+        // The first answered in time; the second ran out of budget; the rest were never asked.
+        assert_eq!(names[0].as_deref(), Some("clip0.mp4"));
+        assert!(names[1..].iter().all(Option::is_none), "{names:?}");
+        assert!(asked.load(Ordering::SeqCst) <= 3, "asked {asked:?}");
+        assert!(spent < Duration::from_millis(1200), "spent {spent:?}");
+    }
+
+    #[test]
+    fn one_slow_question_is_cut_at_its_own_limit_and_a_spent_budget_asks_nothing() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Each question is cut at `each`, however much of the budget is left.
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            3,
+            |_| true,
+            Duration::from_secs(30),
+            Duration::from_millis(60),
+            |_| async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Some("never.mp4".to_owned())
+            },
+        ));
+        assert_eq!(names, vec![None, None, None]);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        // A budget that is already spent asks nobody.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |_| true,
+            Duration::ZERO,
+            Duration::from_secs(3),
+            |_| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async { Some("late.mp4".to_owned()) }
+            },
+        ));
+        assert_eq!(names, vec![None, None, None, None]);
+        assert_eq!(asked.load(Ordering::SeqCst), 0);
+        // Only the files `askable` says are asked, and each one only once.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |index| index % 2 == 1,
+            Duration::from_secs(5),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move { Some(format!("n{index}.mp4")) }
+            },
+        ));
+        assert_eq!(
+            names,
+            vec![None, Some("n1.mp4".into()), None, Some("n3.mp4".into())]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
     }
 
     #[cfg(all(unix, desktop))]

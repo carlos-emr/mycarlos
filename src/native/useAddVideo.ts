@@ -27,6 +27,13 @@ export interface AddVideoApi {
   canAdd: boolean;
   /** Picks a video and adds it to the person's records, in these folders. */
   start(profileId: string, folderIds: string[]): Promise<void>;
+  /** Adds a video "+ New" already picked (it was the whole pick), with the same progress, Cancel
+   * and answer as `start`. */
+  addPicked(
+    pickId: string,
+    profileId: string,
+    folderIds: string[],
+  ): Promise<void>;
   /** Stops the import at its next read; nothing is stored. */
   cancel(): void;
   /** Forgets everything: the vault locked, so what an import left (a "locked" failure, a stale
@@ -92,68 +99,83 @@ export function useAddVideo({
     timer.current = null;
   };
 
-  const start = useCallback(async (profileId: string, folderIds: string[]) => {
-    const current = bridgeRef.current;
-    if (
-      running.current ||
-      !current.pickImportVideo ||
-      !current.importPickedVideo
-    )
-      return;
-    running.current = true;
-    const mine = epoch.current;
-    const mineStill = () => mounted.current && epoch.current === mine;
-    setOutcome(null);
-    setCancelling(false);
-    setProgress(null);
-    setWorking(true);
-    try {
-      const pickId = await current.pickImportVideo(profileId, folderIds);
-      // A lock while the picker was open: this pick belongs to the session that ended.
-      if (!pickId || epoch.current !== mine) return;
-      if (current.videoImportProgress && epoch.current === mine) {
-        timer.current = setInterval(() => {
-          void bridgeRef.current
-            .videoImportProgress?.()
-            .then((now) => {
-              if (mineStill()) setProgress(now);
-            })
-            .catch(() => undefined);
-        }, POLL_MS);
-      }
-      const result = await current.importPickedVideo(
-        pickId,
-        profileId,
-        folderIds,
-      );
-      if (epoch.current !== mine) return;
-      if (result.result === "imported") {
-        // Even if the screen that started it is gone: the library shows the video.
-        addedRef.current?.(result.recordId);
-        if (mounted.current) setOutcome({ kind: "added" });
-      } else if (mounted.current) {
-        setOutcome(
-          result.result === "refused"
-            ? { kind: "refused", reason: result.reason }
-            : { kind: result.result },
+  // `chosen` is a pick "+ New" already made (a video in its combined picker); without it the video
+  // picker opens.
+  const begin = useCallback(
+    async (profileId: string, folderIds: string[], chosen?: string) => {
+      const current = bridgeRef.current;
+      if (
+        running.current ||
+        (!chosen && !current.pickImportVideo) ||
+        !current.importPickedVideo
+      )
+        return;
+      running.current = true;
+      const mine = epoch.current;
+      const mineStill = () => mounted.current && epoch.current === mine;
+      setOutcome(null);
+      setCancelling(false);
+      setProgress(null);
+      setWorking(true);
+      try {
+        const pickId =
+          chosen ?? (await current.pickImportVideo!(profileId, folderIds));
+        // A lock while the picker was open: this pick belongs to the session that ended.
+        if (!pickId || epoch.current !== mine) return;
+        if (current.videoImportProgress && epoch.current === mine) {
+          timer.current = setInterval(() => {
+            void bridgeRef.current
+              .videoImportProgress?.()
+              .then((now) => {
+                if (mineStill()) setProgress(now);
+              })
+              .catch(() => undefined);
+          }, POLL_MS);
+        }
+        const result = await current.importPickedVideo(
+          pickId,
+          profileId,
+          folderIds,
         );
-      }
-    } catch (error) {
-      if (mineStill())
-        setOutcome({ kind: "failed", text: vaultErrorMessage(error) });
-    } finally {
-      // A reset already cleared everything (and may have started another import): not this one's.
-      if (epoch.current === mine) {
-        stopPolling();
-        running.current = false;
-        if (mounted.current) {
-          setWorking(false);
-          setCancelling(false);
-          setProgress(null);
+        if (epoch.current !== mine) return;
+        if (result.result === "imported") {
+          // Even if the screen that started it is gone: the library shows the video.
+          addedRef.current?.(result.recordId);
+          if (mounted.current) setOutcome({ kind: "added" });
+        } else if (mounted.current) {
+          setOutcome(
+            result.result === "refused"
+              ? { kind: "refused", reason: result.reason }
+              : { kind: result.result },
+          );
+        }
+      } catch (error) {
+        if (mineStill())
+          setOutcome({ kind: "failed", text: vaultErrorMessage(error) });
+      } finally {
+        // A reset already cleared everything (and may have started another import): not this one's.
+        if (epoch.current === mine) {
+          stopPolling();
+          running.current = false;
+          if (mounted.current) {
+            setWorking(false);
+            setCancelling(false);
+            setProgress(null);
+          }
         }
       }
-    }
-  }, []);
+    },
+    [],
+  );
+  const start = useCallback(
+    (profileId: string, folderIds: string[]) => begin(profileId, folderIds),
+    [begin],
+  );
+  const addPicked = useCallback(
+    (pickId: string, profileId: string, folderIds: string[]) =>
+      begin(profileId, folderIds, pickId),
+    [begin],
+  );
 
   const reset = useCallback(() => {
     epoch.current += 1;
@@ -173,6 +195,7 @@ export function useAddVideo({
   return {
     canAdd: canAddVideo(bridge),
     start,
+    addPicked,
     cancel,
     reset,
     working,

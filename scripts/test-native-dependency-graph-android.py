@@ -34,6 +34,9 @@ def metadata(**changes):
         "tauri-plugin-android-pdf": package(
             "tauri-plugin-android-pdf", ROOT / "src-tauri/android-pdf/Cargo.toml", None
         ),
+        "tauri-plugin-android-trust": package(
+            "tauri-plugin-android-trust", ROOT / "src-tauri/android-trust/Cargo.toml", None
+        ),
         "tauri-plugin-ios-push": package(
             "tauri-plugin-ios-push", ROOT / "src-tauri/ios-push/Cargo.toml", None
         ),
@@ -53,6 +56,13 @@ class DependencyGraph(unittest.TestCase):
         wrong = package("tauri-plugin-android-pdf", "/elsewhere/Cargo.toml", None)
         with self.assertRaises(ValueError):
             check.validate_metadata(metadata(**{"tauri-plugin-android-pdf": wrong}))
+
+    def test_the_trust_plugin_from_anywhere_else_or_missing_is_refused(self):
+        wrong = package("tauri-plugin-android-trust", "/elsewhere/Cargo.toml", None)
+        with self.assertRaises(ValueError):
+            check.validate_metadata(metadata(**{"tauri-plugin-android-trust": wrong}))
+        with self.assertRaises(ValueError):
+            check.validate_metadata(metadata(**{"tauri-plugin-android-trust": None}))
 
     def test_a_missing_plugin_or_another_path_package_is_refused(self):
         with self.assertRaises(ValueError):

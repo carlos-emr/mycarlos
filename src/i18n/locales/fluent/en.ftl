@@ -815,6 +815,8 @@ native-filter-pictures = JPEG and PNG pictures
 
 native-filter-pdfAndPictures = PDF documents and JPEG and PNG pictures
 
+native-filter-pdfPicturesAndVideos = PDF documents, JPEG and PNG pictures and videos (MP4 or MOV)
+
 native-kit-text =
     myCarlos recovery kit
 
@@ -1042,6 +1044,8 @@ recoveryKey-reason-legend = Why are you replacing it?
 
 recoveryKey-reason-routine = I just want a new key: its kit is safe
 
+recoveryKey-kitCloudWarning = This file is not encrypted. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it, so save it somewhere that does not sync.
+
 recoveryKey-saveKit = Save recovery kit…
 
 recoveryKey-threeMisses = That did not match three times. Look at your recovery key again, then check it.
@@ -1177,6 +1181,8 @@ security-autoLock-shorter = Shorter delay
 security-autoLock-title = Lock automatically
 
 security-backup-body = One file holding your whole vault, still encrypted. Keep it somewhere other than this device, such as a USB drive. It opens with the passphrase or recovery key you have when you save it, and keeps opening with them even after you change them here. To restore one, lock the vault and choose Restore from a backup.
+
+security-backup-cloudWarning = This file is encrypted, but it shows how many documents it holds and how large each one is. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it.
 
 security-backup-save = Save encrypted backup…
 
@@ -2401,6 +2407,7 @@ notifications-checkBusy = A document check is stopping. Choose Check for new doc
 noticesStep-title = Documents from your clinic
 noticesStep-intro = Your clinic is linked. myCarlos can check for new documents for you, and show a notice when one arrives on a computer that can. Nothing is turned on unless you tick it.
 noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-laterBackground = You can change the background choices any time in { $settings }, under { $preferences }: { $background }.
 noticesStep-done = Done
 noticesStep-notNow = Not now
 
@@ -2499,6 +2506,8 @@ reader-android-zoomOut = Zoom out
 
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Record a video
+interface-RecordDialog-recordAVideoFor = Record a video for { $name }
+interface-RecordDialog-recordingSettings = Recording settings
 interface-RecordDialog-unavailable = Video recording isn't available on this device.
 interface-RecordDialog-why = Why?
 interface-RecordDialog-startingTheCameraAndMicrophone = Starting the camera and microphone…
@@ -2514,6 +2523,9 @@ interface-RecordDialog-unnamedCamera = Camera { $number }
 interface-RecordDialog-unnamedMicrophone = Microphone { $number }
 interface-RecordDialog-systemDefaultDevice = System default
 interface-RecordDialog-deviceFellBack = The camera or microphone you used last is not connected, so the system's default is in use.
+interface-RecordDialog-deviceNotSwitched = The camera or microphone you chose could not be opened, so the one in use is still on.
+interface-RecordDialog-saySomething = Say something: the bar should move.
+interface-RecordDialog-settingsNote = The video is saved encrypted. myCarlos remembers these choices on this device.
 interface-RecordDialog-testMicrophone = Test microphone
 interface-RecordDialog-stopTestingMicrophone = Stop testing
 interface-RecordDialog-microphoneLevel = Microphone level
@@ -2716,7 +2728,7 @@ handover-import-opening = Opening…
 
 handover-import-error-typo = That key does not look right. Check it against what you were given.
 
-handover-import-error-recovery = That is a recovery key, not the key for this file. Ask for the key made for the file.
+handover-import-error-recovery = That looks like a recovery key, not the key for this file. Check the key you were given for the file, and check for a typo. If you were not given one, ask for the key made for the file.
 
 handover-import-error-wrong = That does not open this file.
 
@@ -2959,6 +2971,9 @@ iphonePush-timedOut = Apple did not answer in time. Turn this off and on again t
 iphonePush-needsAttention = Notices could not be set up with your clinic. Turn this off and on again. If it still does not work, tell your clinic.
 
 iphonePush-error = The setting could not be saved. Try again.
+
+native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.
+
 interface-AddVideo-add = Add a video
 
 interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and the device's name and model it carries are removed first.
@@ -2980,6 +2995,8 @@ interface-AddVideo-duplicate = That video is already here. Nothing was added.
 interface-AddVideo-cancelled = Cancelled. Nothing was added.
 
 interface-AddVideo-notVideo = This file is not a video myCarlos can add. Choose an MP4 or MOV video.
+
+interface-AddVideo-videoAlone = A video is added on its own. Choose one video, or choose documents and pictures, but not both together. Nothing was added.
 
 interface-AddVideo-hevc = This video uses H.265 (HEVC), which many computers cannot play. Save it as an H.264 MP4 and add it again.
 

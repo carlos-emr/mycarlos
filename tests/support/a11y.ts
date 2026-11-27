@@ -337,6 +337,8 @@ export async function fakeVault(
             }
             case "vault_import_pick":
               return "FAKE-pick";
+            case "vault_import_any_pick":
+              return { kind: "documents", pickId: "FAKE-pick" };
             case "vault_import_picked":
               snapshot.records.push({
                 id: "scan",

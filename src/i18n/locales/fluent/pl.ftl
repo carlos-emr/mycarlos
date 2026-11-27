@@ -857,6 +857,8 @@ native-filter-pictures = Obrazy JPEG i PNG
 
 native-filter-pdfAndPictures = Dokumenty PDF oraz obrazy JPEG i PNG
 
+native-filter-pdfPicturesAndVideos = Dokumenty PDF, obrazy JPEG i PNG oraz filmy (MP4 lub MOV)
+
 native-kit-text =
     Zestaw odzyskiwania myCarlos
 
@@ -1088,6 +1090,8 @@ recoveryKey-reason-legend = Dlaczego klucz jest zastępowany?
 
 recoveryKey-reason-routine = Chcę po prostu nowy klucz: zestaw jest bezpieczny
 
+recoveryKey-kitCloudWarning = Ten plik nie jest zaszyfrowany. Folder synchronizowany z chmurą (OneDrive, iCloud Drive, Dropbox, Google Drive) go przesyła, dlatego proszę zapisać go w miejscu, które nie jest synchronizowane.
+
 recoveryKey-saveKit = Zapisz zestaw odzyskiwania…
 
 recoveryKey-threeMisses = Trzy razy z rzędu klucz się nie zgadzał. Proszę ponownie spojrzeć na klucz odzyskiwania, a potem go sprawdzić.
@@ -1233,6 +1237,8 @@ security-autoLock-shorter = Krótszy czas
 security-autoLock-title = Automatyczna blokada
 
 security-backup-body = Jeden plik z całym sejfem, nadal zaszyfrowanym. Proszę przechowywać go poza tym urządzeniem, na przykład na dysku USB. Otwiera go hasło główne lub klucz odzyskiwania obowiązujące w chwili zapisania i nadal go otwierają, nawet po ich zmianie tutaj. Aby przywrócić kopię, należy zablokować sejf i wybrać Przywróć z kopii zapasowej.
+
+security-backup-cloudWarning = Ten plik jest zaszyfrowany, ale widać w nim, ile dokumentów zawiera i jak duży jest każdy z nich. Folder synchronizowany z chmurą (OneDrive, iCloud Drive, Dropbox, Google Drive) go przesyła.
 
 security-backup-save = Zapisz zaszyfrowaną kopię zapasową…
 
@@ -2516,6 +2522,7 @@ notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za
 noticesStep-title = Dokumenty z przychodni
 noticesStep-intro = Przychodnia jest połączona. myCarlos może sprawdzać nowe dokumenty za Państwa i pokazywać powiadomienie o nowym dokumencie na komputerze, który to umożliwia. Nic nie zostanie włączone bez zaznaczenia.
 noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $notices }”.
+noticesStep-laterBackground = Wybory dotyczące pracy w tle można zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $background }”.
 noticesStep-done = Gotowe
 noticesStep-notNow = Nie teraz
 
@@ -2614,6 +2621,8 @@ reader-android-zoomOut = Pomniejsz
 
 interface-video-name = Film, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Nagraj film
+interface-RecordDialog-recordAVideoFor = Nagraj film dla: { $name }
+interface-RecordDialog-recordingSettings = Ustawienia nagrywania
 interface-RecordDialog-unavailable = Nagrywanie filmów nie jest dostępne na tym urządzeniu.
 interface-RecordDialog-why = Dlaczego?
 interface-RecordDialog-startingTheCameraAndMicrophone = Uruchamianie aparatu i mikrofonu…
@@ -2629,6 +2638,9 @@ interface-RecordDialog-unnamedCamera = Kamera { $number }
 interface-RecordDialog-unnamedMicrophone = Mikrofon { $number }
 interface-RecordDialog-systemDefaultDevice = Domyślne urządzenie systemu
 interface-RecordDialog-deviceFellBack = Kamera lub mikrofon użyty ostatnio nie jest podłączony, więc używane jest urządzenie domyślne systemu.
+interface-RecordDialog-deviceNotSwitched = Nie udało się otworzyć wybranej kamery lub mikrofonu, więc nadal działa to, które było używane.
+interface-RecordDialog-saySomething = Powiedz coś: pasek powinien się poruszyć.
+interface-RecordDialog-settingsNote = Film jest zapisywany w postaci zaszyfrowanej. myCarlos zapamiętuje te wybory na tym urządzeniu.
 interface-RecordDialog-testMicrophone = Sprawdź mikrofon
 interface-RecordDialog-stopTestingMicrophone = Zakończ sprawdzanie
 interface-RecordDialog-microphoneLevel = Poziom mikrofonu
@@ -2834,7 +2846,7 @@ handover-import-opening = Otwieranie…
 
 handover-import-error-typo = Ten klucz wygląda niepoprawnie. Porównaj go z tym, który otrzymałeś(-aś).
 
-handover-import-error-recovery = To jest klucz odzyskiwania, a nie klucz do tego pliku. Poproś o klucz utworzony dla pliku.
+handover-import-error-recovery = To wygląda na klucz odzyskiwania, a nie klucz do tego pliku. Sprawdź klucz, który otrzymałeś(-aś) dla pliku, i czy nie ma w nim literówki. Jeśli go nie otrzymałeś(-aś), poproś o klucz utworzony dla pliku.
 
 handover-import-error-wrong = To nie otwiera tego pliku.
 
@@ -3088,6 +3100,9 @@ iphonePush-timedOut = Apple nie odpowiedziało na czas. Proszę wyłączyć i po
 iphonePush-needsAttention = Nie udało się skonfigurować powiadomień z Twoją kliniką. Wyłącz i włącz tę opcję ponownie. Jeśli nadal nie działa, powiadom swoją klinikę.
 
 iphonePush-error = Nie udało się zapisać ustawienia. Proszę spróbować ponownie.
+
+native-backupExclusionFailed = Ten telefon nie zdołał wyłączyć skarbca z kopii zapasowych urządzenia. Spróbuj ponownie.
+
 interface-AddVideo-add = Dodaj film
 
 interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce oraz nazwa i model urządzenia, które zawiera, zostaną najpierw usunięte.
@@ -3109,6 +3124,8 @@ interface-AddVideo-duplicate = Ten film już tu jest. Nic nie zostało dodane.
 interface-AddVideo-cancelled = Anulowano. Nic nie zostało dodane.
 
 interface-AddVideo-notVideo = Ten plik nie jest filmem, który myCarlos może dodać. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-videoAlone = Film jest dodawany osobno. Proszę wybrać jeden film albo dokumenty i obrazy, ale nie jedno i drugie razem. Nic nie zostało dodane.
 
 interface-AddVideo-hevc = Ten film używa formatu H.265 (HEVC), którego wiele komputerów nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
 
