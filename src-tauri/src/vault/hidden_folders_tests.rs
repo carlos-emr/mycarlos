@@ -261,13 +261,54 @@ fn a_document_filed_in_two_folders_stays_visible_through_the_one_that_is_not_hid
         record.folder_ids.iter().copied().collect::<HashSet<_>>(),
         HashSet::from([v.imaging, v.letters])
     );
-    // Re-filing a document that is visible through another folder sets all its places: it leaves
-    // the hidden folder it was also in, as the patient chose.
+}
+
+#[test]
+fn re_filing_a_document_that_is_also_in_a_hidden_folder_keeps_the_hidden_place() {
+    // The page only ever sees the places in reach, so it can only send those back: the place in
+    // the hidden folder must survive a re-filing, or restoring would not bring back what was there.
+    let v = vault();
+    let other = v
+        .store
+        .create_folder(v.person, None, "FAKE Other", 6)
+        .unwrap();
+    v.store
+        .assign_folders(v.in_imaging, vec![v.imaging, v.letters])
+        .unwrap();
+    v.store.hide_folder(v.letters, 100).unwrap();
+    // Re-filed from what the page sees: the visible folder and a new one.
+    v.store
+        .assign_folders(v.in_imaging, vec![v.imaging, other])
+        .unwrap();
+    let shown = v.store.snapshot().unwrap();
+    let record = shown
+        .records
+        .iter()
+        .find(|record| record.id == v.in_imaging)
+        .unwrap();
+    assert_eq!(
+        record.folder_ids.iter().copied().collect::<HashSet<_>>(),
+        HashSet::from([v.imaging, other])
+    );
+    v.store.restore_folder(v.letters).unwrap();
+    let back = v.store.snapshot().unwrap();
+    let record = back
+        .records
+        .iter()
+        .find(|record| record.id == v.in_imaging)
+        .unwrap();
+    assert_eq!(
+        record.folder_ids.iter().copied().collect::<HashSet<_>>(),
+        HashSet::from([v.imaging, other, v.letters])
+    );
+    // Taking the document out of every folder it is shown in puts it in none: the hidden place
+    // goes too, or the document would vanish from the library.
     v.store.hide_folder(v.letters, 101).unwrap();
     v.store.assign_folders(v.in_imaging, vec![]).unwrap();
+    assert!(record_ids(&v.store).contains(&v.in_imaging));
     v.store.restore_folder(v.letters).unwrap();
-    let record_after = v.store.snapshot().unwrap();
-    assert!(record_after
+    let last = v.store.snapshot().unwrap();
+    assert!(last
         .records
         .iter()
         .find(|record| record.id == v.in_imaging)

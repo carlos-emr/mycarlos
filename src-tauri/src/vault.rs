@@ -3581,12 +3581,34 @@ impl VaultStore {
                     );
                 }
             }
-            // Filing a document sets ALL its places: one the patient re-files leaves a hidden
-            // folder it was also in (a document that was visible through another folder, and is
-            // now put somewhere, is the patient's choice of where it lives).
-            for record in &mut manifest.records {
+            // The patient only ever sees, and so only ever chooses, the places in reach: a place
+            // in a hidden folder (a document visible through another folder, #574) is kept, so
+            // that restoring the folder brings back exactly what was there.
+            let mut new_places: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+            for record in &manifest.records {
                 if unique_record_ids.contains(&record.id) {
-                    record.folder_ids = assignments.clone();
+                    // A place out of reach is never one of the assignments (they were validated
+                    // against the person's folders in reach).
+                    let mut places = assignments.clone();
+                    // Taking a document out of every folder it was shown in puts it in none: the
+                    // hidden place goes too, or the document would vanish from the library.
+                    if !assignments.is_empty() {
+                        places.extend(
+                            record.folder_ids.iter().copied().filter(|id| {
+                                !in_reach.contains(id) && !assignments.contains(id)
+                            }),
+                        );
+                    }
+                    // A record with more places than the manifest allows would not open again.
+                    if places.len() > MAX_FOLDER_ASSIGNMENTS {
+                        return Err(VaultError::Invalid);
+                    }
+                    new_places.insert(record.id, places);
+                }
+            }
+            for record in &mut manifest.records {
+                if let Some(places) = new_places.remove(&record.id) {
+                    record.folder_ids = places;
                 }
             }
             Ok(())
@@ -3979,16 +4001,23 @@ impl VaultStore {
         }
         let at_ms = crate::now_ms();
         let to = folders_at_the_time(&unlocked.manifest, &folder_ids);
+        // A move to another person leaves the places of this one (a hidden folder of it
+        // included, #574); the entry names only the places in reach, never a hidden folder.
+        let in_reach = unlocked.manifest.folders_in_reach();
         let entries = unlocked
             .manifest
             .records
             .iter()
             .filter(|record| moved.contains_key(&record.id))
             .map(|record| {
-                let mut entry = record_entry(HistoryEvent::Moved, at_ms, record).with_move(
-                    folders_at_the_time(&unlocked.manifest, &record.folder_ids),
-                    to.clone(),
-                );
+                let visible: Vec<Uuid> = record
+                    .folder_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| in_reach.contains(id))
+                    .collect();
+                let mut entry = record_entry(HistoryEvent::Moved, at_ms, record)
+                    .with_move(folders_at_the_time(&unlocked.manifest, &visible), to.clone());
                 entry.profile_id = Some(profile_id);
                 if record.profile_id == shared {
                     entry.how = Some("shared".to_owned());
