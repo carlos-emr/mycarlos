@@ -574,7 +574,10 @@ pub(crate) struct Summary {
     pub(crate) fallbacks: Vec<crate::safety::Fallback>,
     /// The unsourced absence-shaped sentences left out before the post-steps (`safety::
     /// is_absence_sentence`), for measuring: `index` is the place the model wrote it, `before` its
-    /// words, `after` empty; never shown.
+    /// words, `after` empty; never shown. After the safety step, every sentence that still has
+    /// no source is left out too when some other sentence has one (#581): check "unsourced",
+    /// `index` its place in the list at that moment, `before` none (a count and a place, never
+    /// its words), `after` empty.
     #[allow(dead_code)]
     pub(crate) dropped: Vec<crate::safety::Fallback>,
     /// How the helper made this answer, when it said (counts and times only): the measured
@@ -1343,6 +1346,34 @@ impl Runner {
                 }
             }
         }
+        // #581, option A: a sentence that STILL has no source here (its quote was not in the pages
+        // read, and the safety step above, which can repair a missing quote, did not fix it) is
+        // the gist of the letter and no more: the whole letter is not a source. It is left out
+        // before it is shown, and counted in `dropped` (check "unsourced", no words kept). It reads
+        // whether a source was found, never words, so every language follows the same rule. Never
+        // when NO sentence has a source: an empty summary helps nobody, and the reader then says
+        // no source was found for each, as before. `unlocated` keeps counting every quote the
+        // model got wrong, dropped sentences included.
+        let unlocated_total = unlocated_quotes.len();
+        if sentences.iter().any(|sentence| !sentence.quote.is_empty()) {
+            let drop: Vec<bool> = sentences
+                .iter()
+                .map(|sentence| sentence.quote.is_empty())
+                .collect();
+            for (index, _) in drop.iter().enumerate().filter(|(_, dropping)| **dropping) {
+                dropped.push(crate::safety::Fallback {
+                    check: "unsourced",
+                    index,
+                    before: None,
+                    after: String::new(),
+                });
+            }
+            if drop.iter().any(|&dropping| dropping) {
+                unlocated_quotes.drop_sentences(&drop);
+                let mut dropping = drop.iter();
+                sentences.retain(|_| !dropping.next().copied().unwrap_or(false));
+            }
+        }
         // K19 (evaluation only): after the addressee step, a short plain explanation beside the
         // first use of each medical word, germ, test or unit (`glossary`); it only inserts, and
         // the words go in `explained` for measuring, never into a log. A fallback quote is the
@@ -1390,7 +1421,7 @@ impl Runner {
             last_page,
             last_page_cut: answer.last_page_cut,
             tail_page: answer.tail_page,
-            unlocated: unlocated_quotes.len(),
+            unlocated: unlocated_total,
             unlocated_quotes,
             rewrites,
             explained,
@@ -3377,31 +3408,91 @@ mod tests {
         }
 
         #[test]
-        fn given_a_negative_finding_with_an_unfound_quote_when_summarized_then_it_is_kept() {
-            // "does not show any sign of ..." is a real result the model misquoted, not an absence of saying.
+        fn given_a_negative_finding_with_an_unfound_quote_when_summarized_then_it_is_left_out_as_unsourced(
+        ) {
+            // "does not show any sign of ..." may be a real result the model misquoted, but a point
+            // with no source line is not shown (#581, option A): it is the same rule as for any
+            // other unsourced point, and it is counted, not worded, in `dropped`.
             let runner = Runner::new(config(&["--negative-finding"], GIB));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
-            assert!(summary.dropped.is_empty());
+            assert_eq!(summary.dropped.len(), 1);
+            assert_eq!(summary.dropped[0].check, "unsourced");
+            assert_eq!(summary.dropped[0].before, None);
             assert_eq!(summary.unlocated, 1);
             assert!(summary
                 .sentences
                 .iter()
-                .any(|s| s.text.contains("does not show any sign") && s.quote.is_empty()));
+                .all(|s| !s.text.contains("does not show any sign") && !s.quote.is_empty()));
         }
 
         #[test]
-        fn given_an_absence_sentence_in_another_language_when_summarized_then_it_is_kept() {
+        fn given_an_absence_sentence_in_another_language_when_summarized_then_it_is_left_out_as_unsourced(
+        ) {
+            // The absence rule reads English wording; the unsourced rule reads whether a source
+            // was found, so it applies in every language.
             let runner = Runner::new(config(&["--absence"], GIB));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
             let mut french = request();
             french.lang = "fr".to_owned();
             let summary = runner.summarize(runner.ticket(), &french).unwrap();
-            assert!(summary.dropped.is_empty());
+            assert_eq!(summary.dropped.len(), 1);
+            assert_eq!(summary.dropped[0].check, "unsourced");
             assert!(summary
                 .sentences
                 .iter()
-                .any(|s| s.text.contains("does not give instructions") && s.quote.is_empty()));
+                .all(|s| !s.text.contains("does not give instructions")));
+        }
+
+        #[test]
+        fn given_a_point_with_no_source_among_sourced_ones_when_summarized_then_it_is_left_out_and_counted(
+        ) {
+            // #581, option A: the maintainer's review of a summary: "several things came back with
+            // no source found ... the whole letter is the source." Such a point is dropped before
+            // it is shown, and counted; the sourced points are the same, in the same order.
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            let before = plain.summarize(plain.ticket(), &request()).unwrap();
+
+            let runner = Runner::new(config(&["--gist"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+
+            let words = |s: &Summary| {
+                s.sentences
+                    .iter()
+                    .map(|x| x.text.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(words(&summary), words(&before));
+            // Nothing the patient sees claims a source it lacks, or lacks one.
+            assert!(summary.sentences.iter().all(|s| !s.quote.is_empty()));
+            assert!(summary
+                .sentences
+                .iter()
+                .all(|s| !s.text.contains("The letter is about")));
+            // One point left out: its place in the list then (after the model's three), a count
+            // and no words; the quotes the model got wrong are still counted.
+            assert_eq!(summary.dropped.len(), 1);
+            let dropped = &summary.dropped[0];
+            assert_eq!(dropped.check, "unsourced");
+            assert_eq!(dropped.index, before.sentences.len());
+            assert_eq!(dropped.before, None);
+            assert_eq!(dropped.after, "");
+            assert_eq!(summary.unlocated, 1);
+            assert_eq!(summary.unlocated_quotes.len(), 0);
+        }
+
+        #[test]
+        fn given_no_point_with_a_source_when_summarized_then_none_is_left_out() {
+            // Every quote unfound: an empty summary helps nobody, so they are all kept and the
+            // reader says no source was found for each, as before.
+            let runner = Runner::new(config(&["--unlocated", "--gist"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert!(!summary.sentences.is_empty());
+            assert!(summary.sentences.iter().all(|s| s.quote.is_empty()));
         }
 
         #[test]
