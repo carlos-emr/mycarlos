@@ -2719,6 +2719,31 @@ restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywróc
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
 
+backupReminder-label = Przypomnienie o kopii zapasowej
+
+backupReminder-never = Nie zrobiono jeszcze kopii zapasowej myCarlos tego sejfu.
+
+backupReminder-old = Ostatnia kopia zapasowa myCarlos pochodzi z dnia { $date }.
+
+backupReminder-many = { $count ->
+        [one] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokument.
+        [few] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokumenty.
+       *[other] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokumentów.
+    }
+
+backupReminder-partial = Ostatnia kopia zapasowa myCarlos pominęła Twoje filmy, więc nie zawiera wszystkiego.
+
+backupReminder-ios = Na iPhonie lub iPadzie Twój sejf nie jest częścią iCloud ani kopii zapasowych samego urządzenia. Jeśli zgubisz lub wymienisz to urządzenie bez kopii zapasowej myCarlos, stracisz sejf.
+
+backupReminder-android = Na telefonie lub tablecie z Androidem Twój sejf nie jest częścią kopii zapasowych samego urządzenia. Jeśli zgubisz lub wymienisz to urządzenie bez kopii zapasowej myCarlos, stracisz sejf.
+
+backupReminder-computer = Twój sejf jest przechowywany tylko na tym komputerze. Jeśli ten komputer zostanie zgubiony, wymieniony lub zresetowany bez kopii zapasowej myCarlos, a Twoje własne kopie zapasowe komputera nie obejmują folderu myCarlos, stracisz sejf.
+
+backupReminder-make = Zrób zaszyfrowaną kopię zapasową
+
+backupReminder-notNow = Nie teraz
+
+backupReminder-postponed = Przypomnimy o tym za { $days } dni.
 handover-section-title = Przekazanie dokumentów osoby
 
 handover-section-body = Skopiuj dokumenty jednej osoby do pliku dla innego urządzenia, na przykład aby dać dziecku jego własne dokumenty. Plik ma własny klucz i nie zmienia Twojego sejfu. Możesz też dodać osobę z pliku, który ktoś Ci przekazał.

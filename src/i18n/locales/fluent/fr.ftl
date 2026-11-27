@@ -2639,6 +2639,30 @@ restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer 
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
 
+backupReminder-label = Rappel de sauvegarde
+
+backupReminder-never = Vous n’avez pas encore fait de sauvegarde myCarlos de ce coffre.
+
+backupReminder-old = Votre dernière sauvegarde myCarlos date du { $date }.
+
+backupReminder-many = { $count ->
+        [one] { $count } document a été ajouté depuis votre dernière sauvegarde myCarlos.
+       *[other] { $count } documents ont été ajoutés depuis votre dernière sauvegarde myCarlos.
+    }
+
+backupReminder-partial = Votre dernière sauvegarde myCarlos a laissé de côté vos vidéos : elle ne contient donc pas tout.
+
+backupReminder-ios = Sur un iPhone ou un iPad, votre coffre ne fait partie ni d’iCloud ni des sauvegardes de l’appareil lui-même. Si vous perdez ou remplacez cet appareil sans sauvegarde myCarlos, vous perdez votre coffre.
+
+backupReminder-android = Sur un téléphone ou une tablette Android, votre coffre ne fait pas partie des sauvegardes de l’appareil lui-même. Si vous perdez ou remplacez cet appareil sans sauvegarde myCarlos, vous perdez votre coffre.
+
+backupReminder-computer = Votre coffre n’est conservé que sur cet ordinateur. Si cet ordinateur est perdu, remplacé ou réinitialisé sans sauvegarde myCarlos, et que vos propres sauvegardes d’ordinateur n’incluent pas le dossier de myCarlos, vous perdez votre coffre.
+
+backupReminder-make = Faire une sauvegarde chiffrée
+
+backupReminder-notNow = Pas maintenant
+
+backupReminder-postponed = Nous vous le rappellerons dans { $days } jours.
 handover-section-title = Transmettre les dossiers d'une personne
 
 handover-section-body = Copiez les documents d'une personne dans un fichier pour un autre appareil, par exemple pour donner à un enfant ses propres dossiers. Le fichier a sa propre clé et ne modifie pas votre coffre. Vous pouvez aussi ajouter une personne à partir d'un fichier que quelqu'un vous a remis.

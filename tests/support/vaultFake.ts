@@ -375,6 +375,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         portalLinkingEnabled?: boolean;
         portalLinks?: Link[];
         sharedProfileId?: string;
+        // Days only, as the native side keeps them (the patient's own calendar days).
+        backupReminder?: {
+          savedDay?: number;
+          partialDay?: number;
+          snoozedUntilDay?: number;
+        };
       };
       type Outcome = { resolve?: unknown; reject?: unknown; pending?: true };
       type HistoryEntry = {
@@ -1726,6 +1732,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // --- Security: encrypted backup ---
           // The size the backup would have, with and without videos (#359):
           // the fake holds no video.
+          case "vault_backup_reminder_snooze":
+            refuseLocked();
+            return null;
           case "vault_backup_size": {
             refuseLocked();
             const bytes = snapshot.records.reduce(
@@ -1750,6 +1759,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             pick(request.pickId, "backup", true);
             refusePaused();
             state.backupsSaved += 1;
+            {
+              // Natively the reminder keeps the patient's day (the page sends it); a whole backup
+              // satisfies it and ends a snooze, one that left videos out is kept apart.
+              const [y, m, d] = String(request.localDate)
+                .split("-")
+                .map(Number);
+              const day = Date.UTC(y, m - 1, d) / 86_400_000;
+              const kept = (state.snapshot.backupReminder ??= {});
+              if (request.leaveVideosOut) kept.partialDay = day;
+              else {
+                kept.savedDay = day;
+                delete kept.partialDay;
+                delete kept.snoozedUntilDay;
+              }
+            }
             wrote("backupSaved", {
               place: "FAKE Backups/myCarlos backup.mycarlosbackup",
             });

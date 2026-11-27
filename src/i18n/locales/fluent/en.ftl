@@ -2604,6 +2604,30 @@ restore-leftOut = This backup was made without videos. Restoring it brings back 
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
 
+backupReminder-label = Backup reminder
+
+backupReminder-never = You have not made a myCarlos backup of this vault yet.
+
+backupReminder-old = Your last myCarlos backup was on { $date }.
+
+backupReminder-many = { $count ->
+        [one] { $count } document has been added since your last myCarlos backup.
+       *[other] { $count } documents have been added since your last myCarlos backup.
+    }
+
+backupReminder-partial = Your last myCarlos backup left your videos out, so it does not hold everything.
+
+backupReminder-ios = On an iPhone or iPad, your vault is not part of iCloud or the device’s own backups. If you lose or replace this device without a myCarlos backup, you lose your vault.
+
+backupReminder-android = On an Android phone or tablet, your vault is not part of the device’s own backups. If you lose or replace this device without a myCarlos backup, you lose your vault.
+
+backupReminder-computer = Your vault is kept only on this computer. If this computer is lost, replaced or reset without a myCarlos backup, and your own computer backups do not include myCarlos’s folder, you lose your vault.
+
+backupReminder-make = Make an encrypted backup
+
+backupReminder-notNow = Not now
+
+backupReminder-postponed = We will remind you again in { $days } days.
 handover-section-title = Hand a person's records over
 
 handover-section-body = Copy one person's documents into a file for another device, for example to give a child their own records. The file has its own key and does not change your vault. You can also add a person from a file someone gave you.

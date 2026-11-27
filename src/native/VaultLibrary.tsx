@@ -79,6 +79,8 @@ import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
 import { isNoSpace, videoRecordingAvailable } from "./video";
 import { namedAsPdf, photoName } from "./photo";
+import { BackupReminderNote, type BackupDevice } from "./BackupReminderNote";
+import { dueBackupReminder, SNOOZE_DAYS } from "./backupReminder";
 import { LibraryItems } from "./LibraryItems";
 import {
   NAME_INPUT_MAX_LENGTH,
@@ -536,6 +538,12 @@ export function VaultLibrary({
   }, [section]);
   // People whose reminder was put off until the vault next opens.
   const [detailsNotNow, setDetailsNotNow] = useState<string[]>([]);
+  // "Make an encrypted backup" on the backup reminder opens Security with the Save backup
+  // button focused, once; leaving Security forgets the request.
+  const [focusBackup, setFocusBackup] = useState(false);
+  useEffect(() => {
+    if (section !== "security") setFocusBackup(false);
+  }, [section]);
   const sharedProfileId = snapshot.sharedProfileId;
   // Everything the people hold, for the sidebar's tree: not Shared with me's.
   const peopleFolders = useMemo(
@@ -725,6 +733,21 @@ export function VaultLibrary({
           (person) =>
             missingDetails(person) && !detailsNotNow.includes(person.id),
         ));
+  // What the backup reminder remembers comes with the snapshot, from the native side (days only),
+  // so another vault or slot, a restore or a backup made anywhere changes it at once.
+  const backupReminder = readOnly
+    ? null
+    : dueBackupReminder(
+        snapshot.records.map((record) => record.importedAtMs),
+        snapshot.backupReminder ?? {},
+        Date.now(),
+      );
+  const backupDevice: BackupDevice =
+    cameraPlatform === "ios"
+      ? "ios"
+      : cameraPlatform === "android"
+        ? "android"
+        : "computer";
   const sharedRecords = useMemo(
     () =>
       snapshot.records.filter(
@@ -1643,6 +1666,9 @@ export function VaultLibrary({
           setOldBackupsGuide({ step: "save" });
         throw namedDamage(error, snapshot);
       }
+      // The backup reminder is kept natively and comes with the snapshot: read it again, so the
+      // note goes (or says what is left out) now. The backup itself is saved either way.
+      await refresh().catch(() => undefined);
       // After a key replacement, the file written last is the one to keep,
       // named, or when the platform gives no name, by when it was saved.
       // Its size tells it from an empty or partial file.
@@ -2278,6 +2304,32 @@ export function VaultLibrary({
                       {translateNow("personDetails.notNow")}
                     </button>
                   </div>
+                )}
+                {backupReminder && (
+                  <BackupReminderNote
+                    reminder={backupReminder}
+                    device={backupDevice}
+                    busy={busy}
+                    onMake={() => {
+                      setFocusBackup(true);
+                      openSecurity();
+                    }}
+                    onNotNow={() =>
+                      void run(async () => {
+                        await bridge.snoozeBackupReminder?.();
+                        await refresh();
+                        // The note is gone: say so, and keep the place.
+                        setNotice(
+                          deferredText(() =>
+                            translateNow("backupReminder.postponed", {
+                              days: SNOOZE_DAYS,
+                            }),
+                          ),
+                        );
+                        pageHeadingRef.current?.focus();
+                      })
+                    }
+                  />
                 )}
                 <div className="native-profile-row">
                   {/* Shared with me is no one's: no person's path above it. */}
@@ -3037,6 +3089,7 @@ export function VaultLibrary({
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
                 }
                 detailsFor={detailsFor}
+                focusBackup={focusBackup}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}

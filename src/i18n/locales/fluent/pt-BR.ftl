@@ -2639,6 +2639,30 @@ restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta 
 security-backup-sizeCalculating = Calculando o tamanho do backup…
 interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
 
+backupReminder-label = Lembrete de backup
+
+backupReminder-never = Você ainda não fez um backup do myCarlos deste cofre.
+
+backupReminder-old = Seu último backup do myCarlos foi em { $date }.
+
+backupReminder-many = { $count ->
+        [one] { $count } documento foi adicionado desde o seu último backup do myCarlos.
+       *[other] { $count } documentos foram adicionados desde o seu último backup do myCarlos.
+    }
+
+backupReminder-partial = Seu último backup do myCarlos deixou de fora os seus vídeos, então não contém tudo.
+
+backupReminder-ios = Em um iPhone ou iPad, seu cofre não faz parte do iCloud nem dos backups do próprio dispositivo. Se você perder ou trocar este dispositivo sem um backup do myCarlos, perde o seu cofre.
+
+backupReminder-android = Em um celular ou tablet Android, seu cofre não faz parte dos backups do próprio dispositivo. Se você perder ou trocar este dispositivo sem um backup do myCarlos, perde o seu cofre.
+
+backupReminder-computer = Seu cofre é guardado somente neste computador. Se este computador for perdido, trocado ou redefinido sem um backup do myCarlos, e os seus próprios backups do computador não incluírem a pasta do myCarlos, você perde o seu cofre.
+
+backupReminder-make = Fazer um backup criptografado
+
+backupReminder-notNow = Agora não
+
+backupReminder-postponed = Vamos lembrar você de novo em { $days } dias.
 handover-section-title = Entregar os registros de uma pessoa
 
 handover-section-body = Copie os documentos de uma pessoa para um arquivo para outro dispositivo, por exemplo para dar a uma criança os próprios registros. O arquivo tem sua própria chave e não altera o seu cofre. Você também pode adicionar uma pessoa a partir de um arquivo que alguém lhe entregou.

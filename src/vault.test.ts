@@ -80,6 +80,33 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("runtime_info");
   });
 
+  it("sends the patient's own calendar day with a backup and with Not now, never a UTC one", async () => {
+    // 8 pm on 4 October in Toronto is already 5 October in UTC.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 4, 20, 0, 0));
+    try {
+      const bridge = createVaultBridge();
+      invoke.mockResolvedValue(undefined);
+      await bridge.saveBackupToPicked("00000000-0000-4000-8000-000000000001");
+      await bridge.snoozeBackupReminder?.();
+      expect(invoke.mock.calls).toEqual([
+        [
+          "vault_backup_picked",
+          {
+            request: {
+              pickId: "00000000-0000-4000-8000-000000000001",
+              leaveVideosOut: false,
+              localDate: "2026-10-04",
+            },
+          },
+        ],
+        ["vault_backup_reminder_snooze", { localDate: "2026-10-04" }],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("asks the native side whether an AI model is installed", async () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue({ state: "notInstalled" });
@@ -992,7 +1019,12 @@ describe("localized native presentation contracts", () => {
         "vault_restore",
         {
           locale: "fr",
-          request: { pickId: "pick", passphrase: "FAKE", replace: true },
+          request: {
+            pickId: "pick",
+            passphrase: "FAKE",
+            replace: true,
+            localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          },
         },
       ],
       [

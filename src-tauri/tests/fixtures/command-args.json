@@ -313,6 +313,15 @@
       },
       "raw": false
     },
+    "vault_backup_reminder_snooze": {
+      "arguments": {
+        "localDate": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
     "vault_backup_size": {
       "arguments": {},
       "raw": false
@@ -1255,6 +1264,10 @@
           "optional": true,
           "struct": null
         },
+        "localDate": {
+          "optional": true,
+          "struct": null
+        },
         "pickId": {
           "optional": false,
           "struct": null
@@ -1915,6 +1928,10 @@
       "ambiguous": false,
       "denyUnknown": true,
       "fields": {
+        "localDate": {
+          "optional": true,
+          "struct": null
+        },
         "passphrase": {
           "optional": true,
           "struct": null

@@ -154,6 +154,7 @@ fn main() {
             "vault_recover",
             "vault_backup_pick",
             "vault_backup_size",
+            "vault_backup_reminder_snooze",
             "vault_left_out_records",
             "vault_backup_picked",
             "vault_profile_export_prepare",

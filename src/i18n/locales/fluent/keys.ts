@@ -1251,6 +1251,17 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "backupReminder.label",
+  "backupReminder.never",
+  "backupReminder.old",
+  "backupReminder.many",
+  "backupReminder.partial",
+  "backupReminder.ios",
+  "backupReminder.android",
+  "backupReminder.computer",
+  "backupReminder.make",
+  "backupReminder.notNow",
+  "backupReminder.postponed",
   "interface.history.event.profileExported",
   "interface.history.event.profileHidden",
   "interface.history.event.profileRestored",
@@ -2955,6 +2966,17 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "backupReminder.label": "backupReminder-label",
+  "backupReminder.never": "backupReminder-never",
+  "backupReminder.old": "backupReminder-old",
+  "backupReminder.many": "backupReminder-many",
+  "backupReminder.partial": "backupReminder-partial",
+  "backupReminder.ios": "backupReminder-ios",
+  "backupReminder.android": "backupReminder-android",
+  "backupReminder.computer": "backupReminder-computer",
+  "backupReminder.make": "backupReminder-make",
+  "backupReminder.notNow": "backupReminder-notNow",
+  "backupReminder.postponed": "backupReminder-postponed",
   "interface.history.event.profileExported":
     "interface-history-event-profileExported",
   "interface.history.event.profileHidden":
@@ -4521,6 +4543,17 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "backupReminder.label": undefined;
+  "backupReminder.never": undefined;
+  "backupReminder.old": { date: FluentArgument };
+  "backupReminder.many": { count: FluentArgument };
+  "backupReminder.partial": undefined;
+  "backupReminder.ios": undefined;
+  "backupReminder.android": undefined;
+  "backupReminder.computer": undefined;
+  "backupReminder.make": undefined;
+  "backupReminder.notNow": undefined;
+  "backupReminder.postponed": { days: FluentArgument };
   "interface.history.event.profileExported": undefined;
   "interface.history.event.profileHidden": undefined;
   "interface.history.event.profileRestored": undefined;

@@ -57,6 +57,7 @@
     "allow-vault-recover",
     "allow-vault-backup-pick",
     "allow-vault-backup-size",
+    "allow-vault-backup-reminder-snooze",
     "allow-vault-left-out-records",
     "allow-vault-backup-picked",
     "allow-vault-profile-export-prepare",

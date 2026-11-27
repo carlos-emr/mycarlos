@@ -106,10 +106,80 @@ test("Save a backup saves where the patient chose and says so, and a cancelled p
     ),
   ).toBeVisible();
   expect(await fakeCalls(page, "vault_backup_picked")).toEqual([
-    { request: { pickId: FAKE_IDS.backupPick, leaveVideosOut: false } },
+    {
+      request: {
+        pickId: FAKE_IDS.backupPick,
+        leaveVideosOut: false,
+        localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      },
+    },
   ]);
   // The vault itself is untouched by a backup.
   await expect(save).toBeEnabled();
+  await expectOnlyFakedCommands(page);
+});
+
+const reminderNote = (page: import("@playwright/test").Page) =>
+  page.getByRole("note", { name: en("backupReminder.label"), exact: true });
+
+async function backToRecords(page: import("@playwright/test").Page) {
+  await sidebar(page)
+    // The button's name carries the document count ("My records 1 document").
+    .getByRole("button", { name: new RegExp(`^${en("sidebar.myRecords")}`) })
+    .click();
+  await expect(myRecords(page)).toBeVisible();
+}
+
+test("the backup reminder goes after a whole backup and stays after one that left the videos out", async ({
+  page,
+}) => {
+  // Videos in the vault, so that a backup may leave them out.
+  await fakeVaultWith(page, { start: "unlocked", backupVideos: 2 });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  // Documents and no backup yet: the note is there (the demo documents are weeks old).
+  await expect(reminderNote(page)).toBeVisible();
+
+  const save = page.getByRole("button", {
+    name: en("security.backup.save"),
+    exact: true,
+  });
+  // A backup that leaves the videos out does not satisfy it: the note stays, with its own wording.
+  await openSecurity(page);
+  await page
+    .getByRole("checkbox", { name: en("security.backup.leaveVideosOut") })
+    .check();
+  await save.click();
+  await expect(
+    page.getByText(
+      en("interface.VaultLibrary.encryptedBackupSavedKeepItSomewhereOther"),
+      { exact: true },
+    ),
+  ).toBeVisible();
+  // The native side was told the videos were left out.
+  expect(
+    (await fakeCalls(page, "vault_backup_picked")).map(
+      (call) => (call.request as { leaveVideosOut: boolean }).leaveVideosOut,
+    ),
+  ).toEqual([true]);
+  await backToRecords(page);
+  await expect(reminderNote(page)).toBeVisible();
+  await expect(reminderNote(page)).toContainText(en("backupReminder.partial"));
+
+  // A whole backup does: the note is gone.
+  await openSecurity(page);
+  await page
+    .getByRole("checkbox", { name: en("security.backup.leaveVideosOut") })
+    .uncheck();
+  await save.click();
+  await expect(
+    page.getByText(
+      en("interface.VaultLibrary.encryptedBackupSavedKeepItSomewhereOther"),
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await backToRecords(page);
+  await expect(reminderNote(page)).toHaveCount(0);
   await expectOnlyFakedCommands(page);
 });
 
@@ -214,6 +284,7 @@ test("Restore from a backup: a wrong passphrase is said, the check says what res
         pickId: FAKE_IDS.restorePick,
         passphrase: BACKUP_PASSPHRASE,
         replace: true,
+        localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       },
     },
   ]);
@@ -309,6 +380,7 @@ test("restores a backup with its recovery key, then uses the same key to set a n
         pickId: FAKE_IDS.restorePick,
         recoveryKey: key,
         replace: true,
+        localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       },
     },
   ]);

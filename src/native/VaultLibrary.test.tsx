@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import { dayOf } from "./backupReminder";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -2353,6 +2354,119 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     expect(notice()).toBeNull();
     expect(native.documentText).not.toHaveBeenCalled();
     expect(native.aiSummarize).not.toHaveBeenCalled();
+  });
+});
+
+describe("backup reminder", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const withDocuments = (
+    count = 1,
+    backupReminder?: VaultSnapshot["backupReminder"],
+    importedAtMs = 1,
+  ): VaultSnapshot => ({
+    ...snapshot,
+    sharedProfileId: "FAKE-shared-for-backup-reminder",
+    ...(backupReminder ? { backupReminder } : {}),
+    records: Array.from({ length: count }, (_, index) => ({
+      ...record(`FAKE-doc-${index}`, `FAKE Letter ${index}`, []),
+      importedAtMs,
+    })),
+  });
+  const note = () =>
+    screen.queryByRole("note", { name: humanText("Backup reminder") });
+  // The patient's own calendar day, as the native side keeps the backup and snooze days.
+  const today = dayOf(Date.now());
+  // Noon of a local day, in the device's own zone.
+  const noonOf = (day: number) =>
+    day * DAY + new Date(day * DAY).getTimezoneOffset() * 60_000 + DAY / 2;
+
+  it("does not greet the first import with the warning: one new document shows nothing, a week later or three documents show it", () => {
+    renderLibrary(withDocuments(1, undefined, Date.now()));
+    expect(note()).toBeNull();
+    cleanup();
+    renderLibrary(withDocuments(3, undefined, Date.now()));
+    expect(note()).not.toBeNull();
+    cleanup();
+    renderLibrary(withDocuments(1, undefined, noonOf(today - 8)));
+    expect(note()).not.toBeNull();
+  });
+
+  it("shows for a vault with documents and no backup, says plainly what a lost computer means, and offers the backup", () => {
+    renderLibrary(withDocuments());
+    expect(note()).toHaveHumanTextContent(
+      "You have not made a myCarlos backup of this vault yet.",
+    );
+    expect(note()).toHaveHumanTextContent("you lose your vault");
+    expect(
+      within(note()!).getByRole("button", {
+        name: humanText("Make an encrypted backup"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("is not shown for an empty vault, or a recent whole backup", () => {
+    renderLibrary(snapshot);
+    expect(note()).toBeNull();
+    cleanup();
+    renderLibrary(withDocuments(1, { savedDay: today - 1 }));
+    expect(note()).toBeNull();
+  });
+
+  it("Not now asks the native side to snooze it, refreshes, and keeps focus on the page heading", async () => {
+    const snooze = vi.fn().mockResolvedValue(undefined);
+    const { setNotice } = renderLibrary(withDocuments(), 0, {
+      snoozeBackupReminder: snooze,
+    });
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Not now") }),
+    );
+    await waitFor(() => expect(snooze).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(setNotice).toHaveBeenCalled());
+    expect(document.activeElement?.tagName).toBe("H1");
+  });
+
+  it("follows what the snapshot says: a snooze, an old backup, another vault or slot", () => {
+    const view = renderLibrary(
+      withDocuments(1, { snoozedUntilDay: today + 5 }),
+    );
+    expect(note()).toBeNull();
+    // Another vault (or slot) has no backup: the note is back with no page reload.
+    view.rerenderSnapshot(withDocuments(1, { savedDay: today - 40 }));
+    expect(note()).toHaveHumanTextContent("Your last myCarlos backup was on");
+    view.rerenderSnapshot(withDocuments(1, { savedDay: today - 1 }));
+    expect(note()).toBeNull();
+  });
+
+  it("counts documents added after the backup's day, from their own dates", () => {
+    renderLibrary(
+      withDocuments(20, { savedDay: today - 2 }, noonOf(today - 1)),
+    );
+    expect(note()).toHaveHumanTextContent("20 documents have been added");
+  });
+
+  it("a backup that left the videos out does not satisfy it", () => {
+    renderLibrary(withDocuments(1, { partialDay: today }));
+    expect(note()).toHaveHumanTextContent("left your videos out");
+  });
+
+  it("Make an encrypted backup opens Security with the Save backup button focused", async () => {
+    renderLibrary(withDocuments(), 0, {
+      backupSize: vi.fn().mockResolvedValue({
+        totalBytes: 10,
+        withoutVideosBytes: 10,
+        videoBytes: 0,
+        videoCount: 0,
+      }),
+    });
+    fireEvent.click(
+      within(note()!).getByRole("button", {
+        name: humanText("Make an encrypted backup"),
+      }),
+    );
+    const save = await screen.findByRole("button", {
+      name: humanText("Save encrypted backup…"),
+    });
+    await waitFor(() => expect(save).toHaveFocus());
   });
 });
 

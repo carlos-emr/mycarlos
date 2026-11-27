@@ -2386,6 +2386,27 @@ restore-leftOut = 此備份是在不含影片的情況下製作的。還原它�
 security-backup-sizeCalculating = 正在計算備份大小…
 interface-hidden-videoLeftOut = 備份中未包含的影片
 
+backupReminder-label = 備份提醒
+
+backupReminder-never = 您尚未為這個保險庫製作過 myCarlos 備份。
+
+backupReminder-old = 您上一次 myCarlos 備份是在 { $date }。
+
+backupReminder-many = 自上次 myCarlos 備份以來，已新增 { $count } 份文件。
+
+backupReminder-partial = 您上一次 myCarlos 備份未包含影片，所以並不完整。
+
+backupReminder-ios = 在 iPhone 或 iPad 上，您的保險庫不屬於 iCloud 或裝置本身的備份。若遺失或更換這部裝置而沒有 myCarlos 備份，您將失去保險庫。
+
+backupReminder-android = 在 Android 手機或平板上，您的保險庫不屬於裝置本身的備份。若遺失或更換這部裝置而沒有 myCarlos 備份，您將失去保險庫。
+
+backupReminder-computer = 您的保險庫只保存在這部電腦上。若這部電腦遺失、被更換或被重設，而沒有 myCarlos 備份，且您自己的電腦備份不包含 myCarlos 的資料夾，您將失去保險庫。
+
+backupReminder-make = 製作加密備份
+
+backupReminder-notNow = 暫不
+
+backupReminder-postponed = 我們將在 { $days } 天後再次提醒您。
 handover-section-title = 移交某人的記錄
 
 handover-section-body = 將某人的文件複製到一個檔案中供另一台裝置使用，例如把孩子自己的記錄交給孩子。該檔案有自己的金鑰，不會改變您的保險庫。您也可以從別人交給您的檔案中新增一個人。

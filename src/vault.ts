@@ -249,6 +249,12 @@ export interface VaultSnapshot {
   recoveryKeySetAtMs?: number | null;
   /** Its short label, which its kit shows (not secret), if it has one. */
   recoveryKeyLabel?: string | null;
+  /** What the backup reminder remembers: days only, kept natively beside the vault. */
+  backupReminder?: {
+    savedDay?: number;
+    partialDay?: number;
+    snoozedUntilDay?: number;
+  };
   /** The reserved profile that files shared to myCarlos wait in (#61): shown
    * as the "Shared with me" folder, never as a person. In `profiles` once the
    * first file has arrived. */
@@ -757,6 +763,8 @@ export interface VaultBridge {
   ): Promise<SavedBackup>;
   /** How big a backup would be, with or without the videos (#359). */
   backupSize(): Promise<BackupSize>;
+  /** "Not now" on the backup reminder: it stays away for 14 days. */
+  snoozeBackupReminder?(): Promise<void>;
   /** The records a backup was made without the file of (ids). */
   leftOutRecords(): Promise<string[]>;
   /** Prepares one person's export (#360): says what it holds and makes the key. Nothing is
@@ -1445,9 +1453,19 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
     saveBackupToPicked: (pickId, leaveVideosOut = false) =>
       invoke<SavedBackup>("vault_backup_picked", {
-        request: { pickId, leaveVideosOut },
+        // The patient's own calendar day, for the backup reminder (a UTC day
+        // would call an 8 pm backup tomorrow's).
+        request: {
+          pickId,
+          leaveVideosOut,
+          localDate: localDateText(new Date()),
+        },
       }),
     backupSize: () => invoke<BackupSize>("vault_backup_size"),
+    snoozeBackupReminder: () =>
+      invoke<void>("vault_backup_reminder_snooze", {
+        localDate: localDateText(new Date()),
+      }),
     leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
     prepareProfileExport: (request) =>
       invoke<ProfileExportPrepared>("vault_profile_export_prepare", {
@@ -1480,7 +1498,12 @@ export function createVaultBridge(): VaultBridge {
     restore: (pickId, credential, replace) =>
       invoke<boolean>("vault_restore", {
         locale: getLocale(),
-        request: { pickId, ...credential, replace },
+        request: {
+          pickId,
+          ...credential,
+          replace,
+          localDate: localDateText(new Date()),
+        },
       }),
     createProfile: (displayName, details = {}) =>
       invoke<string>("vault_create_profile", {

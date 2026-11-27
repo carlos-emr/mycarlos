@@ -2639,6 +2639,30 @@ restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se 
 security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
 interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad
 
+backupReminder-label = Recordatorio de copia de seguridad
+
+backupReminder-never = Todavía no ha hecho una copia de seguridad de myCarlos de esta bóveda.
+
+backupReminder-old = Su última copia de seguridad de myCarlos fue el { $date }.
+
+backupReminder-many = { $count ->
+        [one] Se ha añadido { $count } documento desde su última copia de seguridad de myCarlos.
+       *[other] Se han añadido { $count } documentos desde su última copia de seguridad de myCarlos.
+    }
+
+backupReminder-partial = Su última copia de seguridad de myCarlos dejó fuera sus vídeos, así que no contiene todo.
+
+backupReminder-ios = En un iPhone o iPad, su bóveda no forma parte de iCloud ni de las copias de seguridad del propio dispositivo. Si pierde o cambia este dispositivo sin una copia de seguridad de myCarlos, pierde su bóveda.
+
+backupReminder-android = En un teléfono o tableta Android, su bóveda no forma parte de las copias de seguridad del propio dispositivo. Si pierde o cambia este dispositivo sin una copia de seguridad de myCarlos, pierde su bóveda.
+
+backupReminder-computer = Su bóveda se guarda solo en este ordenador. Si este ordenador se pierde, se cambia o se restablece sin una copia de seguridad de myCarlos, y las copias de seguridad de su propio ordenador no incluyen la carpeta de myCarlos, pierde su bóveda.
+
+backupReminder-make = Hacer una copia de seguridad cifrada
+
+backupReminder-notNow = Ahora no
+
+backupReminder-postponed = Se lo recordaremos de nuevo dentro de { $days } días.
 handover-section-title = Entregar los registros de una persona
 
 handover-section-body = Copie los documentos de una persona en un archivo para otro dispositivo, por ejemplo para dar a un niño sus propios registros. El archivo tiene su propia clave y no cambia su bóveda. También puede añadir una persona desde un archivo que alguien le haya dado.
