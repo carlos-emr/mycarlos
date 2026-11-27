@@ -1044,6 +1044,8 @@ recoveryKey-reason-legend = Why are you replacing it?
 
 recoveryKey-reason-routine = I just want a new key: its kit is safe
 
+recoveryKey-kitCloudWarning = This file is not encrypted. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it, so save it somewhere that does not sync.
+
 recoveryKey-saveKit = Save recovery kit…
 
 recoveryKey-threeMisses = That did not match three times. Look at your recovery key again, then check it.
@@ -1179,6 +1181,8 @@ security-autoLock-shorter = Shorter delay
 security-autoLock-title = Lock automatically
 
 security-backup-body = One file holding your whole vault, still encrypted. Keep it somewhere other than this device, such as a USB drive. It opens with the passphrase or recovery key you have when you save it, and keeps opening with them even after you change them here. To restore one, lock the vault and choose Restore from a backup.
+
+security-backup-cloudWarning = This file is encrypted, but it shows how many documents it holds and how large each one is. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it.
 
 security-backup-save = Save encrypted backup…
 
@@ -2403,6 +2407,7 @@ notifications-checkBusy = A document check is stopping. Choose Check for new doc
 noticesStep-title = Documents from your clinic
 noticesStep-intro = Your clinic is linked. myCarlos can check for new documents for you, and show a notice when one arrives on a computer that can. Nothing is turned on unless you tick it.
 noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-laterBackground = You can change the background choices any time in { $settings }, under { $preferences }: { $background }.
 noticesStep-done = Done
 noticesStep-notNow = Not now
 
@@ -2718,7 +2723,7 @@ handover-import-opening = Opening…
 
 handover-import-error-typo = That key does not look right. Check it against what you were given.
 
-handover-import-error-recovery = That is a recovery key, not the key for this file. Ask for the key made for the file.
+handover-import-error-recovery = That looks like a recovery key, not the key for this file. Check the key you were given for the file, and check for a typo. If you were not given one, ask for the key made for the file.
 
 handover-import-error-wrong = That does not open this file.
 

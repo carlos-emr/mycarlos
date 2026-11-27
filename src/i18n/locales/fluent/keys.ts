@@ -459,6 +459,7 @@ export const MESSAGE_KEYS = [
   "recoveryKey.hiddenWhileSaving",
   "recoveryKey.instructions",
   "recoveryKey.keyboardHint",
+  "recoveryKey.kitCloudWarning",
   "recoveryKey.kitSaved",
   "recoveryKey.label",
   "recoveryKey.leave.offered",
@@ -529,6 +530,7 @@ export const MESSAGE_KEYS = [
   "security.autoLock.shorter",
   "security.autoLock.title",
   "security.backup.body",
+  "security.backup.cloudWarning",
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
@@ -1084,6 +1086,7 @@ export const MESSAGE_KEYS = [
   "noticesStep.title",
   "noticesStep.intro",
   "noticesStep.later",
+  "noticesStep.laterBackground",
   "noticesStep.done",
   "noticesStep.notNow",
   "ai.settings.subtitle",
@@ -1985,6 +1988,7 @@ const FLUENT_IDS_BY_KEY = {
   "recoveryKey.hiddenWhileSaving": "recoveryKey-hiddenWhileSaving",
   "recoveryKey.instructions": "recoveryKey-instructions",
   "recoveryKey.keyboardHint": "recoveryKey-keyboardHint",
+  "recoveryKey.kitCloudWarning": "recoveryKey-kitCloudWarning",
   "recoveryKey.kitSaved": "recoveryKey-kitSaved",
   "recoveryKey.label": "recoveryKey-label",
   "recoveryKey.leave.offered": "recoveryKey-leave-offered",
@@ -2055,6 +2059,7 @@ const FLUENT_IDS_BY_KEY = {
   "security.autoLock.shorter": "security-autoLock-shorter",
   "security.autoLock.title": "security-autoLock-title",
   "security.backup.body": "security-backup-body",
+  "security.backup.cloudWarning": "security-backup-cloudWarning",
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
@@ -2730,6 +2735,7 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.title": "noticesStep-title",
   "noticesStep.intro": "noticesStep-intro",
   "noticesStep.later": "noticesStep-later",
+  "noticesStep.laterBackground": "noticesStep-laterBackground",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "ai.settings.subtitle": "ai-settings-subtitle",
@@ -3644,6 +3650,7 @@ export interface MessageArgsByKey {
   "recoveryKey.hiddenWhileSaving": undefined;
   "recoveryKey.instructions": undefined;
   "recoveryKey.keyboardHint": undefined;
+  "recoveryKey.kitCloudWarning": undefined;
   "recoveryKey.kitSaved": undefined;
   "recoveryKey.label": { label: FluentArgument };
   "recoveryKey.leave.offered": undefined;
@@ -3714,6 +3721,7 @@ export interface MessageArgsByKey {
   "security.autoLock.shorter": undefined;
   "security.autoLock.title": undefined;
   "security.backup.body": undefined;
+  "security.backup.cloudWarning": undefined;
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
@@ -4319,6 +4327,11 @@ export interface MessageArgsByKey {
   "noticesStep.intro": undefined;
   "noticesStep.later": {
     notices: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
+  "noticesStep.laterBackground": {
+    background: FluentArgument;
     preferences: FluentArgument;
     settings: FluentArgument;
   };

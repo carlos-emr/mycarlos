@@ -26,6 +26,8 @@ pub mod document_notifications;
 // Its tests need the Linux memfd and /proc, so they run on the Linux host only.
 #[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 mod android_pdf;
+#[cfg(target_os = "android")]
+mod android_trust;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -982,6 +984,10 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`, for the name the save dialog
+    /// suggests. Optional: an older caller that sends none gets the UTC date.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -4579,6 +4585,32 @@ fn is_plain_date(text: &str) -> bool {
         })
 }
 
+/// The name a single-document export suggests in the save dialog: "Document <date>" plus the
+/// document's own extension, never the document's name, which can be a person's, a clinic's or a
+/// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
+/// so a patient who wants the original name can type it. The date is the patient's own day where
+/// the renderer gives one that reads as a date, else the UTC date. The suffix is kept, with its
+/// own case, only when it is a kind the vault stores (`EXPORT_NAME_KINDS`): any other dotted end
+/// of a name is part of the name ("Dr.Smith", "J.Lopez", "Lab results 14.30"), not a kind, and
+/// would put it back in the file name.
+fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    /// The kinds of document the vault stores, as file name suffixes (case does not matter).
+    const EXPORT_NAME_KINDS: [&str; 5] = ["pdf", "jpg", "jpeg", "png", "mp4"];
+    let date = local_date
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
+    match display_name.rsplit_once('.') {
+        Some((_, extension))
+            if EXPORT_NAME_KINDS
+                .iter()
+                .any(|kind| extension.eq_ignore_ascii_case(kind)) =>
+        {
+            format!("Document {date}.{extension}")
+        }
+        _ => format!("Document {date}"),
+    }
+}
+
 /// What a saved backup was: the name of the file written, where the
 /// platform says it, and how many bytes it holds, which tells a complete
 /// file from an empty or partial one.
@@ -5785,12 +5817,14 @@ async fn vault_import_pick(
     let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
     let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        // PDF documents stay first (what the dialog shows by default); the others are one choice
-        // away. JPEG and PNG pictures only: HEIC is not accepted.
+        // The combined filter is first because the first filter is what the dialog shows by default
+        // (on Windows it is the one selected, and pictures stayed hidden behind a PDF-only list until
+        // the patient switched it by hand); PDF documents and pictures alone are one choice away,
+        // PDF first. JPEG and PNG pictures only: HEIC is not accepted.
         file_dialog(&app)
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .add_filter(&pdf_filter, &["pdf"])
             .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
-            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -7333,8 +7367,8 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
     received.receive(urls.len(), sources);
 }
 
-/// Opens the save picker with the record's name. Returns the id of the chosen
-/// destination, or `None` when the picker was cancelled. The copy itself is
+/// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
+/// id of the chosen destination, or `None` when the picker was cancelled. The copy itself is
 /// written by `vault_export_picked`.
 #[tauri::command]
 async fn vault_export_pick(
@@ -7345,9 +7379,15 @@ async fn vault_export_pick(
 ) -> CommandResult<Option<Uuid>> {
     let store = store.pin();
     let record_id = request.record_id;
+    let local_date = request.local_date;
     let session = picks.session();
-    let suggested_name =
-        run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
+    // `export_name` still refuses a lost or hidden record before a picker opens; only its answer
+    // (the document's own name) is not what the dialog is given.
+    let suggested_name = export_suggested_name(
+        &run_blocking(store.arc(), move |store| store.export_name(record_id)).await?,
+        local_date.as_deref(),
+        now_ms(),
+    );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         file_dialog(&app)
@@ -8318,6 +8358,8 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_trust::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -9155,6 +9197,71 @@ mod tests {
         ] {
             assert!(!is_plain_date(text), "{text}");
         }
+    }
+
+    #[test]
+    fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+                                     // The document's name never reaches the dialog, whoever it names.
+        for (own, expected) in [
+            ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
+            ("Photo.jpg", "Document 2026-11-26.jpg"),
+            ("Holiday.JPEG", "Document 2026-11-26.JPEG"),
+            ("scan.final.png", "Document 2026-11-26.png"),
+            (".jpg", "Document 2026-11-26.jpg"),
+            ("no extension at all", "Document 2026-11-26"),
+            ("ends with a dot.", "Document 2026-11-26"),
+            ("odd.é", "Document 2026-11-26"),
+            ("long.extensions9", "Document 2026-11-26"),
+            ("slash.p/f", "Document 2026-11-26"),
+            ("clip.MP4", "Document 2026-11-26.MP4"),
+            ("Letter.Pdf", "Document 2026-11-26.Pdf"),
+            // A dotted end that is part of a name is not a kind of file: nothing of it is kept.
+            ("dots.p.d.f", "Document 2026-11-26"),
+            ("Dr.Smith", "Document 2026-11-26"),
+            ("J.Lopez", "Document 2026-11-26"),
+            ("Lab results 14.30", "Document 2026-11-26"),
+            ("Dr.Smith referral.pdf", "Document 2026-11-26.pdf"),
+        ] {
+            let name = export_suggested_name(own, Some("2026-11-26"), utc);
+            assert_eq!(name, expected, "{own}");
+            assert!(!name.to_lowercase().contains("ana"), "{own}");
+            assert!(!name.contains("Smith") && !name.contains("Lopez"), "{own}");
+        }
+    }
+
+    #[test]
+    fn a_single_document_export_names_the_patients_own_day_or_else_the_utc_day() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        assert_eq!(
+            export_suggested_name("a.pdf", Some("2026-09-27"), utc),
+            "Document 2026-09-27.pdf"
+        );
+        // A date that does not read as a date is never put in a file name.
+        for text in ["../2026-09-27", "2026-9-27", "2026-09-27\\x", ""] {
+            assert_eq!(
+                export_suggested_name("a.pdf", Some(text), utc),
+                "Document 2026-09-28.pdf",
+                "{text}"
+            );
+        }
+        assert_eq!(
+            export_suggested_name("a.pdf", None, utc),
+            "Document 2026-09-28.pdf"
+        );
+    }
+
+    #[test]
+    fn an_export_request_without_a_date_still_reads() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let without: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
+        assert!(without.local_date.is_none());
+        let with: ExportRequest = serde_json::from_str(&format!(
+            r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#
+        ))
+        .unwrap();
+        assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
     }
 
     #[test]

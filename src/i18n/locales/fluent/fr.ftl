@@ -1067,6 +1067,8 @@ recoveryKey-reason-legend = Pourquoi la remplacez-vous?
 
 recoveryKey-reason-routine = Je veux seulement une nouvelle clé : sa trousse est en lieu sûr
 
+recoveryKey-kitCloudWarning = Ce fichier n’est pas chiffré. Un dossier synchronisé avec le cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) le téléverse : enregistrez-le dans un endroit qui n’est pas synchronisé.
+
 recoveryKey-saveKit = Enregistrer la trousse de récupération…
 
 recoveryKey-threeMisses = La clé ne correspondait pas, trois fois de suite. Relisez votre clé de récupération, puis vérifiez-la.
@@ -1207,6 +1209,8 @@ security-autoLock-shorter = Délai plus court
 security-autoLock-title = Verrouillage automatique
 
 security-backup-body = Un seul fichier qui contient tout votre coffre-fort, toujours chiffré. Conservez-le ailleurs que sur cet appareil, par exemple sur une clé USB. Il s’ouvre avec la phrase secrète ou la clé de récupération que vous avez au moment de l’enregistrer, et continue de s’ouvrir avec elles même après que vous les avez changées ici. Pour en restaurer un, verrouillez le coffre-fort et choisissez Restaurer à partir d’une sauvegarde.
+
+security-backup-cloudWarning = Ce fichier est chiffré, mais il montre combien de documents il contient et la taille de chacun. Un dossier synchronisé avec le cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) le téléverse.
 
 security-backup-save = Enregistrer une sauvegarde chiffrée…
 
@@ -2438,6 +2442,7 @@ notifications-checkBusy = Une vérification de documents est en cours d’arrêt
 noticesStep-title = Documents de votre clinique
 noticesStep-intro = Votre clinique est associée. myCarlos peut vérifier les nouveaux documents pour vous, et afficher un avis à l’arrivée de l’un d’eux sur un ordinateur qui le permet. Rien n’est activé à moins que vous ne le cochiez.
 noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, sous { $preferences } : { $notices }.
+noticesStep-laterBackground = Vous pouvez modifier les choix d’arrière-plan à tout moment dans { $settings }, sous { $preferences } : { $background }.
 noticesStep-done = Terminé
 noticesStep-notNow = Pas maintenant
 
@@ -2753,7 +2758,7 @@ handover-import-opening = Ouverture…
 
 handover-import-error-typo = Cette clé ne semble pas correcte. Comparez-la avec celle qu'on vous a donnée.
 
-handover-import-error-recovery = C'est une clé de récupération, pas la clé de ce fichier. Demandez la clé créée pour le fichier.
+handover-import-error-recovery = Cela ressemble à une clé de récupération, pas à la clé de ce fichier. Vérifiez la clé qu’on vous a donnée pour le fichier et qu’il n’y a pas de faute de frappe. Si on ne vous en a pas donné, demandez la clé créée pour le fichier.
 
 handover-import-error-wrong = Cela n'ouvre pas ce fichier.
 
