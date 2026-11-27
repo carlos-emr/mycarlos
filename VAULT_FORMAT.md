@@ -392,7 +392,7 @@ input succeeds and the next manifest generation is durable. Duplicate fingerprin
 scoped to a patient profile. A failure before the first manifest commit leaves the prior manifest
 authoritative and immediately removes newly moved ciphertext. A failure after that commit returns a
 successful import in recovery mode because the new manifest is already authoritative. The native
-picker is filtered to PDFs and batches are limited to 100 files so the picker bridge does not hold
+picker offers PDF documents, JPEG and PNG pictures and (where a video can be added) videos, and batches are limited to 100 files so the picker bridge does not hold
 an unbounded number of open handles in one transaction. Individual file size is not capped;
 constant-memory chunking keeps large medical files possible, while available storage and future
 vault-quota policy remain separate concerns. The filter does not validate PDF structure or make a

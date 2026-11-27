@@ -584,6 +584,9 @@ export function RecoveryKeySetup({
                   })}
                 </p>
               )}
+              <p className="recovery-kit-cloud-warning">
+                {t("recoveryKey.kitCloudWarning")}
+              </p>
               <p className="native-dialog-status" role="status">
                 {notice}
               </p>

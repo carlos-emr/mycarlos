@@ -1048,6 +1048,19 @@ pub(crate) mod tests {
         file.windows(4).position(|w| w == b"mdat").unwrap() as u64 - 4
     }
 
+    /// The demo clip shipped in `dev-data/` (made by `scripts/fake-media.mjs`) is what the import
+    /// takes as it is: no change needed, 160x112, small.
+    #[test]
+    fn the_committed_fake_demo_clip_passes_the_import_analysis() {
+        let clip = include_bytes!("../../dev-data/FAKE_demo_clip.mp4");
+        let plan = analyse(&clip[..], MAX_VIDEO_BYTES_DESKTOP).unwrap();
+        assert!(plan.is_clean());
+        assert_eq!((plan.width, plan.height), (160, 112));
+        assert_eq!(plan.length, clip.len() as u64);
+        assert!(clip.len() < 1_000_000);
+        assert!(analyse(&clip[..], MAX_VIDEO_BYTES_MOBILE).is_ok());
+    }
+
     #[test]
     fn a_plain_h264_aac_mp4_is_accepted_and_needs_no_change() {
         for moov_first in [false, true] {

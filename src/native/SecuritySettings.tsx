@@ -560,6 +560,9 @@ export function SecuritySettings({
           <div>
             <h2>{translateNow("security.backup.title")}</h2>
             <p>{translateNow("security.backup.body")}</p>
+            <p className="backup-cloud-warning">
+              {translateNow("security.backup.cloudWarning")}
+            </p>
             {sizePending && !backupSize && (
               <p className="backup-size" role="status">
                 {translateNow("security.backup.sizeCalculating")}
