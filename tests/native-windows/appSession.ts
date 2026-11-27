@@ -82,7 +82,8 @@ export async function openInstalledApp(
   // elevated CI host (which reads the HKLM policy instead: the workflow diff in the PR says how).
   const media =
     process.env.MYCARLOS_WINDOWS_FAKE_MEDIA === "1"
-      ? " --use-fake-device-for-media-stream --use-fake-ui-for-media-stream"
+      ? // Two fake cameras, so a journey can switch between them.
+        " --use-fake-device-for-media-stream=device-count=2 --use-fake-ui-for-media-stream"
       : "";
   const app = spawn(executable, [], {
     shell: false,
