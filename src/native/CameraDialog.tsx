@@ -17,12 +17,30 @@ import {
   rememberCameraExplained,
   type CameraFailure,
 } from "./photo";
+import {
+  NO_DEVICES,
+  cameraConstraints,
+  deviceIsGone,
+  devicesInUse,
+  listDevices,
+  readDeviceChoice,
+  rememberDeviceChoice,
+  type DeviceLists,
+} from "./mediaDevices";
+import { DevicePick } from "./DevicePick";
 
 type Stage = "explain" | "starting" | "live" | "preview" | "failed";
 
 // On a computer the question needs no holding. Stable, so `start` (and the
 // camera an opening starts) is not made again on every render.
 const asked = <T,>(question: Promise<T>) => question;
+
+// What the photo asks of the camera when none was chosen: on a phone the back one, a good size.
+const PHOTO_VIDEO: MediaTrackConstraints = {
+  facingMode: "environment",
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+};
 
 // The camera is used for this dialog only. It is asked for after the patient
 // chooses Use the camera (or opens the dialog once they have before), for
@@ -64,6 +82,13 @@ export function CameraDialog({
   const [photoReady, setPhotoReady] = useState(false);
   const [status, setStatus] = useTextState();
   const [preparing, setPreparing] = useState(false);
+  // The cameras now connected and the one in use (null: the system's default), as the video
+  // recording dialog lists them (#359); and whether the camera remembered from last time was gone.
+  const [devices, setDevices] = useState<DeviceLists>(NO_DEVICES);
+  const [using, setUsing] = useState<string | null>(null);
+  const [fellBack, setFellBack] = useState(false);
+  // Set when the camera was just switched from its list, so the focus returns to that list.
+  const switchedRef = useRef(false);
   const dialogRef = useRef<HTMLElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const shutterRef = useRef<HTMLButtonElement | null>(null);
@@ -92,53 +117,82 @@ export function CameraDialog({
     canvas.height = 0;
   }, []);
 
-  const start = useCallback(async () => {
-    stopCamera();
-    clearPhoto();
-    setPhotoReady(false);
-    const attempt = attemptRef.current;
-    setFailure(null);
-    setStage("starting");
-    setStatus(
-      deferredText(() =>
-        translateNow("interface.CameraDialog.startingTheCamera"),
-      ),
-    );
-    try {
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw new DOMException("No camera interface", "NotFoundError");
-      const stream = await whileAsking(
-        navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        }),
+  // `chosen` is a camera picked from the list (its exact id); without one, the camera remembered
+  // from last time, and without that the system's default.
+  const start = useCallback(
+    async (chosen?: string) => {
+      stopCamera();
+      clearPhoto();
+      setPhotoReady(false);
+      const attempt = attemptRef.current;
+      setFailure(null);
+      setStage("starting");
+      setStatus(
+        deferredText(() =>
+          translateNow("interface.CameraDialog.startingTheCamera"),
+        ),
       );
-      if (attempt !== attemptRef.current) {
-        for (const track of stream.getTracks()) track.stop();
-        return;
+      try {
+        if (!navigator.mediaDevices?.getUserMedia)
+          throw new DOMException("No camera interface", "NotFoundError");
+        // The camera chosen from the list or remembered from last time; if it is gone (unplugged,
+        // or not the same one any more), the system's default is used instead and the dialog says so.
+        const wanted = chosen ?? readDeviceChoice().camera;
+        const open = (camera: string | null) =>
+          whileAsking(
+            navigator.mediaDevices.getUserMedia({
+              video: cameraConstraints(PHOTO_VIDEO, camera),
+              audio: false,
+            }),
+          );
+        let stream: MediaStream;
+        let gone = false;
+        try {
+          stream = await open(wanted);
+        } catch (error) {
+          if (!wanted || !deviceIsGone(error)) throw error;
+          stream = await open(null);
+          gone = true;
+        }
+        if (attempt !== attemptRef.current) {
+          for (const track of stream.getTracks()) track.stop();
+          return;
+        }
+        streamRef.current = stream;
+        for (const track of stream.getTracks())
+          track.addEventListener("ended", () => {
+            if (streamRef.current !== stream) return;
+            stopCamera();
+            setFailure("stopped");
+            setStage("failed");
+            setStatus("");
+          });
+        rememberCameraExplained();
+        // Names come only now that the camera has been allowed.
+        const connected = await listDevices(navigator.mediaDevices);
+        if (attempt !== attemptRef.current) return;
+        setDevices(connected);
+        const used = devicesInUse(stream, connected).camera;
+        setUsing(used);
+        setFellBack(gone);
+        // A camera picked from the list is remembered only now that its stream is open: one that
+        // is busy or refuses must not become the one asked for every time. The microphone choice
+        // of the video dialog, which shares the stored choice, is kept as it was.
+        if (chosen)
+          rememberDeviceChoice({
+            ...readDeviceChoice(),
+            camera: used ?? chosen,
+          });
+        setStage("live");
+      } catch (error) {
+        if (attempt !== attemptRef.current) return;
+        setFailure(cameraFailure(error));
+        setStage("failed");
+        setStatus("");
       }
-      streamRef.current = stream;
-      for (const track of stream.getTracks())
-        track.addEventListener("ended", () => {
-          if (streamRef.current !== stream) return;
-          stopCamera();
-          setFailure("stopped");
-          setStage("failed");
-          setStatus("");
-        });
-      rememberCameraExplained();
-      setStage("live");
-    } catch (error) {
-      if (attempt !== attemptRef.current) return;
-      setFailure(cameraFailure(error));
-      setStage("failed");
-      setStatus("");
-    }
-  }, [clearPhoto, stopCamera, whileAsking]);
+    },
+    [clearPhoto, stopCamera, whileAsking],
+  );
 
   useEffect(() => {
     if (!autoStart) return;
@@ -184,6 +238,30 @@ export function CameraDialog({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [stopCamera]);
 
+  // Plugging or unplugging a camera updates the list at once. A camera in use that goes ends its
+  // track, which the dialog already handles.
+  useEffect(() => {
+    const media = navigator.mediaDevices;
+    if (!media?.addEventListener || stage !== "live") return;
+    let live = true;
+    const refresh = () =>
+      void listDevices(media).then((connected) => {
+        if (live) setDevices(connected);
+      });
+    media.addEventListener("devicechange", refresh);
+    return () => {
+      live = false;
+      media.removeEventListener("devicechange", refresh);
+    };
+  }, [stage]);
+
+  // Switching restarts the preview on the other camera (only while the preview is live).
+  const switchCamera = (_kind: "camera" | "microphone", id: string) => {
+    if (stage !== "live" || using === id) return;
+    switchedRef.current = true;
+    void start(id);
+  };
+
   const close = () => {
     if (saving || preparing) return;
     stopCamera();
@@ -200,7 +278,18 @@ export function CameraDialog({
     if (stage === "failed") retryRef.current?.focus();
   }, [stage, photoReady]);
   useEffect(() => {
-    if (ready) shutterRef.current?.focus();
+    if (!ready) return;
+    if (switchedRef.current) {
+      // A camera was just switched from its list and the preview restarted on it: the focus
+      // returns to that list, not to the shutter.
+      switchedRef.current = false;
+      const list = document.getElementById("record-device-camera");
+      if (list) {
+        list.focus();
+        return;
+      }
+    }
+    shutterRef.current?.focus();
   }, [ready]);
 
   const take = () => {
@@ -328,6 +417,26 @@ export function CameraDialog({
               }
             }}
           />
+          {/* Always present, empty until there is something to say: a live region that is inserted
+              together with its text is not announced by every screen reader. */}
+          <p aria-live="polite" className="record-device-note">
+            {fellBack && stage === "live"
+              ? translateNow("interface.CameraDialog.cameraFellBack")
+              : ""}
+          </p>
+          {stage === "live" && devices.cameras.length > 0 && (
+            <div className="record-devices">
+              <DevicePick
+                kind="camera"
+                label={translateNow("interface.RecordDialog.camera")}
+                unnamed="interface.RecordDialog.unnamedCamera"
+                devices={devices.cameras}
+                current={using}
+                disabled={!ready}
+                onChange={switchCamera}
+              />
+            </div>
+          )}
           <canvas
             ref={canvasRef}
             className="camera-view"

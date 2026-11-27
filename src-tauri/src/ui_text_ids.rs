@@ -464,6 +464,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewToCheck,
     InterfaceAnonymizePreviewToCheckHelp,
     InterfaceAnonymizePreviewUndo,
+    InterfaceCameraDialogCameraFellBack,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
     InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -1888,6 +1889,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewToCheck,
         Self::InterfaceAnonymizePreviewToCheckHelp,
         Self::InterfaceAnonymizePreviewUndo,
+        Self::InterfaceCameraDialogCameraFellBack,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
         Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -3420,6 +3422,7 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewToCheck => "interface-AnonymizePreview-toCheck",
             Self::InterfaceAnonymizePreviewToCheckHelp => "interface-AnonymizePreview-toCheckHelp",
             Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
+            Self::InterfaceCameraDialogCameraFellBack => "interface-CameraDialog-cameraFellBack",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
             Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos => {
@@ -4715,6 +4718,9 @@ impl MessageId {
             "frame.state.opening" => Some(Self::FrameStateOpening),
             "frame.state.settingUp" => Some(Self::FrameStateSettingUp),
             "frame.window.label" => Some(Self::FrameWindowLabel),
+            "interface.CameraDialog.cameraFellBack" => {
+                Some(Self::InterfaceCameraDialogCameraFellBack)
+            }
             "interface.CameraDialog.cameraReady" => Some(Self::InterfaceCameraDialogCameraReady),
             "interface.CameraDialog.cameraView" => Some(Self::InterfaceCameraDialogCameraView),
             "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos" => {

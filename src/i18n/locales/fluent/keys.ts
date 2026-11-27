@@ -55,6 +55,7 @@ export const MESSAGE_KEYS = [
   "frame.state.opening",
   "frame.state.settingUp",
   "frame.window.label",
+  "interface.CameraDialog.cameraFellBack",
   "interface.CameraDialog.cameraReady",
   "interface.CameraDialog.cameraView",
   "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos",
@@ -1480,6 +1481,8 @@ const FLUENT_IDS_BY_KEY = {
   "frame.state.opening": "frame-state-opening",
   "frame.state.settingUp": "frame-state-settingUp",
   "frame.window.label": "frame-window-label",
+  "interface.CameraDialog.cameraFellBack":
+    "interface-CameraDialog-cameraFellBack",
   "interface.CameraDialog.cameraReady": "interface-CameraDialog-cameraReady",
   "interface.CameraDialog.cameraView": "interface-CameraDialog-cameraView",
   "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos":
@@ -3193,6 +3196,7 @@ export interface MessageArgsByKey {
   "frame.state.opening": undefined;
   "frame.state.settingUp": undefined;
   "frame.window.label": undefined;
+  "interface.CameraDialog.cameraFellBack": undefined;
   "interface.CameraDialog.cameraReady": undefined;
   "interface.CameraDialog.cameraView": undefined;
   "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos": undefined;

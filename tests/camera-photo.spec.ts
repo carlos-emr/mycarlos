@@ -189,6 +189,159 @@ test("says how to allow the camera when it is refused", async ({
   await expectOnlyFakedCommands(page);
 });
 
+// Choosing the camera for a photo (the chooser of the video recording dialog, #359). Chromium's
+// fake device is the only real camera there is, so the page is given a SECOND camera by wrapping
+// `enumerateDevices` and `getUserMedia` before it loads: asking for the second camera by its exact id
+// opens the one fake device and reports that id, and every request the page makes is kept to read.
+const TWO_CAMERAS = () => {
+  const media = navigator.mediaDevices;
+  const listReal = media.enumerateDevices.bind(media);
+  const openReal = media.getUserMedia.bind(media);
+  const asked: unknown[] = [];
+  (window as unknown as { __cameraRequests: unknown[] }).__cameraRequests =
+    asked;
+  media.enumerateDevices = async () => {
+    const real = await listReal();
+    const first = real.find((device) => device.kind === "videoinput");
+    return [
+      ...real.filter((device) => device.kind !== "videoinput"),
+      ...(first
+        ? [
+            {
+              deviceId: first.deviceId,
+              label: "FAKE First camera",
+              kind: "videoinput",
+              groupId: first.groupId,
+            },
+          ]
+        : []),
+      {
+        deviceId: "fake-second-camera",
+        label: "FAKE Second camera",
+        kind: "videoinput",
+        groupId: "fake-second-group",
+      },
+    ] as MediaDeviceInfo[];
+  };
+  media.getUserMedia = async (constraints?: MediaStreamConstraints) => {
+    asked.push(JSON.parse(JSON.stringify(constraints ?? null)));
+    const video = constraints?.video;
+    const wanted =
+      typeof video === "object" && video !== null
+        ? (video.deviceId as { exact?: string } | undefined)?.exact
+        : undefined;
+    if (wanted !== "fake-second-camera") return openReal(constraints);
+    // The second camera is the fake device, said to be the second one.
+    const { deviceId: _id, ...rest } = video as MediaTrackConstraints;
+    const stream = await openReal({ ...constraints, video: rest });
+    const track = stream.getVideoTracks()[0]!;
+    const settings = track.getSettings.bind(track);
+    track.getSettings = () => ({
+      ...settings(),
+      deviceId: "fake-second-camera",
+      groupId: "fake-second-group",
+    });
+    return stream;
+  };
+};
+
+test("chooses the camera for a photo, remembers it, and takes the photo with it", async ({
+  page,
+  context,
+}, testInfo) => {
+  await context.grantPermissions(["camera"]);
+  await page.addInitScript(TWO_CAMERAS);
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  const camera = page.getByRole("dialog", { name: "Take a photo" });
+  await camera.getByRole("button", { name: "Use the camera" }).click();
+  const shutter = camera.getByRole("button", { name: "Take photo" });
+  await expect(shutter).toBeEnabled();
+
+  // Both cameras are listed (and no microphone), the one in use selected.
+  const list = camera.getByRole("combobox", { name: "Camera" });
+  await expect(list.locator("option")).toHaveText([
+    "FAKE First camera",
+    "FAKE Second camera",
+  ]);
+  await expect(
+    camera.getByRole("combobox", { name: "Microphone" }),
+  ).toHaveCount(0);
+  expect(
+    (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
+  ).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("camera-chooser.png") });
+
+  // Choosing the second restarts the preview on it by its exact id, and the list keeps the focus.
+  await list.selectOption("fake-second-camera");
+  await expect(list).toHaveValue("fake-second-camera");
+  await expect(shutter).toBeEnabled();
+  await expect(list).toBeFocused();
+  const requests = await page.evaluate(
+    () =>
+      (window as unknown as { __cameraRequests: unknown[] }).__cameraRequests,
+  );
+  const last = requests.at(-1) as {
+    video: { deviceId: { exact: string }; facingMode?: unknown };
+    audio: boolean;
+  };
+  expect(last.video.deviceId).toEqual({ exact: "fake-second-camera" });
+  expect(last.video.facingMode).toBeUndefined();
+  expect(last.audio).toBe(false);
+
+  // The photo is taken with it and saved as any other.
+  await shutter.click();
+  await camera.getByRole("button", { name: "Use photo" }).click();
+  await expect(camera).toBeHidden();
+  expect(await fakeCalls(page, "vault_save_photo")).toHaveLength(1);
+
+  // The choice is remembered: the next photo opens the second camera at once.
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  const again = page.getByRole("dialog", { name: "Take a photo" });
+  await expect(again.getByRole("button", { name: "Take photo" })).toBeEnabled();
+  await expect(again.getByRole("combobox", { name: "Camera" })).toHaveValue(
+    "fake-second-camera",
+  );
+  await again.getByRole("button", { name: "Cancel" }).click();
+  await expectOnlyFakedCommands(page);
+});
+
+test("a remembered camera that is gone is replaced by the system's default, and says so", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["camera"]);
+  await page.addInitScript(() => {
+    // Remembered from an earlier day: a camera that is not connected now, and the camera note
+    // already read once so the dialog opens straight on the camera.
+    window.localStorage.setItem(
+      "mycarlos.videoDevices.v1",
+      JSON.stringify({ camera: "unplugged-camera", microphone: null }),
+    );
+    window.localStorage.setItem("mycarlos.cameraExplained.v1", "1");
+  });
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  const camera = page.getByRole("dialog", { name: "Take a photo" });
+  await expect(
+    camera.getByRole("button", { name: "Take photo" }),
+  ).toBeEnabled();
+  await expect(
+    camera.getByText(translate("en", "interface.CameraDialog.cameraFellBack"), {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await camera.getByRole("button", { name: "Cancel" }).click();
+  await expectOnlyFakedCommands(page);
+});
+
 test("on a phone, says the phone asks once, takes a photo and says where to allow the camera (D97)", async ({
   page,
   context,

@@ -115,6 +115,7 @@ frame-window-label = Bóveda privada de myCarlos
 
 interface-camera-denied = myCarlos no puede usar la cámara. { $help } Después elija Intentar de nuevo.
 
+interface-CameraDialog-cameraFellBack = La cámara que usó la última vez no está conectada, así que se usa la cámara predeterminada del sistema.
 interface-CameraDialog-cameraReady = Cámara lista.
 
 interface-CameraDialog-cameraView = Vista de la cámara
