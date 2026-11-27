@@ -502,6 +502,8 @@ interface-UnlockPdfDialog-unlocking = Odblokowywanie…
 
 interface-VaultApp-chooseFilesToImport = Wybierz pliki do importu
 
+interface-VaultLibrary-picturesNote = Z dodawanych obrazów usuwane są miejsce, czas i dane o aparacie.
+
 interface-VaultApp-finishingTheTransfer = Kończenie przesyłania
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Zablokuj teraz i anuluj przesyłanie
@@ -790,7 +792,7 @@ native-error-20 = Proszę wybrać trudniejsze do odgadnięcia hasło główne, k
 
 native-error-21 = Proszę wybrać najwyżej 100 plików do jednego importu.
 
-native-error-22 = Jeden z plików nie jest dokumentem PDF, więc nic nie dodano. myCarlos przechowuje tylko dokumenty PDF.
+native-error-22 = Jeden z plików nie jest dokumentem PDF ani obrazem JPEG lub PNG, więc nic nie dodano. myCarlos przechowuje dokumenty PDF oraz obrazy JPEG i PNG. Jeśli to obraz z iPhone’a (HEIC), udostępnij go jako JPEG.
 
 native-error-23 = Ten dokument jest zabezpieczony hasłem. Proszę wpisać hasło dokumentu z portalu pacjenta.
 
@@ -840,7 +842,7 @@ native-error-45 = myCarlos nie mógł otworzyć tego pliku. Jeśli znajduje się
 
 native-error-46 = Dokument w sejfie jest uszkodzony i nie można go już odczytać, więc nie zapisano kopii zapasowej. Nic nie zostało zmienione.
 
-native-error-47 = To nie jest zdjęcie, które myCarlos może zapisać lub wyświetlić: musi być kompletnym obrazem JPEG o rozmiarze najwyżej 25 MB i wymiarach najwyżej 8 192 pikseli na każdym boku. Nic nie zostało zmienione.
+native-error-47 = To nie jest zdjęcie, które myCarlos może zapisać lub wyświetlić: musi być kompletnym obrazem JPEG lub PNG (nieanimowanym) o rozmiarze najwyżej 25 MB, wymiarach najwyżej 8 192 pikseli na każdym boku i najwyżej 50 milionach pikseli łącznie (24 milionach na telefonie). Nic nie zostało zmienione.
 
 native-error-48 = Kopia zapasowa została sprawdzona, ale przywracanie nie zostało ukończone. Proszę zamknąć i ponownie otworzyć myCarlos, aby je dokończyć. Następnie proszę otworzyć sejf hasłem głównym lub kluczem odzyskiwania z kopii zapasowej.
 
@@ -849,6 +851,11 @@ native-error-speedTest = Test szybkości został przerwany przed zakończeniem. 
 native-filter-backups = Kopie zapasowe myCarlos
 
 native-filter-pdf = Dokumenty PDF
+
+native-filter-video = Filmy (MP4 lub MOV)
+native-filter-pictures = Obrazy JPEG i PNG
+
+native-filter-pdfAndPictures = Dokumenty PDF oraz obrazy JPEG i PNG
 
 native-kit-text =
     Zestaw odzyskiwania myCarlos
@@ -1744,6 +1751,8 @@ interface-history-event-portalLinkStarted = Rozpoczęto łączenie z przychodni�
 
 interface-history-event-portalLinked = Połączono z przychodnią
 
+interface-history-event-portalLinkRemoved = Usunięto powiązanie z przychodnią
+
 interface-history-event-profileCreated = Dodano profil pacjenta
 
 interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
@@ -1914,6 +1923,21 @@ portal-tryAgainFor = Spróbuj ponownie: { $clinic }
 
 portal-linkAnother = Połącz z inną przychodnią
 
+portal-removeLink = Usuń to powiązanie
+
+portal-removeTitle = Usunąć to powiązanie?
+
+portal-removeBody = { $clinic }, urządzenie „{ $device }”. To urządzenie przestaje być tu powiązane, a jego zapisane klucze zostają usunięte z tego urządzenia. Wcześniejsze kopie zapasowe sejfu zachowują te klucze, dopóki nie zostaną zastąpione. Przychodnia może nadal wyświetlać to urządzenie.
+
+portal-removeConfirm = Usuń powiązanie
+
+portal-removeKept = Dokumenty z tej przychodni są zapisane w Twoim sejfie, więc to powiązanie pozostaje.
+
+portal-removeNotices = Powiadomienia o dokumentach są włączone dla tej przychodni. Najpierw je wyłącz, potem usuń powiązanie.
+
+portal-removed = Powiązanie usunięte.
+
+
 ai-summary-button = Podsumowanie
 
 ai-summary-title = Podsumowanie prostymi słowami
@@ -1936,11 +1960,11 @@ aiHelper-resultLabelInfo = Co oznacza „Szkic AI”
 
 ai-label-settingsTitle = Ostrzeżenie przy odpowiedziach AI
 
-ai-label-settingsBody = Każda odpowiedź AI informuje, że została napisana przez AI i może zawierać błędy. Po wybraniu „Nie pokazuj ponownie” pełne zdanie zastępuje krótka etykieta „Szkic AI”. Etykieta nigdy nie znika. Wybór jest zapamiętany na tym urządzeniu i zaczyna się od nowa, gdy zmieni się model lub narzędzie.
+ai-label-settingsBody = Odpowiedzi AI mogą zawierać błędy, a każda o tym informuje. Jeśli przy jednej odpowiedzi wybierzesz „Nie pokazuj ponownie”, kolejne odpowiedzi pokażą krótką etykietę „Szkic AI” zamiast pełnego zdania.
 
 ai-label-settingsShowFull = Pokaż ponownie pełne ostrzeżenie
 
-ai-label-settingsFullShown = Pełne ostrzeżenie jest pokazywane przy każdej odpowiedzi AI.
+ai-label-settingsFullBack = Pełne ostrzeżenie jest znów pokazywane przy każdej odpowiedzi AI.
 
 ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana przy odpowiedziach AI, dla których ją wybrano.
 
@@ -2473,22 +2497,24 @@ interface-AiHelperNotice-continue = Dalej
 
 interface-AnonymizePreview-footerNote = Plik będzie kończył się tym wierszem:
 
-notifications-title = Powiadomienia po sprawdzeniu dokumentów
-notifications-help = Gdy po ręcznym sprawdzeniu zostanie zapisany dokument z przychodni, system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument. Dokumenty nie są sprawdzane automatycznie.
-notifications-allow = Zezwalaj na powiadomienia o nowych dokumentach
+notifications-title = Sprawdzanie dokumentów
+notifications-allow = Pokazuj powiadomienie o nowym dokumencie
 notifications-blocked = System Windows blokuje powiadomienia. Proszę sprawdzić ustawienia powiadomień.
 notifications-unknown = Nie można sprawdzić uprawnień do powiadomień w systemie Windows.
+notifications-error = Nie można zapisać tego ustawienia. Powiadomienia i automatyczne sprawdzanie są wyłączone w tej sesji.
+notifications-unavailable = Te ustawienia są teraz niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
+notifications-helpAutomatic = myCarlos może sam sprawdzać nowe dokumenty z przychodni, gdy jest otwarty i odblokowany. Nowe dokumenty pojawiają się wtedy w bibliotece.
 notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
-notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wyłączone w tej sesji.
-notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
-notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
+notifications-blockedMac = System macOS nie zezwala na powiadomienia z myCarlos. Proszę je włączyć w Ustawieniach systemowych, w sekcji Powiadomienia.
+notifications-notYetAskedMac = System macOS nie został jeszcze zapytany. Zapyta, gdy zostaną włączone powiadomienia.
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
-notifications-autoNeedsNotices = Aby to włączyć, najpierw należy zezwolić na powiadomienia o nowych dokumentach.
-notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
+notifications-autoConsent = Włączenie tej opcji pozwala myCarlos łączyć się z portalem przychodni według harmonogramu, co najmniej dwie minuty między próbami, wyłącznie gdy jest otwarty i odblokowany. Wyłączenie jej zatrzymuje sprawdzanie.
+notifications-noticesHelp = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
+notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Nowe dokumenty pojawiają się w bibliotece. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie. Powiadomienia to osobny wybór i nie są do tego potrzebne.
 notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Połączone przychodnie” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
-noticesStep-title = Powiadomienia z przychodni
-noticesStep-intro = Przychodnia jest połączona. myCarlos może powiadamiać o nowych dokumentach. Nic nie zostanie włączone bez zaznaczenia.
+noticesStep-title = Dokumenty z przychodni
+noticesStep-intro = Przychodnia jest połączona. myCarlos może sprawdzać nowe dokumenty za Państwa i pokazywać powiadomienie o nowym dokumencie na komputerze, który to umożliwia. Nic nie zostanie włączone bez zaznaczenia.
 noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $notices }”.
 noticesStep-done = Gotowe
 noticesStep-notNow = Nie teraz
@@ -2596,6 +2622,16 @@ interface-RecordDialog-yourPhoneAsksOnce = Telefon raz zapyta, czy myCarlos moż
 interface-RecordDialog-theCameraAndMicrophoneAreOn = Aparat i mikrofon są włączone tylko podczas nagrywania. Wyłączą się, gdy zatrzymasz nagrywanie, zamkniesz to okno lub myCarlos się zablokuje.
 interface-RecordDialog-theCameraAndMicrophoneAreOnNow = Aparat i mikrofon są włączone, ale nic nie jest nagrywane, dopóki nie wybierzesz Rozpocznij nagrywanie.
 interface-RecordDialog-pictureQuality = Jakość obrazu
+interface-RecordDialog-cameraAndMicrophone = Kamera i mikrofon
+interface-RecordDialog-camera = Kamera
+interface-RecordDialog-microphone = Mikrofon
+interface-RecordDialog-unnamedCamera = Kamera { $number }
+interface-RecordDialog-unnamedMicrophone = Mikrofon { $number }
+interface-RecordDialog-systemDefaultDevice = Domyślne urządzenie systemu
+interface-RecordDialog-deviceFellBack = Kamera lub mikrofon użyty ostatnio nie jest podłączony, więc używane jest urządzenie domyślne systemu.
+interface-RecordDialog-testMicrophone = Sprawdź mikrofon
+interface-RecordDialog-stopTestingMicrophone = Zakończ sprawdzanie
+interface-RecordDialog-microphoneLevel = Poziom mikrofonu
 interface-RecordDialog-standard = Standardowa (720p)
 interface-RecordDialog-high = Wysoka (1080p)
 interface-RecordDialog-aboutStandardPerHour = Około 1,1 GB na godzinę
@@ -3013,7 +3049,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
+notifications-autoSummary = myCarlos sam pobiera nowe dokumenty z kliniki tylko wtedy, gdy jest otwarty i odblokowany. Gdy jest zablokowany i działa w tle, może jedynie powiadomić, że coś czeka.
 
 background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
 
@@ -3028,6 +3064,7 @@ native-notice-test = To jest testowe powiadomienie z myCarlos.
 notifications-testButton = Pokaż powiadomienie testowe
 
 notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+notifications-testSentMac = Wysłano powiadomienie testowe. Jeśli go nie widać, proszę sprawdzić Ustawienia systemowe, sekcję Powiadomienia.
 
 notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
@@ -3051,3 +3088,46 @@ iphonePush-timedOut = Apple nie odpowiedziało na czas. Proszę wyłączyć i po
 iphonePush-needsAttention = Nie udało się skonfigurować powiadomień z Twoją kliniką. Wyłącz i włącz tę opcję ponownie. Jeśli nadal nie działa, powiadom swoją klinikę.
 
 iphonePush-error = Nie udało się zapisać ustawienia. Proszę spróbować ponownie.
+interface-AddVideo-add = Dodaj film
+
+interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce oraz nazwa i model urządzenia, które zawiera, zostaną najpierw usunięte.
+
+interface-AddVideo-checking = Sprawdzanie filmu…
+
+interface-AddVideo-storing = Dodawanie filmu: { $percent }%
+
+interface-AddVideo-progressLabel = Dodawanie filmu
+
+interface-AddVideo-cancel = Anuluj
+
+interface-AddVideo-cancelling = Anulowanie…
+
+interface-AddVideo-added = Film został dodany.
+
+interface-AddVideo-duplicate = Ten film już tu jest. Nic nie zostało dodane.
+
+interface-AddVideo-cancelled = Anulowano. Nic nie zostało dodane.
+
+interface-AddVideo-notVideo = Ten plik nie jest filmem, który myCarlos może dodać. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-hevc = Ten film używa formatu H.265 (HEVC), którego wiele komputerów nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
+
+interface-AddVideo-videoCodec = Ten film używa formatu obrazu, którego myCarlos nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
+
+interface-AddVideo-audioCodec = Dźwięk tego filmu używa formatu, którego myCarlos nie odtworzy. Proszę zapisać go z dźwiękiem AAC i dodać ponownie.
+
+interface-AddVideo-noVideo = Ten plik nie ma obrazu, więc nie jest filmem. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-tooManyTracks = Ten film ma więcej obrazów lub ścieżek dźwiękowych, niż myCarlos może dodać. Proszę zapisać prostą kopię z jednym obrazem i jednym dźwiękiem i dodać ją ponownie.
+
+interface-AddVideo-external = Część tego filmu jest przechowywana poza plikiem, więc nie można go dodać. Proszę zapisać pełną kopię i dodać ją ponownie.
+
+interface-AddVideo-fragmented = Ten film jest w formacie do przesyłania strumieniowego. Proszę zapisać go jako zwykły MP4 i dodać ponownie.
+
+interface-AddVideo-tooBig = Obraz tego filmu jest większy, niż myCarlos może dodać. Proszę zapisać mniejszą kopię i dodać ją ponownie.
+
+interface-AddVideo-tooLarge = Ten film jest większy, niż myCarlos może dodać na tym urządzeniu (2 GB na komputerze, 1 GB na telefonie). Proszę zapisać mniejszą kopię i dodać ją ponownie.
+
+interface-AddVideo-damaged = Ten film jest uszkodzony lub ucięty, więc nie można go dodać. Proszę skopiować go ponownie z miejsca, z którego pochodzi, i spróbować jeszcze raz.
+
+interface-AddVideo-adding = Dodawanie filmu…
