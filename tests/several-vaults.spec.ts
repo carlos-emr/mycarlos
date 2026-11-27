@@ -9,6 +9,8 @@ import {
   fakeUnlisted,
   fakeVaultWith,
   myRecords,
+  refusal,
+  scriptFake,
 } from "./support/vaultFake";
 
 // Several vaults on one device (#357): "Use a different vault" on the unlock screen (by keyboard
@@ -82,6 +84,123 @@ test("a wrong name and a wrong passphrase are one and the same refusal", async (
   await submit.click();
   await expect(message).toHaveText(wrongName);
   await expect(myRecords(page)).toBeHidden();
+});
+
+for (const entry of ["library", "security"] as const) {
+  test(`sign out from ${entry} returns to the plain lock screen`, async ({
+    page,
+  }) => {
+    await fakeVaultWith(page, { start: "unlocked" });
+    await page.goto("/");
+    await expect(myRecords(page)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
+    ).toBeVisible();
+    if (entry === "security") {
+      await fakeOtherVault(page, "FAKE Garden", "FAKE garden passphrase");
+      await page
+        .getByRole("button", { name: en("security.title"), exact: true })
+        .click();
+    }
+    const controls = page.locator(
+      entry === "library" ? ".titlebar" : ".native-auto-lock-heading",
+    );
+    await controls
+      .getByRole("button", { name: en("security.signOut"), exact: true })
+      .click();
+
+    const submit = page.getByRole("button", {
+      name: en("unlock.submit"),
+      exact: true,
+    });
+    await expect(
+      page.getByRole("heading", { name: en("unlock.title"), exact: true }),
+    ).toBeVisible();
+    await expect(submit).toBeVisible();
+    await expect(
+      page.getByText(en("notice.signedOut"), { exact: true }),
+    ).toBeVisible();
+    await expect(disclosure(page)).toHaveAttribute("data-highlighted", "true");
+    const name = page.getByLabel(en("unlock.otherVault.name"), { exact: true });
+    await expect(name).toBeHidden();
+    await expect(passphraseBox(page)).not.toBeFocused();
+    await expect(
+      page.getByText("FAKE Letter.pdf", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", {
+        name: en("security.newVault.button"),
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(await fakeCalls(page, "vault_lock")).toHaveLength(1);
+
+    if (entry === "security") {
+      await disclosure(page).click();
+      await name.fill("FAKE Garden");
+      await passphraseBox(page).fill("FAKE garden passphrase");
+      await submit.click();
+      expect(await fakeCalls(page, "vault_unlock_named")).toEqual([
+        {
+          request: {
+            name: "FAKE Garden",
+            passphrase: "FAKE garden passphrase",
+          },
+        },
+      ]);
+    } else {
+      await passphraseBox(page).fill(FAKE_PASSPHRASE);
+      await submit.click();
+      await expect(
+        page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
+      ).toBeVisible();
+    }
+
+    await expect(myRecords(page)).toBeVisible();
+    await page
+      .locator(".titlebar")
+      .getByRole("button", { name: en("security.lockNow"), exact: true })
+      .click();
+    await expect(submit).toBeVisible();
+    await expect(disclosure(page)).not.toHaveAttribute(
+      "data-highlighted",
+      "true",
+    );
+  });
+}
+
+test("a successful retry keeps the sign-out landing after a refused lock", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await scriptFake(page, "vault_lock", {
+    reject: refusal("storage", "native.error.01"),
+  });
+  await page
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.signOut"), exact: true })
+    .click();
+
+  const retry = page.getByRole("button", {
+    name: en("interface.VaultApp.tryLockingAgain"),
+    exact: true,
+  });
+  await expect(retry).toBeVisible();
+  await expect(
+    page.getByText(en("notice.signedOut"), { exact: true }),
+  ).toHaveCount(0);
+  await retry.click();
+
+  await expect(
+    page.getByText(en("notice.signedOut"), { exact: true }),
+  ).toBeVisible();
+  await expect(disclosure(page)).toHaveAttribute("data-highlighted", "true");
+  await expect(
+    page.getByLabel(en("unlock.otherVault.name"), { exact: true }),
+  ).toBeHidden();
+  expect(await fakeCalls(page, "vault_lock")).toHaveLength(2);
 });
 
 test("Find my other vaults says counts only, asks a number for each, and saves the names together", async ({

@@ -810,6 +810,8 @@ notice-iosKeepOpen = 請保持 myCarlos 開啟：切換 App 會暫停此傳輸�
 
 notice-locked = 保險庫已鎖定。
 
+notice-signedOut = 已登出。
+
 notice-lockedHidden = myCarlos 縮到最小或移至背景，因此保險庫已鎖定。
 
 notice-lockedIdle = 閒置 { $count } 分鐘後已鎖定。
@@ -1105,6 +1107,8 @@ security-erase-submit = 清除整個保險庫
 security-erase-title = 清除整個保險庫
 
 security-lockNow = 立即鎖定
+
+security-signOut = 登出
 
 security-oldBackups-deleteOlder = 請刪除較舊的備份：名稱開頭為「myCarlos backup」的檔案，以及您重新命名過的備份，但請保留新備份及其副本。這些檔案可能存放在您選擇的位置，例如資料夾、USB 隨身碟，或手機上的檔案 App 或雲端硬碟。
 

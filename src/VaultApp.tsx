@@ -157,6 +157,8 @@ export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
 function NativeVault({ bridge }: { bridge: VaultBridge }) {
   useI18n();
   const [status, setStatusState] = useState<VaultStatus | "loading">("loading");
+  const [signedOut, setSignedOut] = useState(false);
+  const signOutPending = useRef(false);
   const statusRef = useRef(status);
   const answerEpochRef = useRef(0);
   const answerRef = useRef<AnswerActivity | null>(null);
@@ -179,6 +181,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         answerRef.current = null;
       }
       statusRef.current = value;
+      if (value !== "locked") {
+        signOutPending.current = false;
+        setSignedOut(false);
+      }
       setStatusState(value);
     },
     [],
@@ -586,6 +592,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         holdLock(false);
         mediaHoldsRef.current.clear();
         setAddingVault(false);
+        const signedOut = signOutPending.current;
+        signOutPending.current = false;
+        setSignedOut(signedOut);
         setStatus("locked");
         if (endsTransfer && transferOutcomeRef.current)
           holdForUnlock(transferOutcomeRef.current);
@@ -595,11 +604,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         const minutes = autoLockMinutesRef.current;
         setNotice(
           deferredText(() =>
-            reason === "idle"
-              ? translateCurrent("notice.lockedIdle", { count: minutes })
-              : reason === "hidden"
-                ? translateCurrent("notice.lockedHidden")
-                : translateCurrent("notice.locked"),
+            signedOut
+              ? translateCurrent("notice.signedOut")
+              : reason === "idle"
+                ? translateCurrent("notice.lockedIdle", { count: minutes })
+                : reason === "hidden"
+                  ? translateCurrent("notice.lockedHidden")
+                  : translateCurrent("notice.locked"),
           ),
         );
       } catch (error) {
@@ -651,6 +662,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }, [lock]);
   const requestLockAsked = useCallback(() => {
     lockReasonRef.current = null;
+    requestLock(true);
+  }, [requestLock]);
+  const signOut = useCallback(() => {
+    lockReasonRef.current = null;
+    // The concealed screen can retry a refused lock. Keep the sign-out landing until it succeeds.
+    signOutPending.current = true;
     requestLock(true);
   }, [requestLock]);
 
@@ -1874,6 +1891,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // A restored vault is locked: it opens with its own passphrase or key.
   const restored = () => {
     forgetReplacedVault();
+    setSignedOut(false);
     setStatus("locked");
     setNotice(deferredText(() => translateCurrent("notice.restored")));
   };
@@ -2116,6 +2134,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         severalVaults={
           bridge.unlockNamed && bridge.findOtherVaults && bridge.nameFoundVaults
             ? {
+                highlightChoice: signedOut,
                 onFind: async (passphrase) => {
                   // Counted as passphrase tries by the native side; a wait or a refusal is shown
                   // as for any unlock.
@@ -2341,6 +2360,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         refresh={refresh}
         onLock={lockAsked}
         onRequestLock={requestLockAsked}
+        onSignOut={signOut}
         onSetUpNewVault={
           bridge.addVault ? () => setAddingVault(true) : undefined
         }

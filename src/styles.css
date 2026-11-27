@@ -360,6 +360,11 @@
   cursor: pointer;
   font-weight: 750;
 }
+.other-vaults summary[data-highlighted] {
+  border: 2px solid var(--teal);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
 .vault-reset > label {
   margin: 12px 0;
 }

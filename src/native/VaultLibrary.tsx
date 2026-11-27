@@ -155,6 +155,7 @@ export function VaultLibrary({
   refresh,
   onLock,
   onRequestLock,
+  onSignOut,
   autoLockMinutes,
   onAutoLockMinutes,
   openingRecoverySetup = null,
@@ -200,6 +201,7 @@ export function VaultLibrary({
   refresh: (known?: VaultSnapshot) => Promise<VaultSnapshot>;
   onLock: () => Promise<void>;
   onRequestLock?: () => void;
+  onSignOut?: () => void;
   autoLockMinutes: number;
   onAutoLockMinutes: (value: unknown) => void;
   /** What the library opens on, when it opens on the recovery key setup: a
@@ -2116,6 +2118,11 @@ export function VaultLibrary({
                 {translateNow("security.lockNow")}
               </button>
             </span>
+            {onSignOut && (
+              <button className="button" type="button" onClick={onSignOut}>
+                {translateNow("security.signOut")}
+              </button>
+            )}
           </header>
 
           {/* On narrow windows, where the sidebar is hidden: a row of
@@ -3022,6 +3029,7 @@ export function VaultLibrary({
                 autoLockMinutes={autoLockMinutes}
                 onAutoLockMinutes={onAutoLockMinutes}
                 onLock={lockAndConceal}
+                onSignOut={onSignOut}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
                 dialogHost={profileDialogHost}

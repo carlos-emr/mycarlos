@@ -942,6 +942,8 @@ notice-iosKeepOpen = Proszę nie zamykać myCarlos: przełączenie aplikacji wst
 
 notice-locked = Sejf zablokowany.
 
+notice-signedOut = Wylogowano.
+
 notice-lockedHidden = Zablokowano, ponieważ myCarlos został zminimalizowany lub przeniesiony do tła.
 
 notice-lockedIdle =
@@ -1273,6 +1275,8 @@ security-erase-submit = Usuń cały sejf
 security-erase-title = Usuń cały sejf
 
 security-lockNow = Zablokuj teraz
+
+security-signOut = Wyloguj się
 
 security-oldBackups-deleteOlder = Proszę usunąć starsze kopie zapasowe: pliki, których nazwy zaczynają się od „myCarlos backup”, oraz te, których nazwy zostały zmienione, z wyjątkiem nowej kopii i jej kopii. Znajdują się tam, gdzie zostały zapisane: w folderze, na pendrivie, a na telefonie w aplikacji Pliki lub na dysku w chmurze.
 

@@ -447,6 +447,7 @@ export function UnlockVault({
    * name, and then shown on every device alike: "Use a different vault", with its Vault name
    * field and "Find my other vaults". Without it the screen is as it always was. */
   severalVaults?: {
+    highlightChoice?: boolean;
     onFind: (passphrase: string) => Promise<FoundVaults | null>;
     onNameFound: (vaults: { id: string; name: string }[]) => Promise<boolean>;
     /** "Set up a new vault…" (#562): a new person can set a vault up from the lock screen. The
@@ -524,7 +525,7 @@ export function UnlockVault({
             <SecretInput
               aria-label={t("passphrase.label")}
               ref={passphraseRef}
-              autoFocus
+              autoFocus={!severalVaults?.highlightChoice}
               required
               type="password"
               autoComplete="current-password"
@@ -540,6 +541,7 @@ export function UnlockVault({
           </button>
           {severalVaults && (
             <OtherVaults
+              highlightChoice={severalVaults.highlightChoice}
               name={vaultName}
               onName={setVaultName}
               passphrase={passphrase}

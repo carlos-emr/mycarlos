@@ -17,6 +17,7 @@ import type { FoundVaults } from "../vault";
  * only to be used as keys and sent back to name the vaults; they are never shown.
  */
 export function OtherVaults({
+  highlightChoice = false,
   name,
   onName,
   passphrase,
@@ -24,6 +25,7 @@ export function OtherVaults({
   onFind,
   onNameFound,
 }: {
+  highlightChoice?: boolean;
   name: string;
   onName: (value: string) => void;
   /** The passphrase typed on the unlock screen, which "Find vaults" tries. */
@@ -61,7 +63,9 @@ export function OtherVaults({
   const everyNameGiven = names.every((value) => value.trim().length > 0);
   return (
     <details className="vault-reset other-vaults">
-      <summary>{t("unlock.otherVault.summary")}</summary>
+      <summary data-highlighted={highlightChoice || undefined}>
+        {t("unlock.otherVault.summary")}
+      </summary>
       <label>
         {t("unlock.otherVault.name")}
         <input
