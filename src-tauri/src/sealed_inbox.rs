@@ -116,7 +116,8 @@ impl ItemId {
 pub(crate) struct KeyId(pub(crate) [u8; 16]);
 
 /// What the sealed trailer says about an item.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ItemMeta {
     /// The name the sealer was given, bounded to `NAME_MAX` bytes. It comes from another app: the
     /// importing stage cleans it again with the vault's own rename rules before it names a record.
@@ -126,6 +127,7 @@ pub(crate) struct ItemMeta {
     /// The size of the file as it was streamed in, not as anyone declared it.
     pub(crate) plaintext_size: u64,
 }
+redact_debug!(ItemMeta);
 
 /// The public half of the inbox key: all that sealing needs, and nothing that opens.
 #[derive(Clone, Debug, PartialEq, Eq)]

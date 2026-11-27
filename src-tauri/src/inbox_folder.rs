@@ -129,7 +129,8 @@ fn plan_import(
 }
 
 /// One sealed item that opened and is waiting for the patient to say what happens to it.
-#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub(crate) struct PendingItem {
     pub(crate) item_id: ItemId,
     /// The name the sealer was given (bounded; the importing stage cleans it with the vault's own
@@ -143,6 +144,7 @@ pub(crate) struct PendingItem {
     /// The id the vault gives the document this item becomes (derived from the item).
     pub(crate) record_id: Uuid,
 }
+redact_debug!(PendingItem);
 
 /// What an unlock found and did in the inbox folder (`InboxFolder::reconcile_at_unlock`).
 #[derive(Debug, Default, PartialEq, Eq)]
