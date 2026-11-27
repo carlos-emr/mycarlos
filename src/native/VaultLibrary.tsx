@@ -1238,7 +1238,31 @@ export function VaultLibrary({
       // level, which is then shown.
       const folderId = inFolder === undefined ? currentFolderId : inFolder;
       const folderIds = folderId ? [folderId] : [];
-      const pickId = await bridge.pickImportFiles(profileId, folderIds);
+      // Where a video can be added, one picker takes documents, pictures and videos; a video that
+      // is the whole pick goes to the video import (its progress and Cancel are that import's
+      // own), anything else keeps the document path.
+      let pickId: string | null;
+      if (
+        cameraPlatform !== "ios" &&
+        addVideo?.canAdd &&
+        // A video is being added: a second video could not be taken (one at a time), so the picker
+        // that may hand one over is not opened. Documents and pictures can still be added.
+        !addVideo.working &&
+        bridge.pickImportAny
+      ) {
+        const picked = await bridge.pickImportAny(profileId, folderIds);
+        if (picked?.kind === "videoAlone") {
+          setNotice(message("interface.AddVideo.videoAlone"));
+          return;
+        }
+        if (picked?.kind === "video") {
+          void addVideo.addPicked(picked.pickId, profileId, folderIds);
+          return;
+        }
+        pickId = picked?.pickId ?? null;
+      } else {
+        pickId = await bridge.pickImportFiles(profileId, folderIds);
+      }
       if (!pickId) {
         setNotice(
           deferredText(() =>

@@ -36,7 +36,7 @@ welcome as pull requests.
 | Android | Android debug build | `myCarlos-Android-Evaluation` | Android phones (arm64) and emulators on a PC or Mac |
 | iOS | iOS simulator debug build | `myCarlos-iOS-Simulator-Evaluation` | The iOS Simulator on an Apple silicon Mac with Xcode |
 
-Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, and `BUILD.txt`,
+Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, two FAKE pictures (with FAKE GPS and details) and a short FAKE video, and `BUILD.txt`,
 which records the source it was built from; include it in bug reports. (It is not a safety
 check: the run page in step 2 is.) Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
@@ -473,6 +473,11 @@ and point the camera at something harmless. Sound is recorded: anyone talking ne
 4. **Stop and save.** The video appears in the list; open it and choose **Play video**. Seek by the bar
    and with the arrow keys; check that it neither starts by itself nor repeats, that sound plays, and that
    the time shown is the time you recorded **without** the pause.
+   **Before a release,** do this with a real piece from each recorder: record in Chromium's
+   `MediaRecorder` (Windows, Linux, Android) **and** on an iPhone (WebKit), and check that it saves,
+   plays with sound and shows the right length. The tests build their MP4 boxes by hand; the repo has
+   no real camera MP4, so "a real file is never refused for being malformed" rests on box-size
+   reasoning (every field is read only from inside its own box) until this is done.
 5. Close the player, then **Lock now** while a video is open: the player goes and nothing plays.
 6. **Idle lock.** Set the automatic lock to 1 minute. Record for 2 minutes without touching the screen:
    it must **not** lock. Pause and wait: it **must** lock about a minute later, and after unlocking the
@@ -928,6 +933,40 @@ by hand with `python3 scripts/android-portal-fixture.py --mode trusted --port 84
 its own tests are `npm run test:android-portal-fixture`. It uses throwaway test keys that are never
 added to a trust store. The emulator test that drives the app against it is a proposed workflow
 change (not applied; see `for-ben/android-portal-trust-emulator-README-20261126.md`).
+
+## Linking a clinic on Android (portal connection, piece 3)
+
+myCarlos on Android can now link a clinic's portal. It uses the same HTTPS client as the computer
+builds, with Android's own certificate trust (the system's trust manager through the platform
+verifier), so a certificate the phone does not trust is refused, and a release build trusts the
+system's authorities only.
+
+1. On an Android phone or the emulator, open **Security**, under **Connected clinics**. Enter a FAKE
+   test portal's address and link code and choose **Connect and request approval**. The device is
+   linked and its approval status is shown there. (Before this piece Android showed "Portal linking
+   is not available on this device yet.")
+2. **Which certificates are trusted.** *Requires #478 (merged before this piece).* Without #478,
+   Android's own default for an app that targets API 24 or later (this one does: its target SDK
+   is 36, pinned by #423, and its minimum is 24) already ignores certificate authorities a person installed in the phone's settings; what only
+   #478 adds is the written configuration, the gate that refuses a release build that weakens it,
+   and the debug FAKE test root. A **release** build trusts only the phone's system
+   certificate store, and no certificate authority a person installed in the phone's own settings
+   (the network security configuration of #478 refuses user-installed authorities, and the release
+   safety gate refuses a build that allows them). A **debug** build trusts the system store plus
+   one extra authority, the bundled FAKE test root (`src/debug/res/raw`, #478's `debug-overrides`,
+   which exists only in the debug source set), and still no user-installed one. So with a test
+   portal whose certificate comes from a user-installed or any other unknown authority, linking
+   fails on both builds, and only the FAKE test portal works in a debug build. The patient sees
+   the sentence **"The portal request could not be completed. Check your connection and device
+   clock, then try again."** (`LinkError::Network`, code `portal_link_incomplete`, message
+   `portal.errorIncomplete`), the same sentence as on a computer, and nothing is saved.
+3. With the phone offline, the same sentence appears and the attempt can be tried again. Nothing
+   retries by itself: Android has no background checker, a check runs when the patient asks (or
+   once after unlocking when a notice is owed), and one check stops after three download failures
+   in a row.
+4. If the app was just started, the Connected clinics section can be missing for a moment: linking
+   is offered only once the platform certificate check has been set up, and not at all if that
+   failed (the old "not available on this device yet" message), never as a choice that then fails.
 
 ## Password-protected PDFs
 
