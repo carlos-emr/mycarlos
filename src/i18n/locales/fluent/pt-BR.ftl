@@ -1385,7 +1385,7 @@ unlock-otherVault-summary = Usar outro cofre
 
 unlock-otherVault-name = Nome do cofre
 
-unlock-otherVault-hint = O nome que você deu a esse cofre. Deixe em branco para abrir o cofre desta tela. O myCarlos não guarda uma lista de cofres, então não pode mostrar os nomes deles.
+unlock-otherVault-hint = O nome que você deu a esse cofre. Deixe em branco para abrir seu cofre principal. O myCarlos não guarda uma lista de cofres, então não pode mostrar os nomes deles.
 
 unlock-otherVault-find = Encontrar meus outros cofres
 

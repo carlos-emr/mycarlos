@@ -550,78 +550,83 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const concealedRef = useRef(concealed);
   concealedRef.current = concealed;
 
-  const lock = useCallback(async () => {
-    if (lockingRef.current) return;
-    lockingRef.current = true;
-    // A transfer this lock ends, or waited for, reports how it went.
-    const endsTransfer = lockHeldRef.current || transferHold.active;
-    try {
-      await bridge.lock();
-      sessionRef.current += 1;
-      // The session shown from here has no operation of its own yet.
-      transferHold.moveTo(sessionRef.current);
-      refreshBusy();
-      endedPortalWorkRef.current = Promise.allSettled([
-        endedPortalWorkRef.current,
-        portalJobRef.current?.promise,
-        portalPollRef.current?.promise,
-      ]).then(() => undefined);
-      portalJobRef.current = null;
-      portalPollRef.current = null;
-      setPortalWaits(new PortalWaits());
-      portalNoticeRef.current = null;
-      photoNoticeSessionRef.current = null;
-      setPortalBusy(false);
-      setUnlockCheck(null);
-      appliedCaptureRef.current = null;
-      approvalCapturesRef.current.clear();
-      setSnapshot(null);
-      // A key shown but not set up ended with the session.
-      setOpeningRecoverySetup(null);
-      setConcealed(false);
-      setLockFailed(false);
-      holdLock(false);
-      mediaHoldsRef.current.clear();
-      setAddingVault(false);
-      setStatus("locked");
-      if (endsTransfer && transferOutcomeRef.current)
-        holdForUnlock(transferOutcomeRef.current);
-      // Why, without anything of the records (#68).
-      const reason = lockReasonRef.current;
-      lockReasonRef.current = null;
-      const minutes = autoLockMinutesRef.current;
-      setNotice(
-        deferredText(() =>
-          reason === "idle"
-            ? translateCurrent("notice.lockedIdle", { count: minutes })
-            : reason === "hidden"
-              ? translateCurrent("notice.lockedHidden")
-              : translateCurrent("notice.locked"),
-        ),
-      );
-    } catch (error) {
-      // The vault is still unlocked natively. Every caller must learn that,
-      // including the concealed screen, which would otherwise claim "Locked".
-      setLockFailed(true);
-      // What was held for the unlock after this lock is for the patient now,
-      // while the vault stays open, unless the content is hidden: there it
-      // keeps waiting for an unlock, where only the owner sees it.
-      const held = concealedRef.current ? null : pendingOutcomeRef.current;
-      if (held) pendingOutcomeRef.current = null;
-      setNotice(
-        deferredText(() =>
-          held
-            ? joinText(
-                deferredText(() => vaultErrorMessage(error)),
-                held,
-              )
-            : vaultErrorMessage(error),
-        ),
-      );
-    } finally {
-      lockingRef.current = false;
-    }
-  }, [bridge, holdForUnlock, holdLock, refreshBusy, transferHold]);
+  // `native` is false only when the native side has already locked the vault itself (adding another
+  // vault does, #357): the screen then follows it, ending the session as any lock does.
+  const lock = useCallback(
+    async (native: boolean = true) => {
+      if (lockingRef.current) return;
+      lockingRef.current = true;
+      // A transfer this lock ends, or waited for, reports how it went.
+      const endsTransfer = lockHeldRef.current || transferHold.active;
+      try {
+        if (native !== false) await bridge.lock();
+        sessionRef.current += 1;
+        // The session shown from here has no operation of its own yet.
+        transferHold.moveTo(sessionRef.current);
+        refreshBusy();
+        endedPortalWorkRef.current = Promise.allSettled([
+          endedPortalWorkRef.current,
+          portalJobRef.current?.promise,
+          portalPollRef.current?.promise,
+        ]).then(() => undefined);
+        portalJobRef.current = null;
+        portalPollRef.current = null;
+        setPortalWaits(new PortalWaits());
+        portalNoticeRef.current = null;
+        photoNoticeSessionRef.current = null;
+        setPortalBusy(false);
+        setUnlockCheck(null);
+        appliedCaptureRef.current = null;
+        approvalCapturesRef.current.clear();
+        setSnapshot(null);
+        // A key shown but not set up ended with the session.
+        setOpeningRecoverySetup(null);
+        setConcealed(false);
+        setLockFailed(false);
+        holdLock(false);
+        mediaHoldsRef.current.clear();
+        setAddingVault(false);
+        setStatus("locked");
+        if (endsTransfer && transferOutcomeRef.current)
+          holdForUnlock(transferOutcomeRef.current);
+        // Why, without anything of the records (#68).
+        const reason = lockReasonRef.current;
+        lockReasonRef.current = null;
+        const minutes = autoLockMinutesRef.current;
+        setNotice(
+          deferredText(() =>
+            reason === "idle"
+              ? translateCurrent("notice.lockedIdle", { count: minutes })
+              : reason === "hidden"
+                ? translateCurrent("notice.lockedHidden")
+                : translateCurrent("notice.locked"),
+          ),
+        );
+      } catch (error) {
+        // The vault is still unlocked natively. Every caller must learn that,
+        // including the concealed screen, which would otherwise claim "Locked".
+        setLockFailed(true);
+        // What was held for the unlock after this lock is for the patient now,
+        // while the vault stays open, unless the content is hidden: there it
+        // keeps waiting for an unlock, where only the owner sees it.
+        const held = concealedRef.current ? null : pendingOutcomeRef.current;
+        if (held) pendingOutcomeRef.current = null;
+        setNotice(
+          deferredText(() =>
+            held
+              ? joinText(
+                  deferredText(() => vaultErrorMessage(error)),
+                  held,
+                )
+              : vaultErrorMessage(error),
+          ),
+        );
+      } finally {
+        lockingRef.current = false;
+      }
+    },
+    [bridge, holdForUnlock, holdLock, refreshBusy, transferHold],
+  );
 
   const requestLock = useCallback(
     (concealImmediately = false) => {
@@ -1991,21 +1996,35 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
   }
 
-  // Another vault on this device (#357), set up from an unlocked vault: this vault is locked
-  // first (the native side adds a vault only while the screen's vault is at rest), then the new one
-  // is made and opened as a new vault is. If the lock does not happen, nothing is added and the
-  // vault stays open with the reason shown.
+  // Another vault on this device (#357), set up from an unlocked vault. The NATIVE side requires
+  // this vault to be open (it is the owner's authenticated session), locks it itself before
+  // anything is written, and then makes the new vault and opens it as a new vault is. The screen
+  // follows: when the vault was locked (the add went ahead, or failed after the lock) the session
+  // ends as any lock does; a refusal before the lock (a name that cannot be a name, a busy device)
+  // leaves the vault open with the reason shown. Nothing here locks first, so there is no gap in
+  // which the page could add without the lock.
   const setUpNewVault = async (
     profile: string,
     passphrase: string,
     vaultName: string,
   ) => {
     lockReasonRef.current = null;
-    await lock();
-    const afterLock = await bridge.status().catch(() => "unlocked" as const);
-    if (afterLock !== "locked") return;
     await run(async () => {
-      const current = await bridge.addVault!(vaultName, passphrase, profile);
+      let current: VaultSnapshot;
+      try {
+        current = await bridge.addVault!(vaultName, passphrase, profile);
+      } catch (error) {
+        // Failed after the native lock: this vault is locked, so the screen says so. If it is
+        // still open the owner stays in it, and the refusal is shown.
+        const nativeState = await bridge.status().catch(() => "unlocked");
+        if (nativeState === "locked") await lock(false);
+        throw error;
+      }
+      // This vault was locked natively, and the new one is open: end this session on screen, then
+      // open the new one.
+      await lock(false);
+      // The lock's own "Vault locked." is not what the owner is told: the new vault is open.
+      setNotice("");
       setOpeningRecoverySetup(null);
       installOpeningSnapshot(current);
       setConcealed(false);

@@ -10,8 +10,11 @@ import type { FoundVaults } from "../vault";
  * did. Inside it, "Find my other vaults" tries the typed passphrase on each folder the device does
  * not know, and names what it finds (all or none).
  *
- * Nothing here says how many vaults exist: the counts below are of the search the patient just
- * asked for, with that passphrase, and the opaque folder ids are never shown.
+ * Nothing here says how many vaults the device lists. After a search the screen shows the counts
+ * that search returned (found, did not open, empty): they depend on the passphrase typed, and a
+ * search with ANY passphrase returns counts of the folders the registry does not list, so they say
+ * nothing of the listed vaults. The opaque folder ids a search returns reach this page's code, but
+ * only to be used as keys and sent back to name the vaults; they are never shown.
  */
 export function OtherVaults({
   name,

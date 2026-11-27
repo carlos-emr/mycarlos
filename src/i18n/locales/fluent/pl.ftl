@@ -1416,7 +1416,7 @@ unlock-otherVault-summary = Użyj innego sejfu
 
 unlock-otherVault-name = Nazwa sejfu
 
-unlock-otherVault-hint = Nazwa, którą nadano temu sejfowi. Zostaw puste, aby otworzyć własny sejf tego ekranu. myCarlos nie przechowuje listy sejfów, więc nie może pokazać ich nazw.
+unlock-otherVault-hint = Nazwa, którą nadano temu sejfowi. Zostaw puste, aby otworzyć swój główny sejf. myCarlos nie przechowuje listy sejfów, więc nie może pokazać ich nazw.
 
 unlock-otherVault-find = Znajdź moje inne sejfy
 

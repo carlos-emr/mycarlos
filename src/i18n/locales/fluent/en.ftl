@@ -1354,7 +1354,7 @@ unlock-otherVault-summary = Use a different vault
 
 unlock-otherVault-name = Vault name
 
-unlock-otherVault-hint = The name you gave that vault. Leave it empty to open this screen's own vault. myCarlos keeps no list of vaults, so it cannot show you their names.
+unlock-otherVault-hint = The name you gave that vault. Leave it empty to open your main vault. myCarlos keeps no list of vaults, so it cannot show you their names.
 
 unlock-otherVault-find = Find my other vaults
 

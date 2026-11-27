@@ -231,6 +231,13 @@ fn checked_name(typed: &str) -> Result<Zeroizing<String>, NameError> {
     }
 }
 
+/// Whether a typed name can be a vault's name (normalised, 1 to [`MAX_NAME_CHARS`] characters, no
+/// private-use or non-character code points): asked before anything is locked or written, so a name
+/// that would be refused costs the owner nothing.
+pub(crate) fn name_is_valid(typed: &str) -> bool {
+    checked_name(typed).is_ok()
+}
+
 /// The Argon2id cost of one name hash. It is stored in the registry, so it can be raised later and
 /// an old file still checks with the cost it was made with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

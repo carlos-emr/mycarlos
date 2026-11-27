@@ -1385,7 +1385,7 @@ unlock-otherVault-summary = Usar otra bóveda
 
 unlock-otherVault-name = Nombre de la bóveda
 
-unlock-otherVault-hint = El nombre que le dio a esa bóveda. Déjelo vacío para abrir la bóveda propia de esta pantalla. myCarlos no guarda una lista de bóvedas, así que no puede mostrarle sus nombres.
+unlock-otherVault-hint = El nombre que le dio a esa bóveda. Déjelo vacío para abrir su bóveda principal. myCarlos no guarda una lista de bóvedas, así que no puede mostrarle sus nombres.
 
 unlock-otherVault-find = Buscar mis otras bóvedas
 

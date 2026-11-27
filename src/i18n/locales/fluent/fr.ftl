@@ -1385,7 +1385,7 @@ unlock-otherVault-summary = Utiliser un autre coffre-fort
 
 unlock-otherVault-name = Nom du coffre-fort
 
-unlock-otherVault-hint = Le nom que vous avez donné à ce coffre-fort. Laissez-le vide pour ouvrir le coffre-fort propre à cet écran. myCarlos ne garde aucune liste de coffres-forts : il ne peut donc pas vous en montrer les noms.
+unlock-otherVault-hint = Le nom que vous avez donné à ce coffre-fort. Laissez-le vide pour ouvrir votre coffre-fort principal. myCarlos ne garde aucune liste de coffres-forts : il ne peut donc pas vous en montrer les noms.
 
 unlock-otherVault-find = Retrouver mes autres coffres-forts
 

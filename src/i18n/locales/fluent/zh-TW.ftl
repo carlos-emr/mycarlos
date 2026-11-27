@@ -1230,7 +1230,7 @@ unlock-otherVault-summary = 使用其他保險庫
 
 unlock-otherVault-name = 保險庫名稱
 
-unlock-otherVault-hint = 您為該保險庫取的名稱。留空則開啟此畫面自己的保險庫。myCarlos 不保存保險庫清單，因此無法向您顯示它們的名稱。
+unlock-otherVault-hint = 您為該保險庫取的名稱。留空則開啟您的主保險庫。myCarlos 不保存保險庫清單，因此無法向您顯示它們的名稱。
 
 unlock-otherVault-find = 尋找我的其他保險庫
 

@@ -7540,10 +7540,14 @@ async fn vault_unlock_named(
 /// (`VaultSlots::add_vault`), and the new vault becomes the one the screen is on. An add is not a
 /// guess, so it is not counted on the device-wide counter, but it is refused while a wait is running:
 /// a screen the device has locked out must not be a way to make vaults. Adding never clears the
-/// counter (the counts are about the device). Not granted to the renderer until the screen for
-/// several vaults exists (PR 5). A refusal after the vault was made (the window was closed to the
-/// tray meanwhile, or the old vault began something while the new one was made) leaves the new vault
-/// registered and locked: the screen must say it was already added, not offer to add it again.
+/// counter (the counts are about the device). **It needs the screen's vault to be OPEN** (an
+/// authenticated session, SLOT-02): it refuses as locked otherwise, and when it goes ahead it
+/// locks that vault itself, before anything is written, so the page cannot create vaults on a locked
+/// device and the lock-first order is the native side's, not the page's. Granted to the renderer
+/// with the several-vaults screen (PR 5), which offers it only inside an unlocked vault. A refusal
+/// after the vault was made (the window was closed to the tray meanwhile, or the old vault began
+/// something while the new one was made) leaves the new vault registered and locked: the screen
+/// must say it was already added, not offer to add it again.
 #[tauri::command]
 async fn vault_add_vault(
     store: State<'_, StoreHandle>,
