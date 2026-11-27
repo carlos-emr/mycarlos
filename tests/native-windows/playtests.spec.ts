@@ -31,6 +31,11 @@ import {
 const ENABLED = process.env.MYCARLOS_WINDOWS_PLAYTESTS === "1";
 const PASSPHRASE = FAKE_PASSPHRASE;
 const BIRTH_DATE = "2016-11-04";
+const sampleDocuments = [
+  "FAKE_Avery_Patient_Bloodwork.pdf",
+  "FAKE_Avery_Patient_Cardiology_Letter.pdf",
+  "FAKE_Picture_with_details.png",
+];
 const FILE_PASSPHRASE = "marble heron cobalt thicket 5518 river";
 
 test.describe.configure({ mode: "serial" });
@@ -64,11 +69,7 @@ test.afterAll(async () => {
 
 test("a person with a birth date, FAKE PDFs and a picture", async () => {
   personId = await createPerson(session, "FAKE Playtest Person", BIRTH_DATE);
-  for (const name of [
-    "FAKE_Avery_Patient_Bloodwork.pdf",
-    "FAKE_Avery_Patient_Cardiology_Letter.pdf",
-    "FAKE_Picture_with_details.png",
-  ])
+  for (const name of sampleDocuments)
     await test.step(`import ${name}`, () =>
       importSample(session, personId, name));
   const now = await snapshot(session);
@@ -281,6 +282,8 @@ test("backup to a real folder and restore it: the contents come back", async () 
   const saved_state = await snapshot(session);
   const documents = saved_state.records.length;
   const sorted = (names: string[]) => [...names].sort();
+  const savedNames = sorted(saved_state.records.map((r) => r.displayName));
+  expect(savedNames).toEqual(expect.arrayContaining(sampleDocuments));
   await session.call("vault_create_profile", {
     request: {
       displayName: "FAKE Added after backup",
@@ -316,9 +319,7 @@ test("backup to a real folder and restore it: the contents come back", async () 
   expect(sorted(back.profiles.map((p) => p.displayName))).toEqual(
     sorted(saved_state.profiles.map((p) => p.displayName)),
   );
-  expect(sorted(back.records.map((r) => r.name))).toEqual(
-    sorted(saved_state.records.map((r) => r.name)),
-  );
+  expect(sorted(back.records.map((r) => r.displayName))).toEqual(savedNames);
   expect(
     back.profiles.some((p) => p.displayName === "FAKE Added after backup"),
   ).toBe(false);

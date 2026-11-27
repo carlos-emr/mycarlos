@@ -35,7 +35,7 @@ export interface Profile {
 }
 export interface Snapshot {
   profiles: Profile[];
-  records: { profileId: string; name: string }[];
+  records: { profileId: string; displayName: string }[];
 }
 export interface FakeVault {
   passphrase: string;
