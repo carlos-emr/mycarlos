@@ -129,8 +129,9 @@ test("a failing check of the process table counts as not gone, not as a crash", 
   ).rejects.toThrow(/was not seen to exit/);
 });
 
-// A child that was already leaving when taskkill reached it (Windows run 45962064313): exit code 1
-// with one ERROR line per such child, on stderr (and copied into the message by `execFile`).
+// A child that was already leaving when taskkill reached it (Windows run 45962064313): one ERROR
+// line per such child, on stderr (and copied into the message by `execFile`). The exit code is
+// not recorded in that log; these tests use 1, and the code does not matter to the matching.
 const CHILD_NOT_SUPPORTED =
   "ERROR: The process with PID 8784 (child process of PID 2504) could not be terminated.\r\n" +
   "Reason: The operation attempted is not supported.\r\n";

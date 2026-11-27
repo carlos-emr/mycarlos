@@ -26,7 +26,10 @@ export interface StopOptions {
  * neither shows it, the error says what taskkill reported and how the app
  * looks. Any other failure is thrown as it came, including a "not supported"
  * refusal for the app's own process (it is not a child that was leaving) and
- * one mixed with any other kind of refusal. */
+ * one mixed with any other kind of refusal. Accepted risk: if taskkill refuses
+ * children as "not supported" while they are not really leaving, and the root
+ * is gone, a WebView2 child could linger on the runner for later specs. Only
+ * this English wording is matched; a localized Windows throws as before. */
 export async function stopAppTree(
   pid: number,
   run: (file: string, args: string[]) => Promise<unknown>,
