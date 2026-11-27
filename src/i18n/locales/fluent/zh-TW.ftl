@@ -2587,7 +2587,7 @@ hiddenFolders-hide = 隱藏資料夾
 hiddenFolders-confirm = 要隱藏 { $name } 嗎？
 hiddenFolders-confirmBody = 此資料夾及其子資料夾將不再顯示在資料庫中。也存放在其他可見資料夾中的文件仍可在那裡查看。知道密碼片語的人可以在「安全」中還原此資料夾。
 hiddenFolders-title = 已隱藏的資料夾
-hiddenFolders-restoreFor = 還原 { $name }
+hiddenFolders-restoreFor = 還原 { $location } 中的 { $name }
 hiddenFolders-damagedToo = 其中有 { $count } 份文件來自已隱藏的資料夾。
 hiddenFolders-handover = 匯入後，已隱藏的資料夾仍會保持隱藏（包含 { $count } 個）。
 

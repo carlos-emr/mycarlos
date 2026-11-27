@@ -227,6 +227,8 @@ export interface HiddenFolder {
   id: string;
   /** The person the folder belongs to. */
   profileId: string;
+  /** The parent is visible if this folder has one. */
+  parentId: string | null;
   name: string;
   hiddenAtMs: number;
   /** Every document filed in it or in any folder below it, those hidden one by one included. */

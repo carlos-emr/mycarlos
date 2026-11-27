@@ -4,6 +4,7 @@ import { translate } from "./support/fluent";
 import {
   FAKE_IDS,
   fakeCalls,
+  fakeUuid,
   fakeVaultWith,
   myRecords,
 } from "./support/vaultFake";
@@ -15,12 +16,53 @@ const en = (
 const RESULTS = "FAKE Results";
 const CHILD = "FAKE Imaging";
 const BLOODWORK = "FAKE Bloodwork.pdf";
+const OWNER = "FAKE Patient";
 
 const folder = (page: Page, name: string) =>
   page.getByRole("button", {
     name: en("library.folder.open", { name }),
     exact: true,
   });
+
+const hideFolder = (page: Page) =>
+  page.getByRole("button", { name: en("hiddenFolders.hide"), exact: true });
+const restoreFolder = (page: Page, name: string, location: string) =>
+  page.getByRole("button", {
+    name: en("hiddenFolders.restoreFor", { name, location }),
+    exact: true,
+  });
+const hiddenFolders = (page: Page) =>
+  page.getByRole("list", { name: en("hiddenFolders.title"), exact: true });
+const security = (page: Page) =>
+  page.getByRole("button", { name: en("security.title"), exact: true });
+
+async function addFolder(page: Page, name: string) {
+  await page
+    .getByRole("button", {
+      name: en("interface.VaultLibrary.newFolder"),
+      exact: true,
+    })
+    .click();
+  await page.getByLabel(en("rename.label.folder"), { exact: true }).fill(name);
+  await page
+    .getByRole("button", {
+      name: en("interface.VaultLibrary.create"),
+      exact: true,
+    })
+    .click();
+  await expect(folder(page, name)).toBeVisible();
+}
+
+async function hideOpenFolder(page: Page) {
+  await hideFolder(page).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", {
+      name: en("hiddenFolders.hide"),
+      exact: true,
+    })
+    .click();
+}
 
 async function expectNoSidewaysScroll(page: Page) {
   expect(
@@ -43,25 +85,9 @@ test("hides a folder with its contents and restores it from Security at 320px", 
   const document = page.getByRole("button", { name: BLOODWORK, exact: true });
   await expect(document).toBeVisible();
 
-  await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.newFolder"),
-      exact: true,
-    })
-    .click();
-  await page.getByLabel(en("rename.label.folder"), { exact: true }).fill(CHILD);
-  await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.create"),
-      exact: true,
-    })
-    .click();
-  await expect(folder(page, CHILD)).toBeVisible();
+  await addFolder(page, CHILD);
 
-  const hide = page.getByRole("button", {
-    name: en("hiddenFolders.hide"),
-    exact: true,
-  });
+  const hide = hideFolder(page);
   const confirmation = page.getByRole("alertdialog", {
     name: en("hiddenFolders.confirm", { name: RESULTS }),
     exact: true,
@@ -101,24 +127,15 @@ test("hides a folder with its contents and restores it from Security at 320px", 
     name: en("interface.VaultLibrary.section"),
     exact: true,
   });
-  await tabs
-    .getByRole("button", { name: en("security.title"), exact: true })
-    .click();
-  const list = page.getByRole("list", {
-    name: en("hiddenFolders.title"),
-    exact: true,
-  });
+  await security(page).click();
+  const list = hiddenFolders(page);
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("listitem")).toContainText(
     en("hiddenPeople.documents", { count: 1 }),
   );
   await expectNoSidewaysScroll(page);
 
-  const restore = list.getByRole("button", {
-    name: en("hiddenFolders.restoreFor", { name: RESULTS }),
-    exact: true,
-  });
-  await restore.press("Enter");
+  await restoreFolder(page, RESULTS, OWNER).press("Enter");
   await expect(list).toHaveCount(0);
   await tabs
     .getByRole("button", {
@@ -127,12 +144,60 @@ test("hides a folder with its contents and restores it from Security at 320px", 
     })
     .click();
   await folder(page, RESULTS).click();
+  await expect(heading).toBeVisible();
   await expect(folder(page, CHILD)).toBeVisible();
   await expect(document).toBeVisible();
   for (const command of ["vault_hide_folder", "vault_restore_folder"])
     expect(await fakeCalls(page, command)).toEqual([
       { request: { folderId: FAKE_IDS.folder } },
     ]);
+  await expectOnlyFakedCommands(page);
+});
+
+test("restores the intended same-name folder by person and visible parent", async ({
+  page,
+}) => {
+  const secondPerson = "FAKE Second Patient";
+  await page.setViewportSize({ width: 320, height: 720 });
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    people: [{ displayName: secondPerson }],
+    hiddenFolders: [RESULTS],
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: secondPerson, exact: true }).click();
+  await addFolder(page, CHILD);
+  await folder(page, CHILD).click();
+  await addFolder(page, RESULTS);
+  await folder(page, RESULTS).click();
+  await hideOpenFolder(page);
+  await expect(
+    page.getByRole("heading", { name: CHILD, level: 1 }),
+  ).toBeFocused();
+  await hideOpenFolder(page);
+  await expect(
+    page.getByRole("heading", { name: secondPerson, level: 1 }),
+  ).toBeFocused();
+
+  await security(page).click();
+  const firstPersonFolder = restoreFolder(page, RESULTS, OWNER);
+  const secondPersonFolder = restoreFolder(
+    page,
+    RESULTS,
+    `${secondPerson} / ${CHILD}`,
+  );
+  await expect(firstPersonFolder).toBeVisible();
+  await expect(secondPersonFolder).toHaveCount(0);
+  await restoreFolder(page, CHILD, secondPerson).click();
+  await expect(hiddenFolders(page).getByRole("listitem")).toHaveCount(2);
+  await expect(secondPersonFolder).toBeVisible();
+  await secondPersonFolder.click();
+  await expect(hiddenFolders(page).getByRole("listitem")).toHaveCount(1);
+  await expect(firstPersonFolder).toBeVisible();
+  expect(await fakeCalls(page, "vault_restore_folder")).toEqual([
+    { request: { folderId: fakeUuid(303) } },
+    { request: { folderId: fakeUuid(304) } },
+  ]);
   await expectOnlyFakedCommands(page);
 });
 

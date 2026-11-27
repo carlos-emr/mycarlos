@@ -3095,6 +3095,7 @@ export function VaultLibrary({
                 onAddFromFile={() => setHandover("import")}
                 hiddenPeople={snapshot.hiddenProfiles}
                 hiddenFolders={snapshot.hiddenFolders}
+                visibleFolders={snapshot.folders}
                 headingRef={pageHeadingRef}
                 onRestoreFolder={
                   bridge.restoreFolder ? restoreFolder : undefined

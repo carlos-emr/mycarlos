@@ -845,6 +845,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               {
                 id: folder.id,
                 profileId: folder.profileId,
+                parentId: folder.parentId,
                 name: folder.name,
                 hiddenAtMs: folder.hiddenAtMs,
                 documents: whole.records.filter((record) =>

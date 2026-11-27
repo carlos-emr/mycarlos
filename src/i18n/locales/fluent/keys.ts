@@ -4650,7 +4650,10 @@ export interface MessageArgsByKey {
   "hiddenFolders.confirm": { name: FluentArgument };
   "hiddenFolders.confirmBody": undefined;
   "hiddenFolders.title": undefined;
-  "hiddenFolders.restoreFor": { name: FluentArgument };
+  "hiddenFolders.restoreFor": {
+    location: FluentArgument;
+    name: FluentArgument;
+  };
   "hiddenFolders.damagedToo": { count: FluentArgument };
   "hiddenFolders.handover": { count: FluentArgument };
   "hiddenPeople.handOver": undefined;

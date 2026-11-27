@@ -2837,7 +2837,7 @@ hiddenFolders-hide = Hide folder
 hiddenFolders-confirm = Hide { $name }?
 hiddenFolders-confirmBody = The folder and its subfolders will leave the library. Documents in another visible folder stay there. Anyone with the passphrase can restore the folder in Security.
 hiddenFolders-title = Hidden folders
-hiddenFolders-restoreFor = Restore { $name }
+hiddenFolders-restoreFor = Restore { $name } in { $location }
 hiddenFolders-damagedToo = This includes { $count } from hidden folders.
 hiddenFolders-handover = Hidden folders stay hidden after import ({ $count } included).
 

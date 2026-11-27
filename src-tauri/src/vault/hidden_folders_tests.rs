@@ -201,6 +201,7 @@ fn nested_cases_a_folder_hidden_on_its_own_stays_hidden_and_hiding_under_a_hidde
     let listed = v.store.snapshot().unwrap().hidden_folders;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, v.letters);
+    assert_eq!(listed[0].parent_id, None);
     assert_eq!(listed[0].subfolders, 1);
 
     // Hiding under a hidden parent (the folder is out of reach), hiding again, and restoring the
@@ -222,6 +223,7 @@ fn nested_cases_a_folder_hidden_on_its_own_stays_hidden_and_hiding_under_a_hidde
     let listed = v.store.snapshot().unwrap().hidden_folders;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, v.year);
+    assert_eq!(listed[0].parent_id, Some(v.letters));
     // And it can be restored now.
     v.store.restore_folder(v.year).unwrap();
     assert_eq!(v.store.snapshot().unwrap().records.len(), 4);

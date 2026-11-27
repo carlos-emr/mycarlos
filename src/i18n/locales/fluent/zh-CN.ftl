@@ -2587,7 +2587,7 @@ hiddenFolders-hide = 隐藏文件夹
 hiddenFolders-confirm = 要隐藏 { $name } 吗？
 hiddenFolders-confirmBody = 此文件夹及其子文件夹将不再显示在资料库中。也存放在其他可见文件夹中的文档仍可在那里查看。知道密码短语的人可以在“安全”中恢复此文件夹。
 hiddenFolders-title = 已隐藏的文件夹
-hiddenFolders-restoreFor = 恢复 { $name }
+hiddenFolders-restoreFor = 恢复 { $location } 中的 { $name }
 hiddenFolders-damagedToo = 其中有 { $count } 份文档来自已隐藏的文件夹。
 hiddenFolders-handover = 导入后，已隐藏的文件夹仍保持隐藏（包含 { $count } 个）。
 

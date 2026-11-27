@@ -21,6 +21,7 @@ import type {
   HiddenProfile,
   PatientProfile,
   PersonDetails,
+  VaultFolder,
 } from "../vault";
 import { SecretInput } from "./SecretInput";
 import { SpokenCount } from "./SpokenCount";
@@ -52,6 +53,7 @@ import { KeyLabel, printedDate } from "./KeyLabel";
 import { HiddenPeopleList, HidePersonButton } from "./HiddenPeople";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatBackupSize, formatFileSize } from "./recordPresentation";
+import { folderPath } from "./folderTree";
 
 interface SecuritySettingsProps {
   clinicDocuments?: ReactNode;
@@ -105,6 +107,7 @@ interface SecuritySettingsProps {
   onHidePerson?: (profileId: string) => void;
   onRestorePerson?: (profileId: string) => void;
   hiddenFolders?: HiddenFolder[];
+  visibleFolders?: VaultFolder[];
   onRestoreFolder?: (folderId: string) => void;
   headingRef?: RefObject<HTMLHeadingElement | null>;
   /** Hand a hidden person's records over. */
@@ -202,6 +205,7 @@ export function SecuritySettings({
   onHidePerson,
   onRestorePerson,
   hiddenFolders = [],
+  visibleFolders = [],
   onRestoreFolder,
   headingRef,
   onHandOverHidden,
@@ -240,6 +244,9 @@ export function SecuritySettings({
   onDialogChange,
 }: SecuritySettingsProps) {
   const { t, locale } = useI18n();
+  const visibleFoldersById = new Map(
+    visibleFolders.map((folder) => [folder.id, folder]),
+  );
   // The size a backup would be, with or without the videos (#359).
   // The button that opened the handover takes the focus back once a hide that came from its dialog
   // has finished (it is disabled while the library is busy).
@@ -778,41 +785,56 @@ export function SecuritySettings({
                 className="native-person-details-list"
                 aria-label={t("hiddenFolders.title")}
               >
-                {hiddenFolders.map((folder) => (
-                  <li key={folder.id}>
-                    <span>
-                      <strong>{folder.name}</strong>
-                      {" · "}
-                      {t("hiddenPeople.since", {
-                        date: new Date(folder.hiddenAtMs).toLocaleDateString(
-                          locale,
-                          { year: "numeric", month: "long", day: "numeric" },
-                        ),
-                      })}
-                      {" · "}
-                      {t("hiddenPeople.documents", { count: folder.documents })}
-                      {folder.subfolders > 0 && (
-                        <>
-                          {" · "}
-                          {t("interface.count.folders", {
-                            count: folder.subfolders,
-                          })}
-                        </>
-                      )}
-                    </span>
-                    <button
-                      className="button"
-                      type="button"
-                      disabled={busy || readOnly}
-                      aria-label={t("hiddenFolders.restoreFor", {
-                        name: folder.name,
-                      })}
-                      onClick={() => onRestoreFolder(folder.id)}
-                    >
-                      {t("hiddenPeople.restore")}
-                    </button>
-                  </li>
-                ))}
+                {hiddenFolders.map((folder) => {
+                  const owner = people.find(
+                    (person) => person.id === folder.profileId,
+                  );
+                  const location = folderPath(
+                    visibleFoldersById,
+                    folder.parentId,
+                    owner?.displayName,
+                  );
+                  return (
+                    <li key={folder.id}>
+                      <span className="native-hidden-folder-summary">
+                        <strong>{folder.name}</strong>
+                        {" · "}
+                        {location}
+                        {" · "}
+                        {t("hiddenPeople.since", {
+                          date: new Date(folder.hiddenAtMs).toLocaleDateString(
+                            locale,
+                            { year: "numeric", month: "long", day: "numeric" },
+                          ),
+                        })}
+                        {" · "}
+                        {t("hiddenPeople.documents", {
+                          count: folder.documents,
+                        })}
+                        {folder.subfolders > 0 && (
+                          <>
+                            {" · "}
+                            {t("interface.count.folders", {
+                              count: folder.subfolders,
+                            })}
+                          </>
+                        )}
+                      </span>
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy || readOnly}
+                        aria-label={t("hiddenFolders.restoreFor", {
+                          name: folder.name,
+                          location,
+                        })}
+                        onClick={() => onRestoreFolder(folder.id)}
+                      >
+                        {t("hiddenPeople.restore")}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
