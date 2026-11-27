@@ -2518,6 +2518,8 @@ reader-android-zoomOut = Zoom out
 
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Record a video
+interface-RecordDialog-recordAVideoFor = Record a video for { $name }
+interface-RecordDialog-recordingSettings = Recording settings
 interface-RecordDialog-unavailable = Video recording isn't available on this device.
 interface-RecordDialog-why = Why?
 interface-RecordDialog-startingTheCameraAndMicrophone = Starting the camera and microphone…
@@ -2533,6 +2535,9 @@ interface-RecordDialog-unnamedCamera = Camera { $number }
 interface-RecordDialog-unnamedMicrophone = Microphone { $number }
 interface-RecordDialog-systemDefaultDevice = System default
 interface-RecordDialog-deviceFellBack = The camera or microphone you used last is not connected, so the system's default is in use.
+interface-RecordDialog-deviceNotSwitched = The camera or microphone you chose could not be opened, so the one in use is still on.
+interface-RecordDialog-saySomething = Say something: the bar should move.
+interface-RecordDialog-settingsNote = The video is saved encrypted. myCarlos remembers these choices on this device.
 interface-RecordDialog-testMicrophone = Test microphone
 interface-RecordDialog-stopTestingMicrophone = Stop testing
 interface-RecordDialog-microphoneLevel = Microphone level
@@ -2979,6 +2984,9 @@ interface-received-removeKept =
     [one] Delete the kept file
     *[other] Delete the { $count } kept files
     }
+
+native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.
+
 interface-AddVideo-add = Add a video
 
 interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and the device's name and model it carries are removed first.

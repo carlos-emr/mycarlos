@@ -201,11 +201,13 @@ pub(crate) enum ShareRefused {
 }
 
 /// One file waiting for the patient's decision.
-#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone)]
 pub(crate) struct ReceivedFile {
     pub(crate) source: ReceivedSource,
     pub(crate) name: String,
 }
+redact_debug!(ReceivedFile);
 
 /// What the app could not take since the page last asked, so the patient is told. It holds
 /// counts only, never a name or address.
@@ -232,7 +234,8 @@ pub(crate) struct ReceiveNotice {
 }
 
 /// What the page may see of a waiting file.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceivedSummary {
     pub(crate) id: Uuid,
@@ -264,6 +267,7 @@ pub(crate) fn without_names_unless_unlocked(
     }
     files
 }
+redact_debug!(ReceivedSummary);
 
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
 /// received while the vault is locked is lost if the app closes first (the sealed inbox is
@@ -1045,5 +1049,21 @@ mod tests {
         files.receive(3, Vec::new());
         assert!(sealer.seen.lock().unwrap().is_empty());
         assert_eq!(files.take_notice().dropped, 3);
+    }
+}
+
+#[cfg(test)]
+mod not_pdf_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_is_not_a_pdf_says_so_and_is_told_apart_from_any_other_failure() {
+        assert_eq!(NotPdf.to_string(), "the file is not a PDF");
+        let marked = io::Error::new(io::ErrorKind::InvalidData, NotPdf);
+        assert!(is_not_pdf(&marked));
+        assert!(marked.to_string().contains("not a PDF"));
+        // Any other failure, with or without a source, is not that answer.
+        assert!(!is_not_pdf(&io::Error::other("FAKE read failed")));
+        assert!(!is_not_pdf(&io::Error::from(io::ErrorKind::UnexpectedEof)));
     }
 }

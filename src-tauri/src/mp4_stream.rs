@@ -1250,6 +1250,9 @@ pub(crate) mod fake {
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::fake::*;
     use super::*;

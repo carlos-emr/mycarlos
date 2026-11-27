@@ -2292,6 +2292,8 @@ reader-android-zoomOut = 缩小
 
 interface-video-name = 视频，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 录制视频
+interface-RecordDialog-recordAVideoFor = 为 { $name } 录制视频
+interface-RecordDialog-recordingSettings = 录制设置
 interface-RecordDialog-unavailable = 此设备上无法录制视频。
 interface-RecordDialog-why = 为什么？
 interface-RecordDialog-startingTheCameraAndMicrophone = 正在启动相机和麦克风…
@@ -2307,6 +2309,9 @@ interface-RecordDialog-unnamedCamera = 摄像头 { $number }
 interface-RecordDialog-unnamedMicrophone = 麦克风 { $number }
 interface-RecordDialog-systemDefaultDevice = 系统默认
 interface-RecordDialog-deviceFellBack = 上次使用的摄像头或麦克风未连接，因此正在使用系统默认设备。
+interface-RecordDialog-deviceNotSwitched = 无法打开您选择的摄像头或麦克风，因此仍在使用原来的设备。
+interface-RecordDialog-saySomething = 说点什么：指示条应该会动。
+interface-RecordDialog-settingsNote = 视频会加密保存。myCarlos 会在此设备上记住这些选择。
 interface-RecordDialog-testMicrophone = 测试麦克风
 interface-RecordDialog-stopTestingMicrophone = 停止测试
 interface-RecordDialog-microphoneLevel = 麦克风音量
@@ -2689,6 +2694,9 @@ interface-receive-inboxRemoved = 有 { $count } 个为您保存的分享文件�
 interface-receive-inboxKeyChanged = myCarlos 锁定时用来保存分享文件的密钥被其他程序更改，现已恢复。此后分享的文件未被保存。请重新分享。
 
 interface-received-removeKept = 删除这 { $count } 个已保存的文件
+
+native-backupExclusionFailed = 这部手机无法让保险库不被设备备份。请重试。
+
 interface-AddVideo-add = 添加视频
 
 interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。

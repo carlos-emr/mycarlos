@@ -188,11 +188,11 @@ function fakeBridge() {
   } satisfies RecordBridge;
 }
 
-function open() {
+function open(bridge: RecordBridge = fakeBridge()) {
   return render(
     <RecordDialog
       platform="windows"
-      bridge={fakeBridge()}
+      bridge={bridge}
       profileId="profile-1"
       folderIds={[]}
       holdLock={() => () => undefined}
@@ -238,40 +238,269 @@ describe("choosing the camera and the microphone", () => {
     expect(microphoneList()).toBeEnabled();
   });
 
-  it("restarts the preview on exactly the device chosen, stops the old stream and remembers it", async () => {
+  it("switches only the device chosen: the other one keeps running and the choice is remembered", async () => {
     open();
     await ready();
-    const before = streams[0]!;
+    const stream = streams[0]!;
+    const picture = document.querySelector("video")!;
+    const cameraTrack = stream.getVideoTracks()[0]!;
+    const oldMicrophone = stream.getAudioTracks()[0]!;
+    // The dialog puts the keyboard on Start when the preview comes up; the patient then moves to
+    // the list (wait for that, so it cannot take the focus back).
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Start recording" }),
+      ),
+    );
+    microphoneList().focus();
     fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    // The headset only, exactly: no camera in the request, so the camera is not asked again.
     const asked = getUserMedia.mock.calls[1]![0];
-    // The headset exactly; the camera keeps the one that was in use, also exactly.
     expect(exact(asked.audio)).toBe("mic-b");
-    expect(exact(asked.video)).toBe("cam-a");
-    expect(
-      before.getTracks().every((track) => track.readyState === "ended"),
-    ).toBe(true);
-    await screen.findByRole("button", { name: "Start recording" });
-    expect(microphoneList().value).toBe("mic-b");
+    expect(asked.video).toBeUndefined();
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
     expect(cameraList().value).toBe("cam-a");
+    // The same stream is still on the preview, with the same camera track still live; only the
+    // sound track was swapped, and the old one let go of.
+    expect(picture.srcObject).toBe(stream);
+    expect(stream.getVideoTracks()).toHaveLength(1);
+    expect(stream.getVideoTracks()[0]).toBe(cameraTrack);
+    expect(cameraTrack.readyState).toBe("live");
+    expect(oldMicrophone.readyState).toBe("ended");
+    expect(stream.getAudioTracks()).toHaveLength(1);
+    expect(stream.getAudioTracks()[0]).not.toBe(oldMicrophone);
+    expect(stream.getAudioTracks()[0]!.readyState).toBe("live");
+    // The dialog never left the ready state: Start is still there, and the keyboard is still on
+    // the list that was used.
+    expect(
+      screen.getByRole("button", { name: "Start recording" }),
+    ).toBeVisible();
+    expect(document.activeElement).toBe(microphoneList());
     // Only the microphone, which was chosen, is remembered: the camera in use was not chosen, so
     // it stays "the system's default" (nothing stored) rather than being pinned.
     expect(readDeviceChoice()).toEqual({
       camera: null,
       microphone: "mic-b",
     });
-    // The focus stays on the list that was used, not on Start recording.
-    await waitFor(() => expect(document.activeElement).toBe(microphoneList()));
+    // And the other way round: a camera switch leaves the microphone track alone.
+    const microphoneNow = stream.getAudioTracks()[0]!;
     fireEvent.change(cameraList(), { target: { value: "cam-b" } });
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(3));
     const third = getUserMedia.mock.calls[2]![0];
     expect(exact(third.video)).toBe("cam-b");
-    expect(exact(third.audio)).toBe("mic-b");
-    await screen.findByRole("button", { name: "Start recording" });
+    expect(third.audio).toBeUndefined();
+    await waitFor(() => expect(cameraList().value).toBe("cam-b"));
+    expect(stream.getAudioTracks()).toHaveLength(1);
+    expect(stream.getAudioTracks()[0]).toBe(microphoneNow);
+    expect(microphoneNow.readyState).toBe("live");
+    expect(cameraTrack.readyState).toBe("ended");
+    expect(stream.getVideoTracks()).toHaveLength(1);
+    expect(stream.getVideoTracks()[0]!.readyState).toBe("live");
+    expect(picture.srcObject).toBe(stream);
     expect(readDeviceChoice()).toEqual({
       camera: "cam-b",
       microphone: "mic-b",
     });
+  });
+
+  it("lets go of anything extra a device request hands back", async () => {
+    open();
+    await ready();
+    // A stub (like this test's own) may answer a sound-only request with a camera track too.
+    microphoneList().focus();
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+    const spare = streams[1]!.getVideoTracks()[0]!;
+    expect(spare.readyState).toBe("ended");
+  });
+
+  it("stops what it opened when the dialog is closed while the device is still opening", async () => {
+    const view = open();
+    await ready();
+    let release: (() => void) | undefined;
+    let opened: MediaStream | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        opened = await real(constraints);
+        return opened;
+      },
+    );
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    // Closed while the headset is still being asked for.
+    view.unmount();
+    release!();
+    // The microphone that answers late is not wanted: no track of it is left on.
+    await waitFor(() => expect(opened).toBeDefined());
+    await waitFor(() =>
+      expect(
+        opened!.getTracks().every((track) => track.readyState === "ended"),
+      ).toBe(true),
+    );
+    // And nothing was remembered for a device that never joined the preview.
+    expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
+  });
+
+  it("refuses a switch while the recording is starting, and keeps the devices in use", async () => {
+    // Start is pressed and the vault has not answered yet: the dialog is "starting".
+    const bridge: RecordBridge = {
+      ...fakeBridge(),
+      videoStart: vi.fn(() => new Promise<never>(() => undefined)),
+    };
+    open(bridge);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    await waitFor(() => expect(bridge.videoStart).toHaveBeenCalled());
+    // The lists stay on the screen, but cannot be used meanwhile.
+    expect(cameraList()).toBeDisabled();
+    expect(microphoneList()).toBeDisabled();
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(cameraList().value).toBe("cam-a");
+    expect(microphoneList().value).toBe("mic-a");
+    expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
+  });
+
+  it("two change events in the same instant open one device, not two", async () => {
+    open();
+    await ready();
+    let release: (() => void) | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return real(constraints);
+      },
+    );
+    // Both events are dispatched before React has drawn anything in between.
+    act(() => {
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    release!();
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+    expect(cameraList().value).toBe("cam-a");
+  });
+
+  it("puts the microphone test back as it was after a switch, whether the new microphone opened or not", async () => {
+    // The real audio context, with an analyser that reports a loud signal (the fake devices of this
+    // file also make their tone with it, so it must stay a real one).
+    const Real = AudioContext;
+    class LoudContext extends Real {
+      override createAnalyser() {
+        const analyser = super.createAnalyser();
+        analyser.getByteTimeDomainData = (samples: Uint8Array<ArrayBuffer>) =>
+          void samples.fill(192);
+        return analyser;
+      }
+    }
+    vi.stubGlobal("AudioContext", LoudContext);
+    open();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+    await screen.findByRole("meter", { name: "Microphone level" });
+    // A switch that works: the test is on again afterwards.
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+    expect(
+      await screen.findByRole("meter", { name: "Microphone level" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Stop testing" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // A switch that fails: the test is on again too, on the microphone still in use.
+    getUserMedia.mockImplementationOnce(async () => {
+      throw Object.assign(new Error("FAKE microphone is busy"), {
+        name: "NotReadableError",
+      });
+    });
+    fireEvent.change(microphoneList(), { target: { value: "mic-a" } });
+    await screen.findByText(
+      humanText(
+        "The camera or microphone you chose could not be opened, so the one in use is still on.",
+      ),
+    );
+    expect(microphoneList().value).toBe("mic-b");
+    expect(
+      await screen.findByRole("meter", { name: "Microphone level" }),
+    ).toBeVisible();
+    // A camera switch never turns the test off.
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    await waitFor(() => expect(cameraList().value).toBe("cam-b"));
+    expect(
+      screen.getByRole("meter", { name: "Microphone level" }),
+    ).toBeVisible();
+  });
+
+  it("does not switch the microphone test on again behind the patient's back after the camera stopped during a switch", async () => {
+    const Real = AudioContext;
+    class LoudContext extends Real {
+      override createAnalyser() {
+        const analyser = super.createAnalyser();
+        analyser.getByteTimeDomainData = (samples: Uint8Array<ArrayBuffer>) =>
+          void samples.fill(192);
+        return analyser;
+      }
+    }
+    vi.stubGlobal("AudioContext", LoudContext);
+    open();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+    await screen.findByRole("meter", { name: "Microphone level" });
+    let release: (() => void) | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return real(constraints);
+      },
+    );
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    // The camera stops while the headset is still opening: the dialog says so and goes to failed.
+    streams[0]!.getVideoTracks()[0]!.dispatchEvent(new Event("ended"));
+    await screen.findByRole("button", { name: /Try again/ });
+    release!();
+    await Promise.resolve();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
+    await screen.findByRole("button", { name: "Start recording" });
+    // Back at ready, the test is off until the patient turns it on.
+    expect(screen.queryByRole("meter")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Test microphone" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("ignores a second choice while the first is still opening", async () => {
+    open();
+    await ready();
+    let release: (() => void) | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return real(constraints);
+      },
+    );
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    // Start waits for it too (it is not pressed while the devices change under it).
+    expect(
+      screen.getByRole("button", { name: "Start recording" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    release!();
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+    expect(cameraList().value).toBe("cam-a");
+    expect(
+      screen.getByRole("button", { name: "Start recording" }),
+    ).toHaveAttribute("aria-disabled", "false");
   });
 
   it("remembers only the device chosen: choosing a camera leaves the microphone as it was stored", async () => {
@@ -470,13 +699,34 @@ describe("choosing the camera and the microphone", () => {
         name: "NotReadableError",
       });
     });
+    const stream = streams[0]!;
+    const cameraTrack = stream.getVideoTracks()[0]!;
     fireEvent.change(cameraList(), { target: { value: "cam-b" } });
-    await screen.findByRole("button", { name: /Try again/ });
-    // The busy camera was not saved, so "Try again" does not ask for it for ever.
+    // The camera that is busy does not open: the preview that was running stays (it is not torn
+    // down for a camera that did not answer), the list shows the camera still in use, and the
+    // dialog says the other one could not be opened.
+    expect(
+      await screen.findByText(
+        humanText(
+          "The camera or microphone you chose could not be opened, so the one in use is still on.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Start recording" }),
+    ).toBeVisible();
+    expect(cameraTrack.readyState).toBe("live");
+    expect(stream.getVideoTracks()[0]).toBe(cameraTrack);
+    expect(cameraList().value).toBe("cam-a");
+    // The busy camera was not saved, so it is not asked for every time.
     expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
-    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
-    await screen.findByRole("button", { name: "Start recording" });
-    expect(exact(getUserMedia.mock.calls.at(-1)![0].video)).toBeUndefined();
+    // A later switch, to a device that does open, takes it back and clears the message.
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    await waitFor(() => expect(cameraList().value).toBe("cam-b"));
+    expect(
+      screen.queryByText(/could not be opened, so the one in use is still on/),
+    ).toBeNull();
+    expect(readDeviceChoice()).toEqual({ camera: "cam-b", microphone: null });
   });
 
   it("follows a camera or microphone being plugged in or unplugged", async () => {
@@ -500,22 +750,30 @@ describe("choosing the camera and the microphone", () => {
     await act(async () => {
       navigator.mediaDevices.dispatchEvent(new Event("devicechange"));
     });
-    // One microphone is left: plain text, so the patient still sees which one is in use.
-    await waitFor(() =>
-      expect(screen.queryByRole("combobox", { name: "Microphone" })).toBeNull(),
-    );
-    expect(screen.getByText("FAKE Built-in microphone")).toBeVisible();
+    // One microphone is left: the list stays, disabled, with that one device in it.
+    await waitFor(() => expect(microphoneList().options).toHaveLength(1));
+    expect(microphoneList()).toBeDisabled();
+    expect(names(microphoneList())).toEqual(["FAKE Built-in microphone"]);
   });
 
-  it("shows a single device as plain text, with its name", async () => {
+  it("shows a single device as a disabled list with that device, so it is clear where the choice is", async () => {
     connected = [LAPTOP, BUILT_IN];
     open();
     await ready();
-    expect(screen.queryByRole("combobox")).toBeNull();
-    expect(screen.getByText("FAKE Laptop camera")).toBeVisible();
-    expect(screen.getByText("FAKE Built-in microphone")).toBeVisible();
-    expect(screen.getByText(humanText("Camera:"))).toBeVisible();
-    expect(screen.getByText(humanText("Microphone:"))).toBeVisible();
+    for (const [list, only] of [
+      [cameraList(), "FAKE Laptop camera"],
+      [microphoneList(), "FAKE Built-in microphone"],
+    ] as const) {
+      // Still a labelled list, the one device selected in it, and nothing to choose.
+      expect(list.tagName).toBe("SELECT");
+      expect(list).toBeDisabled();
+      expect(list.options).toHaveLength(1);
+      expect(names(list)).toEqual([only]);
+      expect(list.selectedOptions[0]?.textContent).toBe(only);
+    }
+    // Both stay in the tab order's world: the labels are the visible words Camera and Microphone.
+    expect(screen.getByText(humanText("Camera"))).toBeVisible();
+    expect(screen.getByText(humanText("Microphone"))).toBeVisible();
   });
 
   it("names a device the browser gives no name to, by its place in the list", async () => {
@@ -527,7 +785,7 @@ describe("choosing the camera and the microphone", () => {
     open();
     await ready();
     expect(names(cameraList())).toEqual(["Camera 1", "Camera 2"]);
-    expect(screen.getByText(humanText("Microphone 1"))).toBeVisible();
+    expect(names(microphoneList())).toEqual(["Microphone 1"]);
   });
 
   it("cannot be switched while recording or paused, and the recording keeps its devices", async () => {
@@ -579,6 +837,10 @@ describe("choosing the camera and the microphone", () => {
     const meter = await screen.findByRole("meter", {
       name: "Microphone level",
     });
+    // The bar says what to do with it.
+    expect(
+      screen.getByText(humanText("Say something: the bar should move.")),
+    ).toBeVisible();
     // The fake microphone plays a tone, so the bar moves.
     await waitFor(
       () =>
