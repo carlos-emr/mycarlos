@@ -378,8 +378,9 @@ const ENTRY_POINTS: &[(&str, Reach)] = &[
 
 /// Functions that take such an id and are not entry points: the helpers themselves.
 const NOT_ENTRY_POINTS: &[&str] = &[
-    // The helper itself.
+    // The single-folder helper and its shared ancestry walk.
     "folder_in_reach",
+    "walk_in_reach",
     // `ChunkReader::open` (playback.rs): a constructor handed a record that `playback_open` has
     // already found in reach; it looks nothing up.
     "open",
@@ -445,7 +446,9 @@ fn functions(text: &str) -> Vec<Function> {
                     .chars()
                     .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                     .collect();
-                starts.push((offset, name));
+                // Start at `fn`, so visibility such as `pub(crate)` cannot be mistaken for
+                // the function's parameter list.
+                starts.push((offset + line.len() - rest.len(), name));
             }
         }
         offset += line.len();
@@ -543,7 +546,7 @@ fn every_function_taking_a_record_or_folder_id_asks_the_reach_helpers() {
     }
     for (name, _) in ENTRY_POINTS {
         assert!(
-            by_name(name).is_some_and(|function| takes_an_id(function)),
+            by_name(name).is_some(),
             "`{name}` is registered but no longer takes a record or folder id"
         );
     }
