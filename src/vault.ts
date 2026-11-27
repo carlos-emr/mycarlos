@@ -79,6 +79,14 @@ export type VideoRefusal =
   | "tooLarge"
   | "damaged";
 
+/**
+ * What "+ New" picked: documents and pictures, one video (each kept natively under its `pickId`), or
+ * a choice no import takes (a video chosen with other files). A refusal is an answer, not an error.
+ */
+export type ImportPick =
+  | { kind: "documents" | "video"; pickId: string }
+  | { kind: "videoAlone" };
+
 /** How adding a picked video ended: a refusal is an answer, not an error. */
 export type VideoImportResult =
   | { result: "imported"; recordId: string }
@@ -829,6 +837,13 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<ImportOutcome>;
+  /** Opens the one picker "+ New" uses (PDF documents, pictures and videos). Resolves to what was
+   * picked, or null when it was cancelled. A "documents" pick is added with `importPickedFiles`, a
+   * "video" pick with `importPickedVideo`. */
+  pickImportAny?(
+    profileId: string,
+    folderIds: string[],
+  ): Promise<ImportPick | null>;
   /** Opens the picker for one video. Resolves to the id of the chosen file,
    * kept natively, or null when the picker was cancelled. */
   pickImportVideo?(
@@ -1507,6 +1522,11 @@ export function createVaultBridge(): VaultBridge {
     importPickedFiles: (pickId, profileId, folderIds) =>
       invoke<ImportOutcome>("vault_import_picked", {
         request: { pickId, profileId, folderIds },
+      }),
+    pickImportAny: (profileId, folderIds) =>
+      invoke<ImportPick | null>("vault_import_any_pick", {
+        locale: getLocale(),
+        request: { profileId, folderIds },
       }),
     pickImportVideo: (profileId, folderIds) =>
       invoke<string | null>("vault_import_video_pick", {

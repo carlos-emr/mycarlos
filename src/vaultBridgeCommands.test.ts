@@ -307,6 +307,12 @@ describe("each bridge method invokes its native command with its arguments", () 
       { request: { pickId: "pick-1", profileId: "p-1", folderIds: ["f-1"] } },
     ],
     [
+      "pickImportAny",
+      (b) => b.pickImportAny("p-1", ["f-1"]),
+      "vault_import_any_pick",
+      { locale: locale(), request: { profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
       "pickImportVideo",
       (b) => b.pickImportVideo("p-1", ["f-1"]),
       "vault_import_video_pick",

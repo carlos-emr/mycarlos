@@ -368,6 +368,7 @@ export const MESSAGE_KEYS = [
   "native.filter.video",
   "native.filter.pictures",
   "native.filter.pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -1406,6 +1407,7 @@ export const MESSAGE_KEYS = [
   "interface.AddVideo.duplicate",
   "interface.AddVideo.cancelled",
   "interface.AddVideo.notVideo",
+  "interface.AddVideo.videoAlone",
   "interface.AddVideo.hevc",
   "interface.AddVideo.videoCodec",
   "interface.AddVideo.audioCodec",
@@ -1894,6 +1896,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.filter.video": "native-filter-video",
   "native.filter.pictures": "native-filter-pictures",
   "native.filter.pdfAndPictures": "native-filter-pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos": "native-filter-pdfPicturesAndVideos",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -3102,6 +3105,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AddVideo.duplicate": "interface-AddVideo-duplicate",
   "interface.AddVideo.cancelled": "interface-AddVideo-cancelled",
   "interface.AddVideo.notVideo": "interface-AddVideo-notVideo",
+  "interface.AddVideo.videoAlone": "interface-AddVideo-videoAlone",
   "interface.AddVideo.hevc": "interface-AddVideo-hevc",
   "interface.AddVideo.videoCodec": "interface-AddVideo-videoCodec",
   "interface.AddVideo.audioCodec": "interface-AddVideo-audioCodec",
@@ -3546,6 +3550,7 @@ export interface MessageArgsByKey {
   "native.filter.video": undefined;
   "native.filter.pictures": undefined;
   "native.filter.pdfAndPictures": undefined;
+  "native.filter.pdfPicturesAndVideos": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;
@@ -4654,6 +4659,7 @@ export interface MessageArgsByKey {
   "interface.AddVideo.duplicate": undefined;
   "interface.AddVideo.cancelled": undefined;
   "interface.AddVideo.notVideo": undefined;
+  "interface.AddVideo.videoAlone": undefined;
   "interface.AddVideo.hevc": undefined;
   "interface.AddVideo.videoCodec": undefined;
   "interface.AddVideo.audioCodec": undefined;

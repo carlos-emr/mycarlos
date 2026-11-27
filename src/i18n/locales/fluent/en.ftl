@@ -815,6 +815,8 @@ native-filter-pictures = JPEG and PNG pictures
 
 native-filter-pdfAndPictures = PDF documents and JPEG and PNG pictures
 
+native-filter-pdfPicturesAndVideos = PDF documents, JPEG and PNG pictures and videos (MP4 or MOV)
+
 native-kit-text =
     myCarlos recovery kit
 
@@ -2967,6 +2969,8 @@ interface-AddVideo-duplicate = That video is already here. Nothing was added.
 interface-AddVideo-cancelled = Cancelled. Nothing was added.
 
 interface-AddVideo-notVideo = This file is not a video myCarlos can add. Choose an MP4 or MOV video.
+
+interface-AddVideo-videoAlone = A video is added on its own. Choose one video, or choose documents and pictures, but not both together. Nothing was added.
 
 interface-AddVideo-hevc = This video uses H.265 (HEVC), which many computers cannot play. Save it as an H.264 MP4 and add it again.
 

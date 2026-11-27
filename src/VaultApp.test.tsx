@@ -1114,6 +1114,122 @@ describe("durable vault UI", () => {
     );
   });
 
+  describe("+ New takes documents, pictures and videos from one picker", () => {
+    /** A bridge that can add a video and answers the combined picker with `picked`. */
+    async function openWithPick(
+      picked: unknown,
+      overrides: Partial<VaultBridge> = {},
+    ) {
+      const user = userEvent.setup();
+      const bridge = nativeBridge({
+        pickImportAny: vi.fn().mockResolvedValue(picked),
+        pickImportVideo: vi.fn().mockResolvedValue("pick-v"),
+        importPickedVideo: vi
+          .fn()
+          .mockResolvedValue({ result: "imported", recordId: "FAKE-video-1" }),
+        importPickedFiles: vi
+          .fn()
+          .mockResolvedValue({ imported: ["record-1"], skippedDuplicates: [] }),
+        ...overrides,
+      } as Partial<VaultBridge>);
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      });
+      await user.type(
+        screen.getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+      return bridge;
+    }
+
+    it("adds documents and pictures through the document import, as before", async () => {
+      const bridge = await openWithPick({
+        kind: "documents",
+        pickId: "pick-d",
+      });
+
+      await waitFor(() =>
+        expect(bridge.importPickedFiles).toHaveBeenCalledWith(
+          "pick-d",
+          "profile-1",
+          [],
+        ),
+      );
+      expect(bridge.pickImportFiles).not.toHaveBeenCalled();
+      expect(bridge.importPickedVideo).not.toHaveBeenCalled();
+    });
+
+    it("hands a video that is the whole pick to the video import", async () => {
+      const bridge = await openWithPick({ kind: "video", pickId: "pick-v1" });
+
+      await waitFor(() =>
+        expect(bridge.importPickedVideo).toHaveBeenCalledWith(
+          "pick-v1",
+          "profile-1",
+          [],
+        ),
+      );
+      expect(bridge.pickImportFiles).not.toHaveBeenCalled();
+      expect(bridge.pickImportVideo).not.toHaveBeenCalled();
+      expect(bridge.importPickedFiles).not.toHaveBeenCalled();
+    });
+
+    it("refuses a video chosen with other files in one fixed sentence and adds nothing", async () => {
+      const bridge = await openWithPick({ kind: "videoAlone" });
+
+      expect(
+        await screen.findByText(
+          /A video is added on its own\. Choose one video, or choose documents and pictures/,
+        ),
+      ).toBeVisible();
+      expect(bridge.importPickedFiles).not.toHaveBeenCalled();
+      expect(bridge.importPickedVideo).not.toHaveBeenCalled();
+    });
+
+    it("keeps the document picker when the bridge has no combined picker", async () => {
+      const bridge = await openWithPick(null, { pickImportAny: undefined });
+
+      await waitFor(() =>
+        expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []),
+      );
+      expect(bridge.importPickedVideo).not.toHaveBeenCalled();
+    });
+
+    it("keeps the document picker while a video is already being added", async () => {
+      // The first video never finishes: the second "+ New" must not open a picker that could hand over
+      // another video (one at a time), so it is the document picker.
+      const user = userEvent.setup();
+      const bridge = await openWithPick(
+        { kind: "video", pickId: "pick-v1" },
+        {
+          importPickedVideo: vi.fn(() => new Promise<never>(() => undefined)),
+          pickImportFiles: vi.fn().mockResolvedValue(null),
+        },
+      );
+      await waitFor(() => expect(bridge.importPickedVideo).toHaveBeenCalled());
+
+      await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+
+      await waitFor(() =>
+        expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []),
+      );
+      expect(bridge.pickImportAny).toHaveBeenCalledTimes(1);
+    });
+
+    it("says nothing was chosen when the picker is closed", async () => {
+      const bridge = await openWithPick(null);
+
+      expect(await screen.findByText(/No files selected/)).toBeVisible();
+      expect(bridge.importPickedFiles).not.toHaveBeenCalled();
+      expect(bridge.importPickedVideo).not.toHaveBeenCalled();
+    });
+  });
+
   // A vault whose waiting files go into Shared with me when accepted, and
   // leave it when moved (#61).
   function sharedVault(
@@ -5164,6 +5280,7 @@ describe("durable vault UI", () => {
     "importPickedVideo",
     "pickBackupDestination",
     "pickExportDestination",
+    "pickImportAny",
     "pickImportFiles",
     "pickImportVideo",
     "pickProfileExportDestination",
@@ -5181,6 +5298,9 @@ describe("durable vault UI", () => {
     // status line) when a bridge has them, and most tests do not look at that screen.
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportAny: vi
+        .fn()
+        .mockResolvedValue({ kind: "documents", pickId: "pick-1" }),
       pickImportVideo: vi.fn().mockResolvedValue("pick-1"),
       importPickedVideo: vi
         .fn()
