@@ -4651,8 +4651,9 @@ impl VaultStore {
         #[cfg(unix)]
         options.mode(0o600);
         // The key is in this file in the clear: ask Windows Search not to read it into its index
-        // (best effort; the attribute is set on the file as it is created and survives the
-        // rename, and a folder that does not honour it only loses that).
+        // (best effort). Asked twice: at creation, and again on the saved file. `CreateFile` does
+        // not apply this attribute to a new file (the GitHub Windows runner read it back as
+        // unset on a file created with it, #533), so the saved file is given it explicitly.
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
@@ -4668,6 +4669,8 @@ impl VaultStore {
                 options,
             )
             .map_err(io::Error::from)?;
+        #[cfg(windows)]
+        keep_out_of_windows_search(destination);
         Ok(())
     }
 
@@ -9324,6 +9327,23 @@ fn encode_path(path: &Path) -> Vec<u8> {
 fn decode_path(bytes: &[u8]) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStrExt;
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
+}
+
+/// Sets "not content indexed" on a saved file, keeping the attributes it has. Best effort: a
+/// volume or folder that refuses it only loses that, and nothing about the save depends on it.
+#[cfg(windows)]
+fn keep_out_of_windows_search(path: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_FLAGS_AND_ATTRIBUTES};
+    let Ok(metadata) = fs::metadata(path) else {
+        return;
+    };
+    let attributes = metadata.file_attributes() | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: `wide` is NUL-terminated and outlives the call.
+    let _ =
+        unsafe { SetFileAttributesW(PCWSTR(wide.as_ptr()), FILE_FLAGS_AND_ATTRIBUTES(attributes)) };
 }
 
 #[cfg(windows)]
