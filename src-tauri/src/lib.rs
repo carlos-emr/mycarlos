@@ -9297,7 +9297,7 @@ mod tests {
             (
                 "async fn vault_reset(",
                 concat!(
-                    "VaultStore::reset).await?; ",
+                    "VaultStore::reset).await?; cloud_ai_on_lock(); ",
                     "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
                     "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
@@ -9835,6 +9835,7 @@ mod tests {
             files,
             [
                 "appearance.json",
+                "cloud-ai.json",
                 "default.json",
                 "events.json",
                 "zoom.json"
@@ -12125,6 +12126,13 @@ mod tests {
                 "app.manage(Arc::new(PendingPicks::default()))",
             ),
             ("Arc<ReceivedFiles>", ".manage(Arc::clone(&received))"),
+            (
+                "Arc<CloudSession>",
+                concat!(
+                    "let session = Arc::new(cloud_ai::commands::CloudSession::default());",
+                    "cloud_ai::install(Arc::clone(&session)); app.manage(session);",
+                ),
+            ),
         ];
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
