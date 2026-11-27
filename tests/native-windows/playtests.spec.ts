@@ -168,8 +168,16 @@ for (const kind of ["generated key", "passphrase"] as const) {
   });
 }
 
-test("a short or reused passphrase for the file is refused, the key is never accepted as one", async () => {
-  for (const passphrase of ["short one", PASSPHRASE]) {
+test("a short, a guessable or the vault's own passphrase for the file is refused, each by its own code", async () => {
+  // Per vault.rs validate_new_passphrase: too SHORT is VaultError::Invalid (code "invalid");
+  // long enough but guessable, or the vault's own passphrase, is VaultError::WeakPassphrase
+  // (code "weak_passphrase", native.error.20).
+  const cases: [string, string, string][] = [
+    ["too short", "short one", "invalid"],
+    ["long but guessable", "password password password", "weak_passphrase"],
+    ["the vault's own passphrase", PASSPHRASE, "weak_passphrase"],
+  ];
+  for (const [label, passphrase, code] of cases) {
     const failure = await session
       .call("vault_profile_export_prepare", {
         request: { profileId: personId, includeHistory: false, passphrase },
@@ -178,10 +186,7 @@ test("a short or reused passphrase for the file is refused, the key is never acc
         () => undefined,
         (error) => error as { code?: string },
       );
-    // Both are the weak-passphrase refusal (native.error.20), not accepted and not another error.
-    expect(failure, `passphrase of ${passphrase.length} characters`).toEqual(
-      expect.objectContaining({ code: "weak_passphrase" }),
-    );
+    expect(failure, label).toEqual(expect.objectContaining({ code }));
   }
 });
 

@@ -882,12 +882,13 @@ controls.
 
 ## Playtests: every user path gets a journey
 
-**Ben's rules (27 Nov), word for word:**
+**Ben's rules (27 Nov), quoted from his messages:**
 
-- "make a PR with playtests for all the gaps, and then all future PRs should add playtests to
-  their own gaps where useful."
-- "If you find things are broken, put them in the same playtest PR." A playtest that exposes a bug
-  is fixed in that PR, as its own commit next to the test that shows it, not in a separate fix PR.
+- "Make a PR with playtests for all the gaps and then all future PRs should add playtests to their
+  own gaps where useful"
+- "If you find things are broken [put] them in the same playtest PR" (his own typo, corrected in
+  brackets). A playtest that exposes a bug is fixed in that PR, as its own commit next to the test
+  that shows it, not in a separate fix PR.
 
 **What that means for a PR:** one that changes something a patient does adds or extends a playtest
 journey for that path, where a journey is useful. A journey is either a browser journey
