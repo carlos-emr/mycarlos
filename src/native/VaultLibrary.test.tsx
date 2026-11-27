@@ -2513,13 +2513,14 @@ describe("VaultLibrary passphrase speed test row", () => {
     answer(true);
     await vi.waitFor(() => expect(speedButton()).not.toBeNull());
     cleanup();
-    renderLibrary(snapshot, 0, {
-      speedTestInBuild: vi.fn().mockRejectedValue(new Error("no app")),
-    });
-    openSecurity();
-    await vi.waitFor(() =>
-      expect(screen.getByText(/Connected clinics/)).toBeVisible(),
+    let refuse!: (error: Error) => void;
+    const speedTestInBuild = vi.fn(
+      () => new Promise<boolean>((_, reject) => (refuse = reject)),
     );
+    renderLibrary(snapshot, 0, { speedTestInBuild });
+    openSecurity();
+    expect(speedTestInBuild).toHaveBeenCalled();
+    await act(async () => refuse(new Error("no app")));
     expect(speedButton()).toBeNull();
   });
 
