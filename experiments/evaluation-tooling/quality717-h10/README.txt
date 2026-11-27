@@ -1,0 +1,9 @@
+Source backup for the PR325 instruction-selection candidate H10 evaluation tooling.
+
+The coordinator rebinds the existing PR315 H10 controller to candidate 717641f575ef69b1038cad1274f767e46c7e05ac and its complete source-derived prompt descriptor. It retains the original H10 roster interface, 3000-second phase cap, three threads on CPUs 1-4, scorer identity, input-freeze enforcement, strict quality gates, and independent verification requirements. Original scorer freeze warnings retain their reject-only meaning. Safety means no new unsafe output relative to the baseline.
+
+This package contains Python source only: coordinator and existing controls, metadata finalizer, and the model-free READY diagnostic. Private machine paths are replaced with /PRIVATE_UNSET/binding_N values. They must be reviewed and rebound in a separately admitted private environment; these backup bytes do not inherit qualification from the original private source hashes.
+
+The finalizer requires fresh candidate-specific build evidence, 23 exact ordered native contract rows plus one actual extraction-wrapper invocation, new executable identities and hashes, new READY evidence, an independently admitted original Bash and lock holder, and a full unchanged owner window. It only emits a phase command. The READY diagnostic retains its 30-second maximum including six seconds of cleanup and holds EXEC before target userspace.
+
+No grants, issued approvals, evidence receipts, model weights or outputs, corpus documents, case identifiers, clinical grades, credentials, or private manifests are included. The source backup makes no native, model, quality, speed, adoption, or next-stage approval claim. Private source checks do not qualify this separately sanitized source package. No tests or model work were run from this public checkout.
