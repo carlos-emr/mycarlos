@@ -174,7 +174,7 @@ test("a short, a guessable or the vault's own passphrase for the file is refused
   // (code "weak_passphrase", native.error.20).
   const cases: [string, string, string][] = [
     ["too short", "short one", "invalid"],
-    ["long but guessable", "password password password", "weak_passphrase"],
+    ["long but guessable", "passwordpassword", "weak_passphrase"],
     ["the vault's own passphrase", PASSPHRASE, "weak_passphrase"],
   ];
   for (const [label, passphrase, code] of cases) {
