@@ -1168,6 +1168,62 @@ mod tests {
         hits.iter().map(|hit| (hit.start, hit.end)).collect()
     }
 
+    // The look-alikes page code folds to Latin letters (`matchingCopy`): each one, as a vault name
+    // written with them must be found as the name written with Latin letters. This table is a copy
+    // of the Rust arms, so it pins them and does not by itself catch the page's list drifting from
+    // them (that would take a shared fixture read by both sides, as `date-forms.json` is).
+    #[test]
+    fn every_look_alike_folds_to_the_latin_letters_page_code_folds_it_to() {
+        let table: &[(&str, &str)] = &[
+            ("\u{2010}\u{2011}\u{2012}\u{2013}\u{2212}", "-"),
+            ("łŁ", "l"),
+            ("øØ", "o"),
+            ("đĐ", "d"),
+            ("ßẞ", "ss"),
+            ("æÆ", "ae"),
+            ("œŒ", "oe"),
+            ("ı", "i"),
+            ("ħĦ", "h"),
+            ("ŧŦ", "t"),
+            ("аАαΑ", "a"),
+            ("еЕҽΕ", "e"),
+            ("оОοΟ", "o"),
+            ("рРρΡ", "p"),
+            ("сС", "c"),
+            ("хХΧ", "x"),
+            ("уΥ", "y"),
+            ("іІιΙ", "i"),
+            ("ѕЅ", "s"),
+            ("јЈ", "j"),
+            ("һНΗ", "h"),
+            ("ԁ", "d"),
+            ("ԛ", "q"),
+            ("ѡ", "w"),
+            ("ВΒ", "b"),
+            ("КκΚ", "k"),
+            ("МΜ", "m"),
+            ("ТτΤ", "t"),
+            ("ν", "v"),
+            ("υ", "u"),
+            ("Ζ", "z"),
+            ("Ν", "n"),
+        ];
+        for (look_alikes, latin) in table {
+            for character in look_alikes.chars() {
+                assert_eq!(
+                    direct_fold(character),
+                    Some(*latin),
+                    "U+{:04X}",
+                    character as u32
+                );
+            }
+        }
+        // A plain letter, a digit and a letter this fold has no rule for are left to the caller.
+        for character in ['a', 'Z', '7', 'é', 'д'] {
+            assert_eq!(direct_fold(character), None, "{character}");
+        }
+    }
+
     #[test]
     fn refuses_code_points_the_cleaning_drops_or_replaces() {
         let text = "ok\u{200b}\u{ad}x\u{e000}\u{10ffff}y\u{e0041}";
@@ -1254,6 +1310,71 @@ mod tests {
             let expected = case["date"].as_bool().unwrap();
             assert_eq!(!date_hits(text).is_empty(), expected, "{text}");
         }
+    }
+
+    #[test]
+    fn a_chinese_or_japanese_date_is_read_whole_and_one_that_cannot_be_is_not() {
+        // Year, month and day; a space after a unit character is allowed; a month alone; a day
+        // with no year (read as in a leap year, so 29 February stands).
+        assert_eq!(ranges(&date_hits("2026年10月8日")), vec![(0, 10)]);
+        assert_eq!(ranges(&date_hits("2026年 10月 8日")), vec![(0, 12)]);
+        assert_eq!(ranges(&date_hits("2026年10月")), vec![(0, 8)]);
+        assert_eq!(ranges(&date_hits("10月8日")), vec![(0, 5)]);
+        assert_eq!(ranges(&date_hits("2月29日")), vec![(0, 5)]);
+        // No such month, or no such day.
+        assert!(date_hits("2026年13月8日").is_empty());
+        assert!(date_hits("2026年2月30日").is_empty());
+        assert!(date_hits("2月30日").is_empty());
+    }
+
+    #[test]
+    fn a_birth_date_is_looked_for_in_each_written_form_the_remover_reads() {
+        let forms = |iso: &str| -> Vec<String> {
+            date_forms(iso)
+                .into_iter()
+                .map(|form| form.into_iter().collect())
+                .collect()
+        };
+        let april = forms("1961-04-17");
+        for expected in [
+            "1961-04-17",
+            "17/4/1961",
+            "04/17/61",
+            "17 april 1961",
+            "17 apr 1961",
+            "17 avril 1961",
+            "17-avr.-1961",
+            "april 17, 1961",
+        ] {
+            assert!(april.iter().any(|form| form == expected), "{expected}");
+        }
+        // Only the first of the month has "1er"; only September has "sept".
+        assert!(forms("1961-04-01").iter().any(|f| f == "1er avril 1961"));
+        assert!(forms("1961-04-01").iter().any(|f| f == "1er avr. 1961"));
+        assert!(!april.iter().any(|form| form.starts_with("1er")));
+        assert!(forms("1961-09-03").iter().any(|f| f == "3 sept 1961"));
+        assert!(!april.iter().any(|form| form.contains("sept")));
+        // Not a birth date: another shape, a month or a day that does not exist.
+        for iso in [
+            "1961-04",
+            "1961-04-17-1",
+            "x-04-17",
+            "1961-13-01",
+            "1961-00-01",
+            "1961-04-32",
+            "1961-04-00",
+        ] {
+            assert!(forms(iso).is_empty(), "{iso}");
+        }
+    }
+
+    #[test]
+    fn a_birth_date_written_in_french_is_found_whole() {
+        let birth = vec!["1961-04-01".to_owned()];
+        let hits = identifier_hits("né le 1er avril 1961.", &[], &birth);
+        assert_eq!(ranges(&hits), vec![(6, 20)]);
+        assert!(identifier_hits("né le 2 avril 1961.", &[], &birth).is_empty());
+        assert_eq!(date_hits("Vu le 17 avril 2026.").len(), 1);
     }
 
     #[test]
