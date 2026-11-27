@@ -3834,7 +3834,7 @@ impl VaultStore {
         // lock, a pending reset, a create stage, the export journal. No export
         // may land anywhere in it, whatever it is called, so the check needs no
         // list of names.
-        refuse_destination_inside_home(&self.root, destination)?;
+        let destination_parent = refuse_destination_inside_home(&self.root, destination)?;
 
         // Refused before anything is journaled or staged.
         if self.session().is_none() {
@@ -3920,7 +3920,7 @@ impl VaultStore {
         destination: &Path,
         content: &[u8],
     ) -> Result<(), VaultError> {
-        refuse_destination_inside_home(&self.root, destination)?;
+        let destination_parent = refuse_destination_inside_home(&self.root, destination)?;
         {
             let guard = self.session();
             let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -5202,7 +5202,7 @@ impl VaultStore {
         now_ms: u64,
         leave_videos_out: bool,
     ) -> Result<(), VaultError> {
-        refuse_destination_inside_home(&self.root, destination)?;
+        let destination_parent = refuse_destination_inside_home(&self.root, destination)?;
         // The videos are found once: the size, the check and the write all use them.
         let plan = self.plan_backup(leave_videos_out)?;
         let size = self.backup_size_planned(&plan)?;
@@ -9022,7 +9022,13 @@ fn vault_home(root: &Path) -> Result<&Path, VaultError> {
 /// home (the folder that holds the vault and its working files: whatever is saved there is not a
 /// file the patient can take away). Said as its own error, never as "something you typed" (a
 /// save dialog that opened in that folder made every export look like a typing mistake).
-fn refuse_destination_inside_home(root: &Path, destination: &Path) -> Result<(), VaultError> {
+///
+/// Returns the destination's folder (as given, not canonicalised) for the callers that go on to
+/// stage a file beside the destination or check its free space.
+fn refuse_destination_inside_home<'a>(
+    root: &Path,
+    destination: &'a Path,
+) -> Result<&'a Path, VaultError> {
     let home = fs::canonicalize(vault_home(root)?)?;
     let parent = destination
         .parent()
@@ -9030,7 +9036,7 @@ fn refuse_destination_inside_home(root: &Path, destination: &Path) -> Result<(),
     if fs::canonicalize(parent)?.starts_with(&home) {
         return Err(VaultError::SaveLocationInsideVault);
     }
-    Ok(())
+    Ok(parent)
 }
 
 fn sibling_path(root: &Path, suffix: &str) -> Result<PathBuf, VaultError> {
