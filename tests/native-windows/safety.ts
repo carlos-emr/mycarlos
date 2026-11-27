@@ -2,9 +2,13 @@
 //
 // The installed app keeps its vault in the Windows account's own data folder
 // (`%LOCALAPPDATA%\ca.carlos.mycarlos\vault-home`), found through Tauri's `app_local_data_dir()`,
-// which asks Windows for the known folder: an environment variable cannot move it, and the app has
-// NO data-home override today. So a journey that makes and erases a vault would act on the real
-// account's vault if run on a real PC. Therefore:
+// which asks Windows for the known folder: an environment variable cannot move it. A DEBUG build
+// (the evaluation installers) has one override: `MYCARLOS_TEST_DATA_DIR`, read by
+// `src-tauri/src/data_home.rs` (a release build ignores it). The session gives the app a fresh
+// empty folder through it and then asks `runtime_info` whether the app is really using it
+// (`testDataHome`), BEFORE creating anything. If it is, the account's own folder is never involved
+// and the journeys may run on any account. If it is not (a release build, an older build), a
+// journey that makes and erases a vault would act on the real account's vault, so:
 //
 //  1. The journeys REFUSE to start unless the account is disposable: a GitHub-HOSTED runner
 //     (`GITHUB_ACTIONS=true` AND `RUNNER_ENVIRONMENT=github-hosted`; a self-hosted runner, which is
@@ -18,21 +22,35 @@
 //  4. Cleanup removes only a directory this run made itself: the real guard is that it was made by
 //     `mkdtemp` (or a `mkdir` that fails if the folder exists) in this run; `removableOwnDirectory`
 //     is a second look at the path just before the delete, nothing more.
-//
-// The smallest real fix is a debug-build-only override of that folder (planned as its own commit in
-// the playtest PR: `MYCARLOS_TEST_DATA_DIR`, read only under `cfg(debug_assertions)` where
-// `app_local_data_dir()` is called); until it lands, the guard above is what protects a real vault.
 import { resolve, win32 } from "node:path";
 
 export interface GuardEnvironment {
   platform: string;
   env: Record<string, string | undefined>;
+  /**
+   * The installed app said (`runtime_info.testDataHome === true`) that it is using the test data
+   * home this run gave it through `MYCARLOS_TEST_DATA_DIR` (a debug build only; a release build
+   * ignores the variable). Then the journeys never touch the account's own folder, and may run on
+   * any account. Read from the running app BEFORE anything is created, never assumed.
+   */
+  overrideHonoured?: boolean;
 }
 
 /** Throws unless the journeys may create and erase a vault on this machine. */
-export function requireDisposableAccount({ platform, env }: GuardEnvironment) {
+export function requireDisposableAccount({
+  platform,
+  env,
+  overrideHonoured = false,
+}: GuardEnvironment) {
   if (platform !== "win32")
     throw new Error("The native-windows journeys run on Windows only");
+  const profile = env.MYCARLOS_WINDOWS_WEBVIEW_PROFILE;
+  if (profile !== undefined && profile !== "" && !win32.isAbsolute(profile))
+    throw new Error(
+      "Refusing to run: MYCARLOS_WINDOWS_WEBVIEW_PROFILE must be an absolute path",
+    );
+  // The app is using a data home this run made: the account's own folder is not involved.
+  if (overrideHonoured) return;
   // A hosted runner is a fresh virtual machine; a self-hosted one is often somebody's PC.
   const hostedRunner =
     env.GITHUB_ACTIONS === "true" && env.RUNNER_ENVIRONMENT === "github-hosted";
@@ -48,11 +66,6 @@ export function requireDisposableAccount({ platform, env }: GuardEnvironment) {
     throw new Error("Refusing to run: LOCALAPPDATA is not set");
   if (!win32.isAbsolute(env.LOCALAPPDATA))
     throw new Error("Refusing to run: LOCALAPPDATA is not an absolute path");
-  const profile = env.MYCARLOS_WINDOWS_WEBVIEW_PROFILE;
-  if (profile !== undefined && profile !== "" && !win32.isAbsolute(profile))
-    throw new Error(
-      "Refusing to run: MYCARLOS_WINDOWS_WEBVIEW_PROFILE must be an absolute path",
-    );
 }
 
 /** What the erase step knows about the vault it is about to erase. */

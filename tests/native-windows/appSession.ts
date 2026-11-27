@@ -27,6 +27,11 @@ const NATIVE_STEP_TIMEOUT_MS = 30_000;
 export interface AppSession {
   page: Page;
   appPid: number;
+  /**
+   * The running app said it is using the test data home this session gave it, so the account's own
+   * vault folder is not involved (a debug build). False for a release or older build.
+   */
+  testHomeHonoured: boolean;
   /** Calls a native command as the page does: `args` is the whole argument object. */
   call<T = unknown>(
     command: string,
@@ -64,9 +69,13 @@ export async function openInstalledApp(
   playwright: PlaywrightWorkerArgs["playwright"],
   testInfo: TestInfo,
 ): Promise<AppSession> {
-  // Refuse before anything is started (safety.ts): the app has no data-home override, so a journey
-  // acts on this account's own vault folder and may only run on a disposable account.
-  requireDisposableAccount({ platform: process.platform, env: process.env });
+  // The pre-launch checks of safety.ts (Windows, an absolute WebView profile). Whether the account
+  // itself must be disposable is decided after launch, once the app says if it uses the test home.
+  requireDisposableAccount({
+    platform: process.platform,
+    env: process.env,
+    overrideHonoured: true,
+  });
   const executable = process.env.MYCARLOS_WINDOWS_APP;
   if (!executable || !isAbsolute(executable))
     throw new Error("Set MYCARLOS_WINDOWS_APP to the installed executable");
@@ -76,6 +85,9 @@ export async function openInstalledApp(
   const createdProfile =
     policyProfile ?? (await mkdtemp(join(tmpdir(), "mycarlos-playtest-")));
   const profile = createdProfile;
+  // A fresh EMPTY folder for the app's data (a debug build reads MYCARLOS_TEST_DATA_DIR, data_home.rs).
+  const createdTestHome = await mkdtemp(join(tmpdir(), "mycarlos-test-home-"));
+  const testHome = createdTestHome;
   const port =
     Number(process.env.MYCARLOS_WINDOWS_CDP_PORT) || (await freePort());
   // Fake camera and microphone for the media journey: only honoured when the harness is not the
@@ -90,6 +102,7 @@ export async function openInstalledApp(
     stdio: "ignore",
     env: {
       ...process.env,
+      MYCARLOS_TEST_DATA_DIR: testHome,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1${media}`,
       WEBVIEW2_USER_DATA_FOLDER: profile,
     },
@@ -163,9 +176,10 @@ export async function openInstalledApp(
     );
 
   let serial = 0;
-  return {
+  const session: AppSession = {
     page,
     appPid: app.pid!,
+    testHomeHonoured: false,
     call,
     async withDialog(command, args, title, action, value) {
       const id = `playtest-${++serial}`;
@@ -236,8 +250,33 @@ export async function openInstalledApp(
             maxRetries: 10,
             retryDelay: 200,
           });
+        // The test data home this run made (by mkdtemp), after the app has stopped using it.
+        if (removableOwnDirectory(createdTestHome, testHome))
+          await rm(testHome, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 200,
+          });
         void testInfo;
       }
     },
   };
+
+  // Ask the RUNNING app whether it really uses the test data home, before anything is created:
+  // a release build, or an older one, ignores the variable and would act on the account's own
+  // folder. Then let the guard decide (safety.ts); if it refuses, stop the app first.
+  try {
+    const info = await call<{ testDataHome?: boolean }>("runtime_info");
+    session.testHomeHonoured = info.testDataHome === true;
+    requireDisposableAccount({
+      platform: process.platform,
+      env: process.env,
+      overrideHonoured: session.testHomeHonoured,
+    });
+  } catch (error) {
+    await session.stop().catch(() => {});
+    throw error;
+  }
+  return session;
 }

@@ -49,6 +49,29 @@ test.describe("the native-windows journeys never touch a real account", () => {
     expect(() => run(declared)).not.toThrow();
   });
 
+  test("an honoured test data home lets the journeys run on any account, but not off Windows or with a relative profile", () => {
+    const honoured = (
+      env: Record<string, string | undefined>,
+      platform = "win32",
+    ) => requireDisposableAccount({ platform, env, overrideHonoured: true });
+    // Any account: nothing disposable is declared and LOCALAPPDATA is not even looked at.
+    expect(() => honoured({})).not.toThrow();
+    expect(() => honoured({ LOCALAPPDATA: "relative" })).not.toThrow();
+    // Still Windows only, and an absolute WebView profile.
+    expect(() => honoured({}, "linux")).toThrow(/Windows only/);
+    expect(() =>
+      honoured({ MYCARLOS_WINDOWS_WEBVIEW_PROFILE: "relative" }),
+    ).toThrow(/must be an absolute path/);
+    // Not honoured (a release build ignored the variable): back to the disposable-account rule.
+    expect(() =>
+      requireDisposableAccount({
+        platform: "win32",
+        env: { LOCALAPPDATA: LOCAL },
+        overrideHonoured: false,
+      }),
+    ).toThrow(/Refusing to run/);
+  });
+
   test("refuse when LOCALAPPDATA is unset or relative, or the WebView profile is relative", () => {
     expect(() => run({ ...hosted, LOCALAPPDATA: undefined })).toThrow(
       /LOCALAPPDATA is not set/,

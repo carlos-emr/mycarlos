@@ -6,6 +6,7 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod data_home;
 mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
@@ -169,6 +170,11 @@ struct RuntimeInfo {
     architecture: String,
     app_version: String,
     message: String,
+    /// True only when a DEBUG build is using `MYCARLOS_TEST_DATA_DIR` (data_home.rs); absent
+    /// otherwise, so a release build never carries the field. A test reads it to prove the override
+    /// took effect before it creates a vault.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    test_data_home: bool,
 }
 
 struct PublicError {
@@ -2081,6 +2087,7 @@ fn current_runtime_info() -> RuntimeInfo {
         architecture: std::env::consts::ARCH.to_owned(),
         app_version: env!("CARGO_PKG_VERSION").to_owned(),
         message: "Hello from the Tauri Rust boundary".to_owned(),
+        test_data_home: data_home::override_in_use(),
     }
 }
 
@@ -8339,7 +8346,7 @@ pub fn run() {
             // nothing is written, so this is what it was. Each slot has its own notification ledger
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
             let slots = Arc::new(vault_slots::VaultSlots::open(
-                app.path().app_local_data_dir()?,
+                data_home::local_data_dir(&*app)?,
                 app.config().identifier.clone(),
             ));
             // One worker for the app, ticking whichever vault the screen is on.
@@ -8350,19 +8357,19 @@ pub fn run() {
             // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
             // the vault registry and not inside Main's `vault-home`, and read only when needed,
             // not here. The old file is copied over once and left where it was.
-            let data_dir = app.path().app_local_data_dir()?;
+            let data_dir = data_home::local_data_dir(&*app)?;
             throttle::migrate_counts(&data_dir);
             app.manage(Arc::new(AttemptThrottle::new(Some(throttle::counts_path(
                 &data_dir,
             )))));
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
-            notice_key::install(&app.path().app_local_data_dir()?);
+            notice_key::install(&data_home::local_data_dir(&*app)?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
             let models = Arc::new(local_model::Store::new(
-                app.path().app_local_data_dir()?.join("models"),
+                data_home::local_data_dir(&*app)?.join("models"),
                 local_model::CATALOG,
             ));
             models.clean_leftovers();
@@ -8423,8 +8430,7 @@ pub fn run() {
             {
                 let background = desktop_background::desktop::install(
                     app,
-                    app.path()
-                        .app_local_data_dir()?
+                    data_home::local_data_dir(&*app)?
                         .join("vault-home")
                         .join("background-v1.json"),
                     close_lock(app.handle()),
@@ -9753,8 +9759,25 @@ mod tests {
             .unwrap()
             .1;
         let root = setup.split_once("));").unwrap().0;
-        assert!(root.contains("app_local_data_dir()"), "{root}");
+        // Through data_home::local_data_dir, the one place that asks Tauri (and lets a debug build's
+        // test home replace it): the roaming folder is named nowhere.
+        assert!(root.contains("data_home::local_data_dir("), "{root}");
         assert!(!root.contains("app_data_dir()"), "{root}");
+        let helper = include_str!("data_home.rs");
+        assert!(
+            helper.contains(".app_local_data_dir()"),
+            "data_home must ask for the local folder"
+        );
+        assert!(
+            !helper.contains(".app_data_dir()"),
+            "data_home must not use the roaming folder"
+        );
+        // No other call site goes round the helper.
+        assert_eq!(
+            startup.matches("app_local_data_dir()").count(),
+            0,
+            "every data folder goes through data_home::local_data_dir"
+        );
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
         // and on macOS and Linux local and roaming data are one directory. A
         // home of that name would hold an old vault's files loose beside the new
