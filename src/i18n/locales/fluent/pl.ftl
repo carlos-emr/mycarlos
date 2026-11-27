@@ -2146,6 +2146,8 @@ ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stro
 
 ai-summary-noSource = Nie znaleziono źródła
 
+ai-summary-generalPoints = Punkty ogólne (niepowiązane z jedną linijką)
+
 ai-summary-englishOnly = Na razie podsumowania są pisane po angielsku. myCarlos sprawdza liczby i zasady „kiedy szukać pomocy” tylko po angielsku, więc sprawdź je w samym dokumencie.
 
 ## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).

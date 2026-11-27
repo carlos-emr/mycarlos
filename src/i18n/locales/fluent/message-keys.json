@@ -898,6 +898,7 @@
   "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "ai.summary.generalPoints",
   "ai.summary.englishOnly",
   "ai.summary.progress.before",
   "ai.summary.progress.reading",

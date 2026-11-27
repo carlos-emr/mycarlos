@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import {
   AI_COMMANDS,
@@ -34,6 +35,8 @@ import {
 // the switch off the reader offers Summary only, its Explain steps check that
 // no Explain button is there, and the tests that only drive Explain are
 // skipped. ReaderAi.test.tsx covers Explain's code with the switch on.
+
+const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 const EXPLAIN_OFF =
   "Explain is switched off in the UI (src/ai/features.ts); this test runs again when it is switched on";
@@ -276,6 +279,46 @@ test.describe("with a model on this device", () => {
     await expect(reader.locator(".native-reader-text mark")).toHaveText(
       fakePageText(LETTER, 2),
     );
+    await expectOnlyFakedCommands(page);
+  });
+
+  test("a point with no source is not dropped: it follows the sourced ones under General points, with no link", async ({
+    page,
+  }) => {
+    const general = "FAKE: the letter is about a recent visit to the clinic.";
+    const reader = await openReader(page, {
+      model: INSTALLED,
+      generalPoint: general,
+    });
+    await firstUse(page, reader, en("ai.summary.button"));
+    const summaryPanel = panel(reader, en("ai.summary.title"));
+    // The sourced points are there, in order, with their links.
+    await expect(summaryPanel).toContainText(
+      `FAKE: page 1 begins “${fakePageText(LETTER, 1)}”.`,
+    );
+    await expect(
+      summaryPanel.getByRole("button", {
+        name: en("ai.summary.showInDocument"),
+      }),
+    ).toHaveCount(FAKE_PAGE_COUNT);
+    // The point with no source is shown after them, in its own group with its heading, without
+    // a link and without "No source found" (the heading says it).
+    const group = summaryPanel.getByRole("group", {
+      name: en("ai.summary.generalPoints"),
+    });
+    await expect(group).toBeVisible();
+    await expect(group).toContainText(general);
+    await expect(group.getByRole("button")).toHaveCount(0);
+    await expect(summaryPanel).not.toContainText(en("ai.summary.noSource"));
+    // After the sourced list in the page.
+    const order = await summaryPanel
+      .locator("li")
+      .evaluateAll((items) => items.map((item) => item.textContent ?? ""));
+    expect(order.at(-1)).toContain(general);
+    expect(order.length).toBe(FAKE_PAGE_COUNT + 1);
+    expect(
+      (await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations,
+    ).toEqual([]);
     await expectOnlyFakedCommands(page);
   });
 

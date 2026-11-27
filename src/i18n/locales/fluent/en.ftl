@@ -2066,6 +2066,8 @@ ai-summary-pagesMissing = Some pages could not be read in full, so this summary 
 
 ai-summary-noSource = No source found
 
+ai-summary-generalPoints = General points (not tied to one line)
+
 ai-summary-englishOnly = For now, summaries are written in English. myCarlos checks numbers and “when to get help” rules only in English, so check those in the document itself.
 
 ## PROVISIONAL: English wording for Ben's approval (summary progress, 18 Nov).

@@ -1,7 +1,9 @@
 //! Original unfound model quotes, tied to their sentence rather than a moving queue.
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) struct UnlocatedQuotes(Vec<(usize, String)>);
+redact_debug!(UnlocatedQuotes);
 
 impl UnlocatedQuotes {
     pub(crate) fn record(&mut self, index: usize, quote: String) {
@@ -25,28 +27,6 @@ impl UnlocatedQuotes {
     pub(crate) fn remap(&mut self, to: &[usize]) {
         for (index, _) in &mut self.0 {
             *index = to[*index];
-        }
-    }
-
-    /// Sentences were left out of the summary (#581): `drop[i]` says sentence `i` went. Its
-    /// original quote goes with it and every later sentence moves up, so each remaining quote
-    /// still follows its own sentence. (The count of quotes the model got wrong is kept by the
-    /// caller before this.)
-    pub(crate) fn drop_sentences(&mut self, drop: &[bool]) {
-        let mut moved = Vec::with_capacity(drop.len());
-        let mut kept = 0;
-        for &dropping in drop {
-            moved.push(kept);
-            if !dropping {
-                kept += 1;
-            }
-        }
-        self.0
-            .retain(|(index, _)| !drop.get(*index).copied().unwrap_or(false));
-        for (index, _) in &mut self.0 {
-            if let Some(to) = moved.get(*index) {
-                *index = *to;
-            }
         }
     }
 
@@ -113,27 +93,6 @@ mod tests {
                 "FAKE second unmatched model quote"
             ]
         );
-    }
-
-    #[test]
-    fn leaving_sentences_out_takes_their_quotes_and_moves_the_later_ones_up() {
-        let mut missing = UnlocatedQuotes::default();
-        // Sentences 1, 3 and 4 had an unfound quote; 0 and 2 were sourced.
-        for (index, quote) in [(1, "FAKE one"), (3, "FAKE three"), (4, "FAKE four")] {
-            missing.record(index, quote.to_owned());
-        }
-        // Sentences 1 and 4 go (unsourced, dropped): 0, 2 and 3 remain as 0, 1 and 2.
-        missing.drop_sentences(&[false, true, false, false, true]);
-        assert_eq!(missing.len(), 1);
-        assert_eq!(missing.original(2), Some("FAKE three"));
-        assert_eq!(missing.original(1), None);
-        assert_eq!(missing.original(3), None);
-        // Nothing dropped changes nothing; a short mask is not an error.
-        let before = missing.clone();
-        missing.drop_sentences(&[false, false, false]);
-        assert_eq!(missing, before);
-        missing.drop_sentences(&[]);
-        assert_eq!(missing, before);
     }
 
     #[test]

@@ -1228,11 +1228,25 @@ p {
   color: var(--ink);
   font: inherit;
 }
-.native-reader-ai-result ol {
+.native-reader-ai-result ol,
+.native-reader-ai-result .ai-general ul {
   display: grid;
   gap: 6px;
   margin: 6px 0;
   padding-left: 1.4em;
+}
+/* Points not tied to one line of the document (#581): after the sourced points, under their own
+   heading, in a softer style: smaller, muted, with a rule on the side. Still readable text. */
+.native-reader-ai-result .ai-general {
+  margin: 10px 0 6px;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 0.95em;
+}
+.native-reader-ai-result .ai-general-heading {
+  margin: 0;
+  font-weight: 600;
 }
 .native-reader-ai .ai-label {
   color: var(--ink);

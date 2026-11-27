@@ -707,11 +707,11 @@ document, and answers are in backups like the rest of the vault (question 17). E
   people named in the document, and limits what the service keeps.
 - **The AI can be wrong.** It is not meant to diagnose or to advise on treatment or medicines. Each
   sentence of a summary links to the words of the document it quotes, when they are really there.
-  A point that still has no valid source after the safety checks is left out before it is shown
-  (#581): the whole letter is not a source, so the summary does not offer the gist of the letter
-  as a point of its own. It is counted in the evaluation output, never worded. Only when NO point
-  has a source are they all kept, each marked "No source found" (an empty summary helps nobody).
-  A link shows where a sentence came from, not that it is right.
+  A point that still has no valid source after the safety checks is never dropped (it may be a
+  real finding the model misquoted): it is shown after the sourced points, under the fixed
+  heading "General points (not tied to one line)", without a link and in a softer style (#581).
+  Only when NO point has a source are they shown together, each marked "No source found". A link
+  shows where a sentence came from, not that it is right.
 - **Scanned pages** have no text, so the helper cannot work on them until on-device text
   recognition exists.
 - **Phones:** the PDF helper does not run on phones (`THREAT_MODEL.md` IMP-02), so a phone can
