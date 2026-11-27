@@ -550,7 +550,8 @@ export interface SpeedTestReport {
   medianMs: number;
   maxMs: number;
   /** False for an evaluation build, in which the key derivation is
-   * optimized and the rest is not. */
+   * optimized and the rest is not. Always false since #579: a release build has no speed test;
+   * the field stays so the report keeps its shape. */
   release: boolean;
   /** An iOS Simulator build: its timings are not a device's. */
   simulator: boolean;

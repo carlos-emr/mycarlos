@@ -6570,9 +6570,11 @@ pub struct KdfBenchmark {
     pub samples_ms: Vec<u64>,
     pub median_ms: u64,
     pub max_ms: u64,
-    /// Whether this is a release build. The evaluation builds are not,
-    /// though the key derivation in them is optimized (see the dev profile
-    /// in Cargo.toml).
+    /// Whether this is a release build. Since #579 the speed test is only in
+    /// development and evaluation builds, so this is always false where a report
+    /// is made (the key derivation in them is optimized, see the dev profile in
+    /// Cargo.toml); the field stays so the report's shape, and its line for
+    /// testers, do not change.
     pub release: bool,
     /// Whether this is an iOS Simulator build, whose timings are not a
     /// device's.
