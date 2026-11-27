@@ -86,6 +86,9 @@ subtle = "2"
 # without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-android-pdf = { path = "android-pdf" }
+tauri-plugin-android-trust = { path = "android-trust" }
+# The same jni the platform verifier is built with (see android-trust/Cargo.toml).
+jni = "=0.22.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }

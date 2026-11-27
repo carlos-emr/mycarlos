@@ -221,7 +221,14 @@ describe("the source the vault stores (#135)", () => {
   });
 });
 
-describe("a document's status before its source (#135)", () => {
+// Each "in every language" test below lays a library, its Details and the reader out once per
+// language and measures them, one after another in one browser page: the work is the point, and its
+// length depends on the machine (three of them took longer than the default 15 s in a loaded
+// coverage run, one of them with the browser's own screenshot timing out as well). So this group's
+// ceiling is a minute and a half; a layout that is wrong still fails at its first measure, at once.
+const PER_LANGUAGE = { timeout: 90_000 };
+
+describe("a document's status before its source (#135)", PER_LANGUAGE, () => {
   it("decides Verified from the vault's check, never from the source text", () => {
     renderLibrary();
     for (const [shownRecord, status, source] of expected("en")) {

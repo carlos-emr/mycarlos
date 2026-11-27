@@ -483,8 +483,13 @@ crypto provider avoids process-global provider installation.
 services and requires a JNI 0.22 integration on Android. Its fixes to Android CRL
 fetching, disabled trust anchors and Windows hostname verification take priority
 over retaining the existing JNI 0.21 line.
-The Android Kotlin verifier component and native initialization must be wired
-and tested before Android linking is claimed to work.
+On Android the Kotlin verifier component (`org.rustls:rustls-platform-verifier`, fetched from the
+crate authors' Maven archive at a named commit, its bytes checked by Gradle dependency verification)
+and the native initialisation are wired by the `tauri-plugin-android-trust` crate, which hands the
+application context to the verifier once. The portal client opens on Android only once that has
+succeeded (`portal_client::available()`), and builds no client before it has; the platform verifier
+panics if asked without it. The emulator test, not a host test, is what proves a handshake there:
+see TESTING.md, "Linking a clinic on Android".
 
 The resolved graph, licenses and feature unification require independent review
 before compiling this feature. No HPKE implementation or delivery-v2 dependency

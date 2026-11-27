@@ -129,6 +129,90 @@ test("a failing check of the process table counts as not gone, not as a crash", 
   ).rejects.toThrow(/was not seen to exit/);
 });
 
+// A child that was already leaving when taskkill reached it (Windows run 45962064313): one ERROR
+// line per such child, on stderr (and copied into the message by `execFile`). The exit code is
+// not recorded in that log; these tests use 1, and the code does not matter to the matching.
+const CHILD_NOT_SUPPORTED =
+  "ERROR: The process with PID 8784 (child process of PID 2504) could not be terminated.\r\n" +
+  "Reason: The operation attempted is not supported.\r\n";
+
+function refusal(stderr: string, shape: "stderr" | "message-only" = "stderr") {
+  const message = `Command failed: taskkill /PID 2504 /T /F\n${stderr}`;
+  return Object.assign(
+    new Error(message),
+    shape === "stderr" ? { code: 1, stderr } : { code: 1 },
+  );
+}
+
+test("accepts a child refused as 'not supported' once the app has exited", async () => {
+  for (const shape of ["stderr", "message-only"] as const)
+    await expect(
+      stopAppTree(
+        2504,
+        () => Promise.reject(refusal(CHILD_NOT_SUPPORTED, shape)),
+        async () => true,
+      ),
+    ).resolves.toBeUndefined();
+});
+
+test("accepts several children refused as 'not supported' when the root process is gone, though no exit came", async () => {
+  let looks = 0;
+  await expect(
+    stopAppTree(
+      2504,
+      () =>
+        Promise.reject(
+          refusal(
+            CHILD_NOT_SUPPORTED + CHILD_NOT_SUPPORTED.replace("8784", "9120"),
+          ),
+        ),
+      async () => false,
+      { ...FAST, rootGone: async () => ++looks >= 2 },
+    ),
+  ).resolves.toBeUndefined();
+  expect(looks).toBe(2);
+});
+
+test("fails when a child was refused as 'not supported' but the app has not exited", async () => {
+  await expect(
+    stopAppTree(
+      2504,
+      () => Promise.reject(refusal(CHILD_NOT_SUPPORTED)),
+      async () => false,
+      {
+        ...FAST,
+        rootGone: async () => false,
+        describeApp: () => "exitCode=null, signalCode=null",
+      },
+    ),
+  ).rejects.toThrow(
+    /taskkill refused only children that were leaving \(not supported\); the app, PID 2504, was not seen to exit: exitCode=null, signalCode=null/,
+  );
+});
+
+test("a 'not supported' refusal that is not only for children is thrown as it came, even after the app exited", async () => {
+  for (const stderr of [
+    // The app's own process (no "child process of"): not a child that was leaving.
+    "ERROR: The process with PID 2504 could not be terminated.\r\nReason: The operation attempted is not supported.\r\n",
+    // A child refused for another reason, alone or beside a leaving one.
+    "ERROR: The process with PID 8784 (child process of PID 2504) could not be terminated.\r\nReason: Access is denied.\r\n",
+    CHILD_NOT_SUPPORTED +
+      "ERROR: The process with PID 9120 (child process of PID 2504) could not be terminated.\r\nReason: Access is denied.\r\n",
+    // Not a taskkill refusal at all.
+    "ERROR: Invalid argument/option - '/X'.\r\n",
+  ]) {
+    const error = refusal(stderr);
+    await expect(
+      stopAppTree(
+        2504,
+        () => Promise.reject(error),
+        async () => true,
+        { ...FAST, rootGone: async () => true },
+      ),
+    ).rejects.toBe(error);
+  }
+});
+
 test("another taskkill error is still thrown as it came, whatever the process table says", async () => {
   const error = failure(5);
   await expect(

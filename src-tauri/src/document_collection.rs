@@ -693,4 +693,65 @@ mod tests {
         assert!(s.attempt(now + Duration::from_secs(9999)));
         assert!(!s.attempt(now + Duration::from_secs(9999)));
     }
+
+    #[test]
+    fn a_session_change_stops_the_cycle_and_the_first_reason_is_the_one_kept() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let c = CycleControl::new(Instant::now(), cancelled.clone());
+        assert!(!c.stopped());
+        assert_eq!(c.reason(), None);
+        c.session_changed();
+        assert!(c.stopped());
+        assert_eq!(c.reason(), Some(StopReason::Session));
+        // A later cancellation and a later overrun do not rewrite why it stopped.
+        cancelled.store(true, Ordering::Release);
+        assert!(c.stopped());
+        assert_eq!(c.reason(), Some(StopReason::Session));
+        assert!(!c.request());
+        assert_eq!(c.reason(), Some(StopReason::Session));
+    }
+
+    #[test]
+    fn a_chunk_that_does_not_fit_the_remaining_read_budget_stops_the_cycle() {
+        let c = fresh().with_test_physical_cap(100);
+        assert!(c.chunk_fits(0));
+        assert!(c.chunk_fits(100));
+        assert_eq!(c.reason(), None);
+        assert!(!c.chunk_fits(101));
+        assert_eq!(c.reason(), Some(StopReason::Budget));
+        // Once stopped, nothing fits, however small.
+        assert!(!c.chunk_fits(1));
+        assert!(!c.chunk_fits(0));
+        // The real cap is the 40 MiB read budget.
+        let whole = fresh();
+        assert!(whole.chunk_fits(MAX_PHYSICAL_READ));
+        assert!(!whole.chunk_fits(MAX_PHYSICAL_READ + 1));
+    }
+
+    #[test]
+    fn reading_into_an_empty_buffer_charges_nothing_and_reads_nothing() {
+        let c = fresh().with_test_physical_cap(8);
+        let mut source = PhysicalRead::new(io::Cursor::new(b"abcdef".to_vec()), &c);
+        assert_eq!(source.read(&mut []).unwrap(), 0);
+        assert_eq!(c.physical_read_bytes(), 0);
+        assert_eq!(c.reason(), None);
+        // The bytes are still all there for a real read, which is charged as it happens.
+        let mut buffer = [0_u8; 4];
+        assert_eq!(source.read(&mut buffer).unwrap(), 4);
+        assert_eq!(&buffer, b"abcd");
+        assert_eq!(c.physical_read_bytes(), 4);
+    }
+
+    #[test]
+    fn a_read_past_the_budget_is_a_terminal_error_and_names_a_budget_stop() {
+        let c = fresh().with_test_physical_cap(4);
+        let mut source = PhysicalRead::new(io::Cursor::new(vec![7_u8; 16]), &c);
+        let mut buffer = [0_u8; 4];
+        assert_eq!(source.read(&mut buffer).unwrap(), 4);
+        // The budget is spent: the next read fails for good (not Interrupted, which read_exact
+        // would retry), and the cycle says why.
+        let error = source.read(&mut buffer).unwrap_err();
+        assert_ne!(error.kind(), io::ErrorKind::Interrupted);
+        assert_eq!(c.reason(), Some(StopReason::Budget));
+    }
 }

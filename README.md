@@ -180,7 +180,10 @@ npm run dev:data
 npm run tauri dev
 ```
 
-This creates five valid PDFs and `FAKE_MANIFEST.json` in `dev-data/`. Every filename, patient
+This creates five valid PDFs, two test-pattern pictures with FAKE GPS and details in their
+metadata (`FAKE_Picture_with_location.jpg`, `FAKE_Picture_with_details.png`), a 2 second FAKE clip
+(`FAKE_demo_clip.mp4`) and `FAKE_MANIFEST.json` in `dev-data/` (`scripts/fake-media.mjs` writes the
+pictures and the clip). Every filename, patient
 profile, folder, provider, and document title starts with `FAKE`. Choose a unique throwaway
 passphrase when creating the test vault; no credential is stored in the fixtures. The manifest
 maps each PDF to a profile and folder. Import
