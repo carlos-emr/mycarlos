@@ -393,7 +393,8 @@ describe("a patient named with no cue: a header line or a care verb (#264)", () 
 
   // The stated cost: an unknown person's header name written "Given Surname", even with a person
   // field beside it, and a name after a verb that also takes things, stay. A patient known to
-  // the app is still removed.
+  // the app is still removed. (Not after "for" or "pour": there the name is taken when its first
+  // word is a known given name, see givenNameGate.test.ts.)
   it.each([
     [
       "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
@@ -415,10 +416,6 @@ describe("a patient named with no cue: a header line or a care verb (#264)", () 
     [
       "Informe de alta — Inés Valcárcel Pruneda\nNHC: 4471829",
       "Inés Valcárcel Pruneda",
-    ],
-    [
-      "Plan de soins pour Margaux Vellacourt\nNAM : VELM 4163 1412",
-      "Margaux Vellacourt",
     ],
     [
       "Karta informacyjna — Zuzanna Wierzbicka\nPESEL: 58031412345",
