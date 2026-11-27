@@ -2,7 +2,9 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setLocaleOverride } from "../i18n";
+import { page } from "vitest/browser";
+import { Icon } from "../Icon";
+import { LOCALES, setLocaleOverride } from "../i18n";
 import { humanText, visibleText } from "../test/humanText";
 import { BIG_SKIP_SECONDS, SKIP_SECONDS, VideoViewer } from "./VideoViewer";
 
@@ -243,10 +245,9 @@ describe("VideoViewer", () => {
     const labels = within(group)
       .getAllByRole("button")
       .map((button) => visibleText(button.textContent ?? ""));
+    // No button for the arrows' 5 s skip (the keys still do it, below): only the 10 s buttons.
     expect(labels).toEqual([
       "Play/Pause (k)",
-      "Back 5 s (←)",
-      "Forward 5 s (→)",
       "Back 10 s (j)",
       "Forward 10 s (l)",
       "Volume up (↑)",
@@ -262,8 +263,6 @@ describe("VideoViewer", () => {
         .map((button) => button.getAttribute("aria-keyshortcuts")),
     ).toEqual([
       "k Space",
-      "ArrowLeft",
-      "ArrowRight",
       "j",
       "l",
       "ArrowUp",
@@ -272,7 +271,57 @@ describe("VideoViewer", () => {
       "Home",
       "End",
     ]);
+    // The arrows' skip has no button, so a line says it (and the keys themselves work: see the
+    // keyboard test). Nothing else claims a key the buttons do not have.
+    expect(
+      screen.getByText(humanText("The ← and → keys skip 5 s")),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /5 s/ }),
+      "no 5 second button",
+    ).toBeNull();
     expect(await axe.run(document.body, AXE)).toHaveProperty("violations", []);
+  });
+
+  it("puts an icon on every button, drawing only, and keeps the visible label as the name", () => {
+    open();
+    const group = screen.getByRole("group", { name: "Player controls" });
+    for (const button of within(group).getAllByRole("button")) {
+      const icons = button.querySelectorAll("svg.icon");
+      expect(icons, button.textContent ?? "").toHaveLength(1);
+      expect(icons[0].getAttribute("aria-hidden")).toBe("true");
+      // The label is the visible text, which is also the accessible name: the icon adds none.
+      expect(visibleText(button.textContent ?? "")).not.toBe("");
+    }
+    // Four groups: playback, skip, volume, jump.
+    expect(
+      Array.from(group.querySelectorAll(".video-control-group")).map(
+        (part) => part.querySelectorAll("button").length,
+      ),
+    ).toEqual([1, 2, 3, 2]);
+  });
+
+  it("shows Pause while playing and Play while not, and Unmute while muted, from the video's own events", () => {
+    const { video } = open();
+    const drawn = (name: "play" | "pause" | "volume" | "volume-off") =>
+      render(<Icon name={name} />).container.innerHTML;
+    const iconOf = (label: string) =>
+      screen
+        .getByRole("button", { name: humanText(label) })
+        .querySelector("svg.icon")!.outerHTML;
+    expect(iconOf("Play/Pause (k)")).toBe(drawn("play"));
+    fireEvent.play(video);
+    expect(iconOf("Play/Pause (k)")).toBe(drawn("pause"));
+    fireEvent.pause(video);
+    expect(iconOf("Play/Pause (k)")).toBe(drawn("play"));
+    fireEvent.play(video);
+    fireEvent.ended(video);
+    expect(iconOf("Play/Pause (k)")).toBe(drawn("play"));
+    // The mute button's icon is what pressing it does, as its label says.
+    expect(iconOf("Mute (m)")).toBe(drawn("volume-off"));
+    video.muted = true;
+    fireEvent(video, new Event("volumechange"));
+    expect(iconOf("Unmute (m)")).toBe(drawn("volume"));
   });
 
   it("works with the focus on any control of the player, not only on the video", () => {
@@ -356,10 +405,6 @@ describe("VideoViewer", () => {
     });
     press("Play/Pause (k)");
     expect(pause).toHaveBeenCalledTimes(1);
-    press("Forward 5 s (→)");
-    expect(time()).toBe(30 + SKIP_SECONDS);
-    press("Back 5 s (←)");
-    expect(time()).toBe(30);
     press("Forward 10 s (l)");
     expect(time()).toBe(30 + BIG_SKIP_SECONDS);
     press("Back 10 s (j)");
@@ -446,7 +491,78 @@ describe("VideoViewer", () => {
     // The buttons say their keys in the patient's language too.
     expect(screen.getByRole("button", { name: "Silenciar (m)" })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: humanText("Retroceder 5 s (←)") }),
+      screen.getByRole("button", { name: humanText("Retroceder 10 s (j)") }),
+    ).toBeVisible();
+    // The arrows' skip is said in the patient's language too (it has no button).
+    expect(
+      screen.getByText(humanText("Las teclas ← y → saltan 5 s")),
     ).toBeVisible();
   });
+
+  // The row under the video, in every language, on the narrowest phone (WCAG 1.4.10) and on a
+  // desktop: nothing past the edge or its own box, a target that is at least 44 px tall, the same
+  // gap between buttons of a group, and one wider gap, the same everywhere, between groups.
+  for (const locale of LOCALES) {
+    for (const [width, height] of [
+      [320, 640],
+      [1100, 760],
+    ] as const) {
+      it(`lays the control row out evenly, in groups, at ${width} px in ${locale}`, async () => {
+        await page.viewport(width, height);
+        try {
+          setLocaleOverride(locale);
+          open();
+          const row = document.querySelector<HTMLElement>(".video-controls")!;
+          const groups = Array.from(
+            row.querySelectorAll<HTMLElement>(".video-control-group"),
+          );
+          expect(groups).toHaveLength(4);
+          expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
+          const near = (a: number, b: number, why: string) =>
+            expect(Math.abs(a - b), why).toBeLessThanOrEqual(1);
+          const buttonsOf = (group: HTMLElement) =>
+            Array.from(group.querySelectorAll<HTMLElement>("button"));
+          for (const button of groups.flatMap(buttonsOf)) {
+            const box = button.getBoundingClientRect();
+            const name = button.textContent ?? "";
+            expect(box.left, name).toBeGreaterThanOrEqual(-1);
+            expect(box.right, name).toBeLessThanOrEqual(width + 1);
+            expect(box.height, name).toBeGreaterThanOrEqual(43.5);
+            expect(button.scrollWidth, name).toBeLessThanOrEqual(
+              button.clientWidth + 1,
+            );
+          }
+          // Inside a group: 8 px between neighbours, along a row and down a wrapped one.
+          for (const group of groups) {
+            const boxes = buttonsOf(group).map((b) =>
+              b.getBoundingClientRect(),
+            );
+            for (let at = 1; at < boxes.length; at++) {
+              const [before, after] = [boxes[at - 1], boxes[at]];
+              if (Math.abs(after.top - before.top) < 2)
+                near(after.left - before.right, 8, "gap in a group row");
+              else
+                near(after.top - before.bottom, 8, "gap between wrapped rows");
+            }
+          }
+          // Between groups: 24 px along a row, 12 px between wrapped rows.
+          const parts = groups.map((g) => g.getBoundingClientRect());
+          for (let at = 1; at < parts.length; at++) {
+            const [before, after] = [parts[at - 1], parts[at]];
+            if (Math.abs(after.top - before.top) < 2)
+              near(after.left - before.right, 24, "gap between groups");
+            else near(after.top - before.bottom, 12, "gap between group rows");
+          }
+          const hint =
+            row.parentElement!.querySelector<HTMLElement>(".video-key-hint")!;
+          expect(hint.getBoundingClientRect().right).toBeLessThanOrEqual(
+            width + 1,
+          );
+          expect(hint.scrollWidth).toBeLessThanOrEqual(hint.clientWidth + 1);
+        } finally {
+          await page.viewport(1100, 760);
+        }
+      });
+    }
+  }
 });

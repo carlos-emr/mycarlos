@@ -237,6 +237,10 @@ export interface FakeVaultSetup {
   /** Photos taken with the camera, already in the vault, by name (FAKE
    * names ending in .jpg): each has a small JPEG made at run time. */
   photos?: string[];
+  /** Videos already in the vault, by name (FAKE names ending in .mp4): each is a record the
+   * library offers to play. The fake holds no video file: `vault_video_open` answers a made-up
+   * address, so a journey that plays one supplies the media element's clock itself. */
+  videos?: string[];
   /** What runtime_info reports: "windows" (default), "macos", "linux",
    * "android" or "ios". A computer has the app's own zoom; a phone has not. */
   platform?: string;
@@ -435,6 +439,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         nextReceivedId: number;
         /** The JPEG each photo record shows, as a data: URL, by record id. */
         photoUrls: Record<string, string>;
+        /** The ids of the records that are videos. */
+        videoIds: Record<string, true>;
         /** What the vault wrote down (#71), as the native side would. */
         history: HistoryEntry[];
         /** Backups saved and the one the restore picker chooses. */
@@ -602,6 +608,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           });
           photoUrls[id] = makeJpegUrl();
         }
+        const videoIds: Record<string, true> = {};
+        for (const [index, name] of (setup.videos ?? []).entries()) {
+          const id = makeUuid(900 + index + 1);
+          records.push({
+            id,
+            profileId: setup.ids.profile,
+            folderIds: [],
+            displayName: name,
+            sourceLabel: "Manual import — unverified",
+            // As the vault stores a video: bytes it does not name.
+            mediaType: "application/octet-stream",
+            plaintextSize: 4096,
+            importedAtMs: Date.UTC(2026, 9, 6, 12),
+            available: true,
+          });
+          videoIds[id] = true;
+        }
         for (const record of records) {
           if (setup.missingFiles.includes(record.displayName))
             record.available = false;
@@ -712,6 +735,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           })),
           nextReceivedId: 700,
           photoUrls,
+          videoIds,
           history,
           status: setup.start,
           passphrase: setup.passphrase,
@@ -738,6 +762,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       state.captureSequence ??= 0;
       state.nextReceivedId ??= 700;
       state.photoUrls ??= {};
+      state.videoIds ??= {};
       const save = () => {
         try {
           window.sessionStorage.setItem(STORE, JSON.stringify(state));
@@ -1555,8 +1580,22 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { recordings: [], unreadable: 0 };
           case "vault_is_video":
             refuseLocked();
-            recordById(request.recordId);
-            return false;
+            return Boolean(state.videoIds[recordById(request.recordId).id]);
+          // Playing a stored video (#359): a token for it and its size. The fake holds no file,
+          // so the address the page builds from the token plays nothing; a journey that plays
+          // one stands in for the media element's clock (tests/video-controls.spec.ts).
+          case "vault_video_open": {
+            refuseLocked();
+            const record = recordById(request.recordId);
+            if (!state.videoIds[record.id])
+              throw refuse("not_found", "native.error.18");
+            return {
+              token: `fake-video-${record.id}`,
+              totalBytes: record.plaintextSize,
+            };
+          }
+          case "vault_video_close":
+            return;
           case "vault_view_photo": {
             refuseLocked();
             const record = recordById(request.recordId);
@@ -2192,6 +2231,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           currentWindow: { label: "main" },
           currentWebview: { label: "main", windowLabel: "main" },
         },
+        // The address the webview shows for a custom scheme (a video's, #359): built as Windows
+        // builds it; nothing is served there in this fake.
+        convertFileSrc: (path: string, protocol: string) =>
+          `http://${protocol}.localhost/${path}`,
         invoke: async (
           command: string,
           body?: Args | Uint8Array,
@@ -2278,6 +2321,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,
       photos: setup.photos ?? [],
+      videos: setup.videos ?? [],
       platform: setup.platform ?? "windows",
       drawnPages: setup.drawnPages ?? null,
       boxesAbsent: setup.boxesAbsent ?? null,

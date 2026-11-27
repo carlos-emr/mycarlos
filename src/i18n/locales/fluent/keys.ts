@@ -1202,8 +1202,7 @@ export const MESSAGE_KEYS = [
   "interface.VideoViewer.thisVideoCouldNotBePlayed",
   "interface.VideoViewer.controls",
   "interface.VideoViewer.playPause",
-  "interface.VideoViewer.back",
-  "interface.VideoViewer.forward",
+  "interface.VideoViewer.arrowKeys",
   "interface.VideoViewer.backBig",
   "interface.VideoViewer.forwardBig",
   "interface.VideoViewer.volumeUp",
@@ -2893,8 +2892,7 @@ const FLUENT_IDS_BY_KEY = {
     "interface-VideoViewer-thisVideoCouldNotBePlayed",
   "interface.VideoViewer.controls": "interface-VideoViewer-controls",
   "interface.VideoViewer.playPause": "interface-VideoViewer-playPause",
-  "interface.VideoViewer.back": "interface-VideoViewer-back",
-  "interface.VideoViewer.forward": "interface-VideoViewer-forward",
+  "interface.VideoViewer.arrowKeys": "interface-VideoViewer-arrowKeys",
   "interface.VideoViewer.backBig": "interface-VideoViewer-backBig",
   "interface.VideoViewer.forwardBig": "interface-VideoViewer-forwardBig",
   "interface.VideoViewer.volumeUp": "interface-VideoViewer-volumeUp",
@@ -4469,8 +4467,7 @@ export interface MessageArgsByKey {
   "interface.VideoViewer.thisVideoCouldNotBePlayed": undefined;
   "interface.VideoViewer.controls": undefined;
   "interface.VideoViewer.playPause": undefined;
-  "interface.VideoViewer.back": { seconds: FluentArgument };
-  "interface.VideoViewer.forward": { seconds: FluentArgument };
+  "interface.VideoViewer.arrowKeys": { seconds: FluentArgument };
   "interface.VideoViewer.backBig": { seconds: FluentArgument };
   "interface.VideoViewer.forwardBig": { seconds: FluentArgument };
   "interface.VideoViewer.volumeUp": undefined;
