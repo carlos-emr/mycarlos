@@ -47,7 +47,10 @@ const COUNT_CAP: usize = 100;
 /// the same message as a refused file today); none leaves anything behind in the folder.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum SealFailure {
-    /// The file does not start the way a PDF does. Checked before anything is written.
+    /// The file is not a supported one: it starts like none of a PDF, a JPEG and a PNG
+    /// (`received::classify`). The name is main's own, kept (`VaultError::NotPdf` is worded for
+    /// both kinds since pictures, #492, and the receipt's `not_pdf` count means the same): it
+    /// means "not a supported file", not "not a PDF". Checked before anything is written.
     NotPdf,
     /// The folder is at one of its caps, or the disk is too full to seal into it.
     Refused(Refusal),
@@ -384,7 +387,10 @@ impl InboxFolder {
         if declared.is_some_and(|length| length > limit) {
             return Err(SealFailure::Size(InboxError::TooLarge));
         }
-        let input = crate::received::require_pdf_header(input).map_err(|error| {
+        // What may be sealed is what the received path accepts (`received::classify`): a PDF, or a
+        // JPEG or PNG picture, decided from the file's own first bytes. The picture is cleaned
+        // when it is imported (`open_supported_file`), as for a file received while unlocked.
+        let (_, input) = crate::received::classify(input).map_err(|error| {
             if crate::received::is_not_pdf(&error) {
                 SealFailure::NotPdf
             } else {

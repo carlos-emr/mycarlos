@@ -6097,14 +6097,16 @@ fn open_sealed_source(
             VaultError::Invalid
         }
     })?;
-    let reader = require_pdf(Box::new(SealedReader {
+    // The same check and cleaning as a file received while unlocked (`open_received_source`): a
+    // PDF streams in as it is, a JPEG or PNG is cleaned first, anything else is refused.
+    let (kind, reader) = open_supported_file(Box::new(SealedReader {
         inner: opened,
         item,
         bad: Arc::clone(bad),
     }))
     .inspect_err(|_| mark_bad())?;
     Ok(ImportSource {
-        display_name: name,
+        display_name: picture_import_name(name, kind),
         reader,
     })
 }
@@ -13262,6 +13264,75 @@ mod photo_command_tests {
                     Err(VaultError::Invalid)
                 ),
                 "{wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_picture_shared_while_locked_is_sealed_and_comes_out_of_the_inbox_cleaned_and_named() {
+        // The sealed inbox (#420) adapted to pictures (#492): a JPEG or PNG shared while myCarlos
+        // is locked is sealed like a PDF, and imported through the same check and cleaning as one
+        // received while unlocked, so what is stored carries no place, time or camera.
+        let vault_id = Uuid::from_u128(0x11);
+        let keys = sealed_inbox::InboxKeys::derive(&[7_u8; 32], vault_id).unwrap();
+        // The same list as the import test above: the make, the comment (and the "%PDF-" in it),
+        // and the GPS tag. Not "Exif": the cleaned JPEG keeps an orientation-only Exif block.
+        let jpeg_secrets: &[&[u8]] = &[
+            b"FAKE Phone",
+            b"FAKE comment",
+            b"taken at home",
+            b"%PDF-",
+            b"\x88\x25",
+        ];
+        let png_secrets: &[&[u8]] = &[b"FAKE", b"Location", b"tEXt", b"zTXt", b"eXIf", b"tIME"];
+        for (name, expected_name, picture, secrets) in [
+            ("IMG_0042", "IMG_0042.jpg", phone_picture(), jpeg_secrets),
+            ("Screenshot", "Screenshot.png", dirty_png(), png_secrets),
+        ] {
+            let contains =
+                |bytes: &[u8], part: &[u8]| bytes.windows(part.len()).any(|window| window == part);
+            for secret in secrets {
+                assert!(contains(&picture, secret), "the fixture lacks {secret:?}");
+            }
+            let temp = tempfile::tempdir().unwrap();
+            let folder = inbox_folder::InboxFolder::new(temp.path(), vault_id);
+            let sealed = folder
+                .seal(
+                    keys.public(),
+                    Box::new(std::io::Cursor::new(picture.clone())),
+                    name,
+                    sealed_inbox::Source::Shared,
+                    Some(picture.len() as u64),
+                    1_800_000_000,
+                    &|| false,
+                )
+                .unwrap();
+            let bad = Arc::new(Mutex::new(std::collections::HashSet::new()));
+            let mut source = open_sealed_source(
+                temp.path(),
+                vault_id,
+                &keys,
+                sealed.item_id,
+                name.to_owned(),
+                &bad,
+            )
+            .unwrap();
+            let mut cleaned = Vec::new();
+            std::io::Read::read_to_end(&mut source.reader, &mut cleaned).unwrap();
+            assert_ne!(
+                cleaned, picture,
+                "{name}: the picture came out as it went in"
+            );
+            for secret in secrets {
+                assert!(
+                    !contains(&cleaned, secret),
+                    "{name}: {secret:?} is still there"
+                );
+            }
+            assert_eq!(source.display_name, expected_name);
+            assert!(
+                bad.lock().unwrap().is_empty(),
+                "{name}: a good item was marked bad"
             );
         }
     }
