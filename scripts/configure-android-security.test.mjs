@@ -451,6 +451,75 @@ test("the manifest names the network security config and turns cleartext off, on
   assert.throws(() => setNetworkSecurityConfig("<manifest />"), /application/);
 });
 
+test("the manifest replaces the network security config of the platform certificate verifier's manifest, once", () => {
+  const tools = 'xmlns:tools="http://schemas.android.com/tools"';
+  // No tools namespace and no tools:replace yet: both are added, once, and a second run is a no-op.
+  const bare =
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:label="myCarlos" /></manifest>';
+  const once = setNetworkSecurityConfig(bare);
+  assert.equal(setNetworkSecurityConfig(once), once);
+  assert.equal((once.match(/xmlns:tools=/g) ?? []).length, 1);
+  assert.ok(once.includes(tools));
+  assert.equal((once.match(/tools:replace=/g) ?? []).length, 1);
+  assert.match(
+    once,
+    /<application[^>]*tools:replace="android:networkSecurityConfig"/,
+  );
+  // The namespace is on <manifest>, the replace on <application>.
+  assert.match(once, /<manifest[^>]*xmlns:tools=/);
+  // An existing namespace and an existing list are kept and added to, never doubled.
+  const listed = `<manifest xmlns:android="http://schemas.android.com/apk/res/android" ${tools}><application tools:replace="android:label" android:label="myCarlos" /></manifest>`;
+  const merged = setNetworkSecurityConfig(listed);
+  assert.equal(setNetworkSecurityConfig(merged), merged);
+  assert.equal((merged.match(/xmlns:tools=/g) ?? []).length, 1);
+  assert.match(
+    merged,
+    /tools:replace="android:label,android:networkSecurityConfig"/,
+  );
+  // Single-quoted attributes are the same XML: nothing is doubled, and the quote style of an
+  // existing list is kept.
+  const single = `<manifest xmlns:android='http://schemas.android.com/apk/res/android' ${tools}><application android:networkSecurityConfig='@xml/other' android:usesCleartextTraffic='true' tools:replace='android:label' android:label='myCarlos' /></manifest>`;
+  const fromSingle = setNetworkSecurityConfig(single);
+  assert.equal(setNetworkSecurityConfig(fromSingle), fromSingle);
+  assert.match(
+    fromSingle,
+    /tools:replace='android:label,android:networkSecurityConfig'/,
+  );
+  assert.equal((fromSingle.match(/tools:replace=/g) ?? []).length, 1);
+  assert.equal(
+    (fromSingle.match(/android:networkSecurityConfig=/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (fromSingle.match(/android:usesCleartextTraffic=/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(fromSingle, /@xml\/other|usesCleartextTraffic='true'/);
+  // A form it cannot make sense of stops the build rather than writes a doubled attribute.
+  assert.throws(
+    () =>
+      setNetworkSecurityConfig(
+        `<manifest ${tools}><application tools:replace="android:label" tools:replace="android:icon" /></manifest>`,
+      ),
+    /2 tools:replace attributes/,
+  );
+  // The values that decide the security are still this app's own, and exactly one each.
+  for (const manifest of [once, merged, fromSingle]) {
+    assert.equal(
+      (
+        manifest.match(
+          /android:networkSecurityConfig="@xml\/mycarlos_network_security_config"/g,
+        ) ?? []
+      ).length,
+      1,
+    );
+    assert.equal(
+      (manifest.match(/android:usesCleartextTraffic="false"/g) ?? []).length,
+      1,
+    );
+  }
+});
+
 test("the release config trusts the system's authorities only; the test root is in the debug source set alone", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-nsc-"));
   try {
@@ -472,6 +541,18 @@ test("the release config trusts the system's authorities only; the test root is 
       /src="user"|debug-overrides|@raw|mycarlos_test_ca/,
     );
     assert.equal((release.match(/<certificates /g) ?? []).length, 1);
+    // The app also owns the resource name the platform verifier's AAR uses for its own file (which
+    // allows cleartext to a list of CRL hosts): the same system-only config, so the merged APK has
+    // no other `network_security_config` for the release gate to find.
+    const overrides = await readFile(
+      join(res, "xml", "network_security_config.xml"),
+      "utf8",
+    );
+    assert.equal(overrides, release);
+    assert.doesNotMatch(
+      overrides,
+      /domain-config|cleartextTrafficPermitted="true"/,
+    );
 
     const debugConfig = await readFile(
       join(debug, "res", "xml", "mycarlos_network_security_config.xml"),
@@ -506,8 +587,10 @@ test("the release config trusts the system's authorities only; the test root is 
     assert.deepEqual(raw, Buffer.from(fixture.trim(), "base64"));
     assert.equal(raw[0], 0x30);
     assert.deepEqual(await readdir(join(res)), ["xml"]);
+    // The app's configuration, and the same one under the name the platform verifier's AAR uses.
     assert.deepEqual(await readdir(join(res, "xml")), [
       "mycarlos_network_security_config.xml",
+      "network_security_config.xml",
     ]);
   } finally {
     await rm(directory, { recursive: true, force: true });

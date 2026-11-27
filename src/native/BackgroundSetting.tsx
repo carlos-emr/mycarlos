@@ -13,9 +13,16 @@ type BackgroundStatus = {
 
 /** Settings > Preferences: keep myCarlos running in the background, and start it at login. Both
  * are off until chosen. Native owns the icon, the lock on close and the login entry; this only
- * asks, and shows what native says. Computers only: a phone reports it unsupported. */
-export function BackgroundSetting() {
+ * asks, and shows what native says. Computers only: a phone reports it unsupported.
+ * `headingLevel` 3 when it sits under another heading (the notices step after the first clinic
+ * link, #235); `onSaved` hears each choice native has saved. */
+export function BackgroundSetting({
+  headingLevel = 2,
+  onSaved,
+}: { headingLevel?: 2 | 3; onSaved?: () => void } = {}) {
   const { t, locale } = useI18n();
+  const savedRef = useRef(onSaved);
+  savedRef.current = onSaved;
   const id = useId();
   const [status, setStatus] = useState<BackgroundStatus | null>(null);
   const [saving, setSaving] = useState(false);
@@ -64,6 +71,8 @@ export function BackgroundSetting() {
       .then(
         (value) => {
           if (mounted.current && issued === request.current) setStatus(value);
+          // Native saved it, whether or not this screen is still the one to show it.
+          savedRef.current?.();
         },
         () => {
           // Native changed nothing: the box stays as it was, and says so.
@@ -76,10 +85,11 @@ export function BackgroundSetting() {
       });
   };
   if (!status?.supported) return null;
+  const Heading = headingLevel === 3 ? "h3" : "h2";
   return (
     <section className="setting-row">
       <div>
-        <h2>{t("background.title")}</h2>
+        <Heading>{t("background.title")}</Heading>
         {/* What matters is said in view (the vault locks as the window closes); the rest folds away. */}
         <p id={`${id}-keep-summary`}>{t("background.keepRunningSummary")}</p>
         <p id={`${id}-login-summary`}>{t("background.startAtLoginSummary")}</p>

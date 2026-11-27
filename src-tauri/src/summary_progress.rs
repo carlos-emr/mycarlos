@@ -332,6 +332,68 @@ mod tests {
     }
 
     #[test]
+    fn the_kept_writing_time_uses_the_middle_two_answers_when_an_even_number_is_kept() {
+        // Two kept lengths: the median is their mean (200 tokens), at 10 a second: 20 s.
+        assert!((kept(10.0, &[300, 100]).writing_seconds() - 20.0).abs() < 1e-9);
+        // Four: 100, 200, 300 and 900 give the mean of 200 and 300, whatever the order kept.
+        assert!((kept(5.0, &[900, 100, 300, 200]).writing_seconds() - 50.0).abs() < 1e-9);
+        // An odd number keeps the middle one alone.
+        assert!((kept(5.0, &[900, 100, 300]).writing_seconds() - 60.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_speed_or_length_that_cannot_be_right_is_not_kept() {
+        let mut speeds = Speeds::default();
+        // 20,000 tokens a second is past what any computer writes: not kept, and nothing is
+        // left behind for the model.
+        assert!(!speeds.record(SHA, &stats(1000, 50)));
+        assert_eq!(speeds.kept(SHA), None);
+        // An answer longer than the helper's own cap (900 tokens) is not one it wrote.
+        assert!(!speeds.record(SHA, &stats(901, 90_000)));
+        assert_eq!(speeds.kept(SHA), None);
+        // The cap itself, at a believable speed, is kept.
+        assert!(speeds.record(SHA, &stats(900, 90_000)));
+        assert_eq!(speeds.kept(SHA).unwrap().answer_tokens, [900]);
+        // A later impossible run does not replace what was kept.
+        assert!(!speeds.record(SHA, &stats(1000, 50)));
+        assert_eq!(speeds.kept(SHA).unwrap().answer_tokens, [900]);
+    }
+
+    #[test]
+    fn nothing_new_is_said_before_anything_is_read_or_before_the_clock_has_moved() {
+        let start = Instant::now();
+        let at = |seconds: u64| start + Duration::from_secs(seconds);
+        let mut estimate = Estimate::new(Some(kept(5.0, &[100])), start);
+        // Nothing read yet, or no time passed since the request: no number, and none was given.
+        assert_eq!(estimate.after(reading(0, 1000), at(10)), None);
+        assert_eq!(estimate.after(reading(500, 1000), start), None);
+        let first = estimate.after(reading(500, 1000), at(10)).unwrap();
+        // After a number was given, those same non-answers repeat it instead of dropping it.
+        assert_eq!(estimate.after(reading(0, 1000), at(20)), Some(first));
+        assert_eq!(estimate.after(reading(600, 1000), start), Some(first));
+        // Writing is the same: no sentence yet, or no time since the reading ended.
+        assert_eq!(
+            estimate.after(reading(1000, 1000), at(30)),
+            Some(first.min(22))
+        );
+        let given = estimate.given;
+        assert_eq!(estimate.after(writing(0, 10), at(40)), given);
+        assert_eq!(estimate.after(writing(2, 10), at(30)), given);
+    }
+
+    #[test]
+    fn writing_without_a_reading_to_count_from_counts_from_the_request() {
+        // No batch ever reported as fully read (the reading is skipped), so the writing's own
+        // clock is the request's: 1 sentence of 10 in 20 s, and 9 more at 20 s each.
+        let start = Instant::now();
+        let mut estimate = Estimate::new(None, start);
+        assert_eq!(
+            estimate.after(writing(1, 10), start + Duration::from_secs(20)),
+            Some(9 * 20 + 2)
+        );
+    }
+
+    #[test]
     fn the_number_never_goes_up_and_the_clock_starts_when_the_request_is_written() {
         let start = Instant::now();
         let at = |seconds: u64| start + Duration::from_secs(seconds);
