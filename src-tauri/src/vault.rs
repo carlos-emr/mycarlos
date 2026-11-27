@@ -137,6 +137,8 @@ const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES
 /// Format 16 (removing a clinic link, #160) adds the `portalLinkRemoved` history event. No
 /// manifest field changed; an older build refuses the vault because it cannot read the event.
 /// The number is taken at merge, after the profile handover's 14 and hiding a person's 15.
+// Only the upgrade tests name 16 now that the current format is 17.
+#[cfg(test)]
 const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 16;
 /// Format 17 (#72, the patient's own cloud AI key) adds `cloudAiKeys`. Its number was taken at
 /// merge, with no gap (VAULT_FORMAT.md, "Format numbers are taken at merge"): after link removal's
@@ -869,7 +871,7 @@ struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     refused_deliveries: Vec<RefusedDelivery>,
     /// The patient's own API keys for a cloud AI provider (#72), encrypted with the rest of the
-    /// manifest and so in every backup. Format 14. Never given to the page (cloud_keys.rs).
+    /// manifest and so in every backup. Format 17. Never given to the page (cloud_keys.rs).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     cloud_ai_keys: Vec<StoredCloudKey>,
 }
