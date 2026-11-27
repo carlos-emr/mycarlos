@@ -12027,19 +12027,19 @@ mod tests {
             .imported[0];
         assert!(matches!(
             store.export_atomic(record, &sibling_path(&root, ".lock").unwrap()),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         // Windows and macOS resolve a differently cased name to the same file.
         assert!(matches!(
             store.export_atomic(record, &root.with_file_name("VAULT.LOCK")),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         // A regular file under a pending-reset name would make every later
         // status, unlock, create and reset fail closed.
         for name in ["vault.reset-pending", "Vault.Reset-Pending"] {
             assert!(matches!(
                 store.export_atomic(record, &root.with_file_name(name)),
-                Err(VaultError::Invalid)
+                Err(VaultError::SaveLocationInsideVault)
             ));
             assert!(!root.with_file_name(name).exists());
         }
@@ -12302,7 +12302,7 @@ mod tests {
             assert!(
                 matches!(
                     store.export_atomic(record, &home.join(name)),
-                    Err(VaultError::Invalid)
+                    Err(VaultError::SaveLocationInsideVault)
                 ),
                 "{name}"
             );
@@ -18539,7 +18539,7 @@ mod tests {
         let header_before = fs::read(&header_path).unwrap();
         assert!(matches!(
             store.export_atomic(record, &header_path),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         assert_eq!(fs::read(header_path).unwrap(), header_before);
 

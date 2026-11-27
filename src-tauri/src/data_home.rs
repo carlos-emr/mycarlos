@@ -209,7 +209,10 @@ mod tests {
         let real = tempfile::tempdir().unwrap();
         let test_home = tempfile::tempdir().unwrap();
         let chosen = resolve(true, os(test_home.path()), real.path()).unwrap();
-        assert_eq!(chosen, fs::canonicalize(test_home.path()).unwrap());
+        assert_eq!(
+            fs::canonicalize(&chosen).unwrap(),
+            fs::canonicalize(test_home.path()).unwrap()
+        );
         assert!(test_home.path().join(MARKER).is_file());
         // A second run recognises its own home even though it is no longer empty.
         fs::create_dir(test_home.path().join("vault-home")).unwrap();
