@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# UNISSUED SOURCE ONLY: Root invokes only after accepted315END/cleanup AND actual V13tiny.
+set -eu
+/usr/bin/timeout --signal=TERM --kill-after=2s 90s /usr/bin/taskset -c 0 /usr/bin/nice -n 19 /usr/bin/python3 -I -B /root/supervisor/handoff/agent2-v13-attempt13-a1-issuance-source-20261114/prepare_v13.py --endproof-sha256 "${V13_315_ENDPROOF_SHA256:?Root-pinned actual315closure proof required}" --tiny-qualification "${V13_TINY_QUALIFICATION:?Root-accepted actual V13tiny qualification path required}" --tiny-qualification-sha256 "${V13_TINY_QUALIFICATION_SHA256:?Root-pinned actual V13tiny qualification hash required}" --owner-sha256 a5a7dfeba2e8b3cacbc26d304fac4d504c672a00d62d78747d130461f6d2cb8b --root-issue-metadata-only
