@@ -3731,7 +3731,7 @@ p {
 }
 .record-video-dialog .record-mic-test-note {
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 .record-video-dialog .record-quality {
   margin: 0;
