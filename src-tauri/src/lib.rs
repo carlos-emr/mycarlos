@@ -3323,7 +3323,7 @@ async fn vault_unlock(
     )
     .await?;
     refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
-    after_open(store.arc());
+    after_open(store.arc(), &store.all());
     run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
@@ -3541,14 +3541,59 @@ async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> Co
     Ok(())
 }
 
+/// The ids of the vaults on this device other than `store`'s, as their notice keys carry them (an
+/// open vault's own, a locked one's from its header), or `None` when one of them cannot be read:
+/// the caller then wipes nothing, because a key is kept rather than guessed about (#357).
+fn other_vault_ids(
+    store: &Arc<VaultStore>,
+    vaults: &[Arc<VaultStore>],
+) -> Option<std::collections::HashSet<Uuid>> {
+    let mut ids = std::collections::HashSet::new();
+    for other in vaults.iter().filter(|other| !Arc::ptr_eq(other, store)) {
+        match other.notice_key_vault() {
+            vault::NoticeKeyVault::Id(id) => {
+                ids.insert(id);
+            }
+            // A slot with no vault made in it holds no keys.
+            vault::NoticeKeyVault::None => {}
+            vault::NoticeKeyVault::Unknown => return None,
+        }
+    }
+    Some(ids)
+}
+
+/// After a vault is reset: its notice keys go, and every key of a vault the device does not hold;
+/// another vault's keys stay (#357). On a device with the one vault, that is every key.
+/// `reset_id` is the id the vault had before the reset (`NoticeKeyVault::id`), so its own keys go
+/// even when another vault's id cannot be read.
+async fn wipe_notice_keys_of_reset_vault(
+    store: &Arc<VaultStore>,
+    vaults: Vec<Arc<VaultStore>>,
+    reset_id: Option<Uuid>,
+) {
+    let store = Arc::clone(store);
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        notice_key::after_reset(reset_id, other_vault_ids(&store, &vaults).as_ref());
+    })
+    .await;
+}
+
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
 /// asked for) runs in the background, so opening never waits on the network.
-fn after_open(store: &Arc<VaultStore>) {
+fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
     let store = Arc::clone(store);
+    let vaults = vaults.to_vec();
     tauri::async_runtime::spawn_blocking(move || {
-        // Notice keys of any other vault go (#230).
+        // Notice keys of a vault this device no longer holds go (#230); another vault's stay, so
+        // switching between vaults keeps each one's keys (#357). With the one vault, `held` is just
+        // it and every other key goes, as before. If another vault's id cannot be read, nothing is
+        // wiped now.
         if let Some(vault_id) = store.open_vault_id() {
-            notice_key::after_open(vault_id);
+            if let Some(held) =
+                notice_key::held_with_open(vault_id, other_vault_ids(&store, &vaults))
+            {
+                notice_key::after_open(&held);
+            }
         }
         // Keys whose link was removed before their wipe finished (#160). One read of the vault id
         // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
@@ -4438,7 +4483,7 @@ async fn vault_recover(
     )
     .await?;
     refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
-    after_open(store.arc());
+    after_open(store.arc(), &store.all());
     Ok(RecoverResponse {
         passphrase_replaced,
         snapshot: run_blocking(store.arc(), VaultStore::snapshot).await?,
@@ -7699,7 +7744,7 @@ async fn vault_unlock_named(
         .map_err(Into::into)
     })
     .await?;
-    after_open(&opened);
+    after_open(&opened, &store.all());
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
@@ -7753,7 +7798,7 @@ async fn vault_add_vault(
     .map_err(PublicError::from)?;
     // The vault is made and stays registered; it is locked again and the screen is told no.
     refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
-    after_open(&opened);
+    after_open(&opened, &store.all());
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
@@ -8039,9 +8084,11 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    // The id the vault has now, for its notice keys after it is gone (#357).
+    let reset_id = run_blocking(store.arc(), |vault| Ok(vault.notice_key_vault().id())).await?;
     run_blocking(store.arc(), VaultStore::reset).await?;
-    // Its notice keys go with it (#230).
-    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
+    // Its notice keys go with it (#230); another vault's stay (#357).
+    wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
@@ -9250,7 +9297,7 @@ mod tests {
                 "async fn vault_reset(",
                 concat!(
                     "VaultStore::reset).await?; ",
-                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await; ",
                     "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
@@ -9307,7 +9354,7 @@ mod tests {
         let refused = code
             .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
             .unwrap();
-        let shown = code.find("after_open(&opened)").unwrap();
+        let shown = code.find("after_open(&opened,").unwrap();
         assert!(started < work && work < refused && refused < shown);
     }
 
@@ -9329,6 +9376,64 @@ mod tests {
         assert!(other_vault_exists(&this, &all));
         // The vault asking is never counted as "another".
         assert!(!other_vault_exists(&other, std::slice::from_ref(&other)));
+    }
+
+    /// What an open of one vault keeps of the others (#357): the ids come from the open vault's own
+    /// manifest and a locked vault's header, a slot with no vault holds none, and an id that cannot
+    /// be read means "cannot tell" (the wipe is then skipped), never "no keys".
+    #[test]
+    fn the_other_vaults_ids_are_the_locked_ones_headers_and_an_unreadable_one_is_unknown() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = Arc::new(VaultStore::new(temp.path().join("this")));
+        let other = Arc::new(VaultStore::new(temp.path().join("other")));
+        let empty = Arc::new(VaultStore::new(temp.path().join("empty")));
+        let all = vec![Arc::clone(&this), Arc::clone(&other), Arc::clone(&empty)];
+        this.create("river-azimuth-cobalt-sparrow-934", "FAKE Person", 1)
+            .unwrap();
+        other
+            .create("harbor-quartz-meadow-lantern-512", "FAKE Other", 1)
+            .unwrap();
+        let other_id = other.open_vault_id().unwrap();
+        assert_ne!(this.open_vault_id().unwrap(), other_id);
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(empty.notice_key_vault(), vault::NoticeKeyVault::None);
+        // The other vault open: its own id. Locked: its header's. A slot with no vault: none.
+        assert_eq!(
+            other_vault_ids(&this, &all),
+            Some(std::collections::HashSet::from([other_id]))
+        );
+        other.lock();
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(
+            other_vault_ids(&this, &all),
+            Some(std::collections::HashSet::from([other_id]))
+        );
+        // The one vault alone on the device has no other.
+        assert_eq!(
+            other_vault_ids(&this, std::slice::from_ref(&this)),
+            Some(std::collections::HashSet::new())
+        );
+        // A vault whose header cannot be read is unknown, not absent: nothing may be guessed.
+        // Every header file there is is made unreadable in place (a removal goes only through
+        // remove_owned_file, #71, which a test in this module cannot reach).
+        let mut damaged = 0;
+        for name in ["header-0.json", "header-1.json", "header.json"] {
+            let path = temp.path().join("other").join(name);
+            if path.exists() {
+                std::fs::write(path, b"{").unwrap();
+                damaged += 1;
+            }
+        }
+        // The case is only this one if a header was there to damage.
+        assert!(damaged > 0, "the other vault has no header file to damage");
+        assert_eq!(other.notice_key_vault(), vault::NoticeKeyVault::Unknown);
+        assert_eq!(other_vault_ids(&this, &all), None);
     }
 
     #[test]
