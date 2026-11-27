@@ -33,7 +33,9 @@ import allowList from "./eponymAllowList.json";
 import {
   bracketedMunicipalities,
   facilitySpans,
+  isKnownGivenName,
   municipalitySpans,
+  isLikelyHanName,
 } from "./gazetteer";
 
 /** A word or a pattern as it stands in the matching copy: accents and
@@ -78,6 +80,11 @@ export interface Removed {
   /** Where its replacement is in the text to send. */
   sentStart: number;
   sentEnd: number;
+  /** A name taken out of a medical eponym's own phrase ("Graves" in "Graves' disease"): the phrase
+   * as the document wrote it. The name is removed by default; the preview offers to keep this
+   * one occurrence as a medical term (`keepAsMedicalTerm`). Never set for a full name, a word
+   * after a title, or anything that is not a lone word of a name. */
+  eponym?: string;
 }
 
 /** A word left in the text that may be a name: a name found elsewhere,
@@ -113,6 +120,9 @@ export interface OnDevice {
   source: string;
   /** What the cleaning changed, for the preview's warning. */
   cleaning: { replacedRuns: number; droppedCodePoints: number };
+  /** The medical-term phrases the patient chose to keep ("Graves' disease"), as the document
+   * wrote them: for `keptEponymRanges`, which the native re-check reads (#366). */
+  keptEponyms?: string[];
 }
 
 export interface Deidentified {
@@ -170,12 +180,17 @@ export interface PlaceholderNotes {
   daysAfter: (days: number, label: string, number: number) => string;
   /** An age of 90 or over: the age itself stays on the device. */
   ageOver90: string;
+  /** A person's name written in another form than the first one the text showed ("Bell" after
+   * "Peter Bell"): the first other form is 1, the next 2. The number before it still names the
+   * person; the note only keeps the forms apart so each is put back as it was written. */
+  otherForm: (n: number) => string;
 }
 
 export const DEFAULT_NOTES: PlaceholderNotes = {
   daysAfter: (days, label, number) =>
     `${days} ${days === 1 ? "day" : "days"} after ${label} ${number}`,
   ageOver90: "90+",
+  otherForm: (n) => `other form ${n}`,
 };
 
 export const DEFAULT_LABELS: PlaceholderLabels = {
@@ -1728,6 +1743,8 @@ interface Rule {
   uncued?: true;
   /** A header line's name: kept only as "SURNAME, Given" (see find()). */
   uncuedHeader?: true;
+  /** A Han name: taken only when it reads as a known surname and a given name (`isLikelyHanName`). */
+  surnameGate?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
@@ -3253,6 +3270,19 @@ const RULES: Rule[] = [
     uncued: true,
     uncuedHeader: true,
   },
+  // A Chinese care document's subject after "for": "居家护理计划 为张伟", "居家護理計劃 for 陳大文". A
+  // Han name has no spaces, so it is a surname of one or two characters and a given name of one
+  // or two: only a run that reads as one is taken (`surnameGate`, `isLikelyHanName`), as a given-name
+  // list cannot tell a Han given name from any other word.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*[^\\n]{0,24}(?:计划|計劃|方案|总结|總結|小结|小結|报告|報告|评估|評估|记录|記錄|病历|病歷|转诊|轉診|出院)[ \\t]*(?:for|为|為|给|給|针对|針對|对于|對於)[ \\t]*)(\\p{Script=Han}{2,4})(?!\\p{Script=Han})`,
+      "gu",
+    ),
+    group: 1,
+    surnameGate: true,
+  },
   // A person after a care verb: "Paramedics brought Tobiah Farnsworth", "trajo a Lucas …".
   {
     kind: "name",
@@ -3932,6 +3962,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         if (!trimmed) continue;
       }
       if (rule.uncued && uncuedNotName(trimmed)) continue;
+      if (rule.surnameGate && !isLikelyHanName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed
           .split(/[^\p{L}'’]+/u)
@@ -4002,7 +4033,11 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         start,
         end,
         ...(rule.kin ? { kin: true as const } : {}),
-        ...(rule.uncuedHeader ? { uncuedHeader: true as const } : {}),
+        // A header's "X Y" after "for" is the patient when X is a known given name; any other
+        // header subject stays a title (find() drops it unless it reads "SURNAME, Given").
+        ...(rule.uncuedHeader && !forAKnownGivenName(text, start, trimmed)
+          ? { uncuedHeader: true as const }
+          : {}),
       });
       // Only an immediately linked checksum control inherits a SIN/NAS
       // field. An unrelated nine-digit measurement never inherits it.
@@ -4065,6 +4100,27 @@ function keepShortBirthCue(
 // no person cue counts only in this form. A person field near a "Given Surname" run tells a
 // person's document, not that the run is the person: "Referral Letter: Orthopaedic Surgery"
 // stands over "DOB: …" as often as a name does, on the next line or in a column (#264 review).
+// The words that introduce a document's subject in a header: "Home-care plan for Avery Example".
+const HEADER_FOR =
+  /(?:^|[^\p{L}])(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \t]+$/u;
+/**
+ * A header line's name that follows "for" (or its words in the other languages) and whose first
+ * word is a known given name (`isKnownGivenName`): a person, not a topic. "Care Plan: Fall
+ * Prevention" has no such word before it and "Fall" is no given name, so it stays a title. Names
+ * that are also ordinary words (Rose, May, Faith) are in the list on purpose: the rule still
+ * needs the header shape, two words of a name and the care-document heading before them.
+ */
+function forAKnownGivenName(
+  text: string,
+  start: number,
+  name: string,
+): boolean {
+  if (!HEADER_FOR.test(text.slice(Math.max(0, start - 16), start)))
+    return false;
+  const first = name.split(/[ \t]+/u, 1)[0];
+  return isKnownGivenName(first);
+}
+
 const SURNAME_FIRST_IN_CAPITALS = /^\p{Lu}[\p{Lu}'’ -]+,[ \t]+\p{Lu}/u;
 
 function find(text: string, options: DeidentifyOptions): Finding[] {
@@ -4293,6 +4349,9 @@ const GUARD_APOSTROPHE = /[’‘`´]/gu;
 const guardKey = (value: string) =>
   fold(value).toLowerCase().replace(GUARD_APOSTROPHE, "'");
 const EPONYM_FORMS = new Map<string, string[]>();
+// Forms made up from a name alone ("de quervain", "wolff-parkinson-white"): they guard the name
+// from removal, but are never offered as "a medical term" (the native check has no such phrase).
+const BARE_NAME_FORMS = new Set<string>();
 for (const entry of allowList.eponyms) {
   // An eponym named for several people stands alone too: "Wolff-Parkinson-White".
   const together =
@@ -4308,8 +4367,12 @@ for (const entry of allowList.eponyms) {
       const forms = EPONYM_FORMS.get(key) ?? [];
       // A name of several words is also guarded as it stands alone
       // ("Wolff-Parkinson-White", "De Quervain"), not only inside a phrase.
-      if (/[\s-]/u.test(whole)) forms.push(whole);
+      if (/[\s-]/u.test(whole)) {
+        forms.push(whole);
+        BARE_NAME_FORMS.add(whole);
+      }
       forms.push(...together);
+      for (const form of together) BARE_NAME_FORMS.add(form);
       for (const form of entry.forms) forms.push(guardKey(form));
       EPONYM_FORMS.set(key, forms);
     }
@@ -4397,7 +4460,7 @@ function readsAsDrug(
 // A title right before a word: "Dr. Holter" is a person even though "Holter" alone is on
 // the allow-list (#228 review).
 const TITLE_RIGHT_BEFORE =
-  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)[ \t]+$/u;
+  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)(?:[ \t]+|[ \t]*\r?\n[ \t]*)$/u;
 /** `afterPerson`: a name rule found the word right after a role, a relation or a title. */
 function isMedicalTerm(
   text: string,
@@ -4436,6 +4499,75 @@ function isMedicalTerm(
     }
   }
   return false;
+}
+
+/**
+ * The eponym phrase a lone word stands in ("Graves' disease", "Bell's palsy", "maladie d'Addison"),
+ * as the document wrote it, or null: only one word, not right after a title ("Mrs. Graves"), and
+ * only a phrase of the allow-list. A drug or a look-alike phrase is not offered. Read for the
+ * preview's "This may be a medical term"; it decides nothing about what is removed.
+ */
+function eponymPhraseAt(
+  text: string,
+  start: number,
+  end: number,
+): string | null {
+  const word = text.slice(start, end);
+  if (/[\s,;:]/u.test(word)) return null;
+  if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
+    return null;
+  const from = Math.max(0, start - GUARD_REACH);
+  const windowText = text.slice(from, end + GUARD_REACH);
+  // The window as the guard reads it. A letter whose fold is longer or shorter (a ligature, "ß")
+  // moves the folded positions, so the word's span and the phrase found are carried between the
+  // folded copy and the document's own text through the copy's own map.
+  const matching = matchingCopy(windowText);
+  const guarded = matching.copy.toLowerCase().replace(GUARD_APOSTROPHE, "'");
+  if (guarded.length !== matching.copy.length) return null;
+  const copyAt = (offset: number) => {
+    let index = 0;
+    while (index < matching.copy.length && matching.toSource[index] < offset)
+      index += 1;
+    return index;
+  };
+  const spanStart = copyAt(start - from);
+  const spanEnd = copyAt(end - from);
+  // The longest phrase that holds the word ("Graves' disease", not "Graves'").
+  let best: { at: number; length: number } | null = null;
+  for (const key of new Set([
+    guardKey(word),
+    ...guardKey(word).split(/[^\p{L}'-]+/u),
+  ])) {
+    const forms = EPONYM_FORMS.get(key);
+    if (!forms) continue;
+    for (const form of forms) {
+      if (form === guardKey(word) || BARE_NAME_FORMS.has(form)) continue;
+      for (
+        let at = guarded.indexOf(form);
+        at >= 0;
+        at = guarded.indexOf(form, at + 1)
+      )
+        if (
+          at < spanEnd &&
+          spanStart < at + form.length &&
+          (!best || form.length > best.length)
+        )
+          best = { at, length: form.length };
+    }
+  }
+  if (best) {
+    const [phraseStart, phraseEnd] = toSourceRange(
+      matching,
+      best.at,
+      best.at + best.length,
+    );
+    const phrase = windowText.slice(phraseStart, phraseEnd);
+    // Only a word with a possessive ("Graves' son", "Bell's wife") is a person's relation, not a
+    // term: it is offered only inside a phrase that names the condition ("Graves' disease").
+    if (/^[\p{L}\p{M}-]+(?:['’‘`´]s?)?$/u.test(phrase)) return null;
+    return phrase;
+  }
+  return null;
 }
 
 /** A clinical role belongs to this occurrence, never to a surname globally.
@@ -4713,6 +4845,7 @@ function build(
     }
     return number;
   };
+  const formsOf = new Map<string, Map<string, number>>();
   const placeholder = (finding: Finding, original: string) => {
     const kind = finding.kind as Exclude<RemovedKind, "manual">;
     // A doctor is one placeholder by surname: "Dr. Blake Sample" and "Dr.
@@ -4728,11 +4861,31 @@ function build(
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
     const number = numberFor(kind, kind, identity);
-    return noted(
-      labels[kind],
-      number,
-      kind === "age" ? notes.ageOver90 : undefined,
-    );
+    // A known person written in another form (a surname after the full name, or the full name
+    // after a surname) keeps the person's number and takes a note of its own: paste-back puts
+    // each placeholder back as the words that stood there, never the first form's words.
+    let note = kind === "age" ? notes.ageOver90 : undefined;
+    if (kind === "name" && finding.person) {
+      const form = [
+        ...new Set(
+          fold(original)
+            .toLowerCase()
+            .split(/[^\p{L}\p{N}'’-]+/u)
+            .filter(Boolean),
+        ),
+      ]
+        .sort()
+        .join(" ");
+      const forms = formsOf.get(finding.person) ?? new Map<string, number>();
+      formsOf.set(finding.person, forms);
+      let index = forms.get(form);
+      if (index === undefined) {
+        index = forms.size;
+        forms.set(form, index);
+      }
+      if (index > 0) note = notes.otherForm(index);
+    }
+    return noted(labels[kind], number, note);
   };
 
   // Dates (#72): none is sent. Each distinct whole date gets a number in
@@ -4772,6 +4925,36 @@ function build(
     const number = numberFor("date", "unclearDate", `date:${iso}`);
     if (earliest && iso === earliest[0]) earliestNumber = number;
   });
+  // A day and a month with no year ("Jan 28", "14 février", "2月14日") is numbered in month-and-day
+  // order after the dated ones, whichever the text names first, so "Jan 28" comes before "Feb 14".
+  // Nothing says which year each belongs to, so none is given and no gap is counted: the order
+  // among them is the calendar order within one year, and says nothing about the dated ones.
+  //
+  // Unless they run across the new year: "Seen Dec 28; review Jan 4" is probably Jan 4 of the next
+  // year, so numbering Jan 4 below Dec 28 would tell an AI that reads lower numbers as earlier that
+  // the review came first. When a yearless date named later in the text falls six or more months
+  // before one named earlier, the calendar order within one year is not known to be the order in
+  // time, and they keep the order the text names them in.
+  const inTextOrder = [
+    ...new Set(
+      [...readings.values()]
+        .filter((reading) => reading.kind === "partial")
+        .map((reading) => reading.key)
+        .filter((key) => key.startsWith("md")),
+    ),
+  ];
+  const monthOf = (key: string) => Number(key.slice(2, 4));
+  const crossesNewYear = inTextOrder.some((later, at) =>
+    inTextOrder
+      .slice(0, at)
+      .some((earlier) => monthOf(earlier) - monthOf(later) >= 6),
+  );
+  const yearless = crossesNewYear ? inTextOrder : [...inTextOrder].sort();
+  for (const key of yearless)
+    numberFor("date", "unclearDate", `partial:${key}`);
+  // Other partial dates (a month and year, a year alone) are not numbered above: each takes the next
+  // number as it is first met in the text, after the dated and yearless ones, with no gap (nothing
+  // says how far each is from another date, and their order in the text is the only order known).
   const datePlaceholder = (reading: DateReading) => {
     if (reading.kind === "full") {
       const number = numberFor("date", "unclearDate", `date:${reading.iso}`);
@@ -4845,6 +5028,10 @@ function build(
     text += source.slice(at, finding.start);
     const sentStart = text.length;
     text += replacement;
+    const eponym =
+      kind === "name"
+        ? (eponymPhraseAt(source, finding.start, finding.end) ?? undefined)
+        : undefined;
     removed.push({
       kind,
       original,
@@ -4853,6 +5040,7 @@ function build(
       end: finding.end,
       sentStart,
       sentEnd: text.length,
+      ...(eponym ? { eponym } : {}),
     });
     at = finding.end;
   }
@@ -4936,6 +5124,104 @@ export function removeMore(
   return build(source, findings, settings);
 }
 
+/**
+ * The patient keeps one removed word as a medical term (the preview's "Keep" beside "This may be a
+ * medical term: Graves' disease"): the part whose replacement stands at `sentStart` to `sentEnd`
+ * in the text to send, which must be marked `eponym`, is put back as the document wrote it. Every
+ * other removal stays as it was, so paste-back still restores exactly.
+ */
+export function keepAsMedicalTerm(
+  deidentified: Deidentified,
+  sentStart: number,
+  sentEnd: number,
+): Deidentified {
+  const part = deidentified.onDevice.removed.find(
+    (candidate) =>
+      candidate.sentStart === sentStart && candidate.sentEnd === sentEnd,
+  );
+  if (!part?.eponym) throw new RangeError("not a medical term candidate");
+  return keepEponyms(deidentified, (other) => other === part);
+}
+
+/** "Keep all" for one phrase: every removal marked with that eponym phrase, whichever its case. */
+export function keepAllAsMedicalTerm(
+  deidentified: Deidentified,
+  phrase: string,
+): Deidentified {
+  const wanted = guardKey(phrase);
+  return keepEponyms(
+    deidentified,
+    (part) => part.eponym !== undefined && guardKey(part.eponym) === wanted,
+  );
+}
+
+/**
+ * Where the patient's kept medical terms stand in the text to send, in UTF-16 units: every
+ * occurrence of each kept phrase, whichever its case. These go with a save or a copy as a CLAIM:
+ * the native re-check spares a standing surname only inside a range that is, in its own copy of
+ * the allow-list, a medical phrase, and only that phrase's name word (#366).
+ */
+export function keptEponymRanges(
+  deidentified: Deidentified,
+): { start: number; end: number }[] {
+  const phrases = deidentified.onDevice.keptEponyms ?? [];
+  if (phrases.length === 0) return [];
+  // The matching copy knows where each of its letters came from, so a letter whose fold is longer
+  // or shorter (a ligature, "ß") cannot shift a range. A lower-casing that changes the length
+  // (rare) gives no ranges: the native check then refuses, never spares.
+  const matching = matchingCopy(deidentified.toSend);
+  const folded = matching.copy.toLowerCase().replace(GUARD_APOSTROPHE, "'");
+  if (folded.length !== matching.copy.length) return [];
+  const ranges: { start: number; end: number }[] = [];
+  for (const phrase of new Set(phrases.map(guardKey))) {
+    if (!phrase) continue;
+    for (
+      let found = folded.indexOf(phrase);
+      found >= 0;
+      found = folded.indexOf(phrase, found + 1)
+    ) {
+      const [start, end] = toSourceRange(
+        matching,
+        found,
+        found + phrase.length,
+      );
+      ranges.push({ start, end });
+    }
+  }
+  return ranges.sort((a, b) => a.start - b.start).slice(0, 200);
+}
+
+function keepEponyms(
+  deidentified: Deidentified,
+  keep: (part: Removed) => boolean,
+): Deidentified {
+  const { removed, possibleNames, source, ...onDeviceSettings } =
+    deidentified.onDevice;
+  const kept = removed
+    .filter((part) => keep(part) && part.eponym)
+    .map((part) => part.eponym as string);
+  const settings = {
+    ...onDeviceSettings,
+    keptEponyms: [...(onDeviceSettings.keptEponyms ?? []), ...kept],
+  };
+  const findings: Finding[] = [
+    ...removed
+      .filter((part) => !keep(part))
+      .map((part) => ({
+        kind: part.kind,
+        start: part.start,
+        end: part.end,
+        replacement: part.replacement,
+      })),
+    ...possibleNames.map((possible) => ({
+      kind: "possibleName" as const,
+      start: possible.start,
+      end: possible.end,
+    })),
+  ].sort((a, b) => a.start - b.start);
+  return build(source, findings, settings);
+}
+
 /** A placeholder as written, split into its parts (#72): the word, the
  * number and the note after the number, if any. One grammar for every kind:
  * "[NAME 1]", "[DATE 2, 14 days after DATE 1]", "[AGE 1, 90+]". */
@@ -4964,6 +5250,7 @@ interface Mark {
   number: number;
   ageOver90?: true;
   daysAfter?: { days: number; ref: number };
+  otherForm?: number;
 }
 
 function readMark(
@@ -4982,6 +5269,15 @@ function readMark(
   const note = inner[2];
   if (note === undefined) return { number };
   if (note === notes.ageOver90) return { number, ageOver90: true };
+  // Another form of a name ("other form 2"): read the number from the note's digits and check that
+  // the note is exactly what this export's words write for it, so no wording is formatted blind
+  // and a hundredth form reads as well as the second.
+  const formDigits = /^\D*(\d+)\D*$/u.exec(note);
+  if (formDigits) {
+    const n = Number(formDigits[1]);
+    if (Number.isSafeInteger(n) && n >= 1 && notes.otherForm(n) === note)
+      return { number, otherForm: n };
+  }
   // A gap note: find its two numbers by writing it again. A language may
   // group the digits of a long gap ("1,234", "1 234").
   const values = new Set<number>();
@@ -5019,13 +5315,15 @@ function spellings(
   const noteIn = (language: PlaceholderVocabulary) =>
     mark.ageOver90
       ? language.notes.ageOver90
-      : mark.daysAfter
-        ? language.notes.daysAfter(
-            mark.daysAfter.days,
-            language.labels.unclearDate,
-            mark.daysAfter.ref,
-          )
-        : undefined;
+      : mark.otherForm
+        ? language.notes.otherForm(mark.otherForm)
+        : mark.daysAfter
+          ? language.notes.daysAfter(
+              mark.daysAfter.days,
+              language.labels.unclearDate,
+              mark.daysAfter.ref,
+            )
+          : undefined;
   const result = new Set<string>();
   for (const language of languages) {
     const word = language.labels[kind];
@@ -5052,9 +5350,11 @@ export interface RestoredPart {
  * (#72), on the device, and says what it could not (never guessing): each
  * placeholder of this export, written exactly as it was sent, becomes what it
  * stood for. A placeholder-shaped text that is not one of this export's, or
- * one of this export's whose note after the number was changed or left out,
- * is left as written and marked "flagged". A date that stood in several
- * spellings comes back as the first one. Ambiguous placeholders from older
+ * one of this export's whose note after the number was changed, is left as
+ * written and marked "flagged". A name's note that was left out is not an
+ * error: "[NAME 1]" is put back as the first form of that person seen (the
+ * note only tells the other forms apart), never as words the text did not
+ * have. A date that stood in several spellings comes back as the first one. Ambiguous placeholders from older
  * snapshots (literal source markers or conflicting manual IDs) stay
  * unresolved, and are flagged.
  *

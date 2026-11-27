@@ -255,18 +255,26 @@ impl VaultStore {
         token: &str,
         check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
     ) -> PushOutcome {
+        self.push_received_for_session(self.portal_link_ticket(), token, check)
+    }
+
+    fn push_received_for_session(
+        &self,
+        session: u64,
+        token: &str,
+        check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
+    ) -> PushOutcome {
         let Ok(token) = NoticeToken::parse(token) else {
             return PushOutcome::Ignored;
         };
         let Ok(mut inbox) = self.push_inbox.lock() else {
             return PushOutcome::Ignored;
         };
-        if !inbox.first_time(&token) {
-            return PushOutcome::Ignored;
-        }
-        let session = self.portal_link_ticket();
         let open = {
             let guard = self.session();
+            if self.portal_link_ticket() != session || !inbox.first_time(&token) {
+                return PushOutcome::Ignored;
+            }
             guard
                 .as_ref()
                 .map(|o| o.recovery.is_none() && o.manifest.remote_notices.opted_in())
@@ -292,12 +300,13 @@ impl VaultStore {
     #[cfg(any(test, all(target_os = "android", feature = "android-push")))]
     pub(crate) fn android_notice_received(
         &self,
+        received_session: u64,
         token: &NoticeToken,
         check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
         display: impl FnOnce(),
     ) -> PushOutcome {
         let mut arrival_session = None;
-        let outcome = self.push_received(token.as_str(), |session| {
+        let outcome = self.push_received_for_session(received_session, token.as_str(), |session| {
             let result = check(session)?;
             if result.added > 0 {
                 arrival_session = Some(session);
@@ -468,7 +477,6 @@ mod tests {
             .clone()
     }
 
-    /// Every file's bytes under `root`, but the open store's lock file: it is empty, and on
     #[test]
     fn android_only_displays_new_authenticated_arrivals_for_current_consent() {
         let (_temp, store, _) = store_with_links();
@@ -481,14 +489,12 @@ mod tests {
         let result = |added| {
             Ok(crate::portal_pickup::CheckResult {
                 added,
-                refused: 0,
-                receipts_pending: 0,
-                issues: vec![],
+                ..Default::default()
             })
         };
         let never = || panic!("unexpected local display");
         assert_eq!(
-            store.android_notice_received(&token(0), |_| panic!("no consent"), never),
+            store.android_notice_received(session, &token(0), |_| panic!("no consent"), never),
             PushOutcome::Ignored
         );
         let seen = RefCell::new(Vec::new());
@@ -497,12 +503,22 @@ mod tests {
             .set_remote_notices(true, &source, session, &exchange)
             .unwrap();
         assert_eq!(
-            store.android_notice_received(&token(1), |_| result(0), never),
+            store.android_notice_received(
+                session.wrapping_sub(1),
+                &token(1),
+                |_| panic!("stale callback"),
+                never
+            ),
+            PushOutcome::Ignored
+        );
+        assert_eq!(
+            store.android_notice_received(session, &token(1), |_| result(0), never),
             PushOutcome::Checked
         );
         let displayed = std::cell::Cell::new(0);
         assert_eq!(
             store.android_notice_received(
+                session,
                 &token(2),
                 |_| result(1),
                 || displayed.set(displayed.get() + 1)
@@ -511,11 +527,12 @@ mod tests {
         );
         assert_eq!(displayed.get(), 1);
         assert_eq!(
-            store.android_notice_received(&token(2), |_| panic!("duplicate"), never),
+            store.android_notice_received(session, &token(2), |_| panic!("duplicate"), never),
             PushOutcome::Ignored
         );
         assert_eq!(
             store.android_notice_received(
+                session,
                 &token(3),
                 |_| {
                     store
@@ -529,6 +546,7 @@ mod tests {
         );
     }
 
+    /// Every file's bytes under `root`, but the open store's lock file: it is empty, and on
     /// Windows its byte-range lock refuses a read while the store is open (OS error 33).
     fn files_under(root: &Path) -> Vec<Vec<u8>> {
         let mut found = Vec::new();

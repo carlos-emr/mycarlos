@@ -275,7 +275,7 @@ fn actual_document_text_preserves_scan_and_form_extraction_limits() {
     let profile = store.snapshot().unwrap().profiles[0].id;
     let picks = Arc::new(PendingPicks::default());
     let app = tauri::test::mock_builder()
-        .manage(Arc::clone(&store))
+        .manage(StoreHandle::single(Arc::clone(&store)))
         .manage(Arc::clone(&picks))
         .build(production_context())
         .unwrap();

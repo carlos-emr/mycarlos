@@ -290,7 +290,17 @@ mod native {
             cancelled,
         )
         .map_err(VaultError::Portal)?;
-        refuse_rate_limited(&response)?;
+        read_published(link, attempt, &response)
+    }
+    /// A reply to publishing a request as `publish` reads it: a wait the portal asked for, said
+    /// as such; anything but 200 or 201 a failure to connect; else the request's state. Kept
+    /// apart from the HTTP call so that it can be tested, as `read_status` is.
+    fn read_published(
+        link: &StoredLink,
+        attempt: &Attempt,
+        response: &crate::portal_client::ApiResponse,
+    ) -> Result<Attempt, VaultError> {
+        refuse_rate_limited(response)?;
         if response.status != 200 && response.status != 201 {
             return Err(VaultError::Portal(LinkError::Network));
         }
@@ -1116,6 +1126,167 @@ mod native {
                 assert!(refuse_rate_limited(&reply(status, Some(30))).is_ok());
             }
         }
+
+        fn pending_reply(attempt: &Attempt) -> serde_json::Value {
+            serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null})
+        }
+        #[test]
+        fn publishing_reads_only_a_200_or_201_state_and_says_a_wait_as_a_wait() {
+            let (_, link, attempt) = crate::portal_approval::first_fixture();
+            for status in [200, 201] {
+                let published = read_published(
+                    &link,
+                    &attempt,
+                    &reply(status, pending_reply(&attempt), None),
+                )
+                .unwrap();
+                assert_eq!(published.state(), ApprovalState::Pending, "{status}");
+                assert_eq!(published.request_id, attempt.request_id);
+            }
+            // A wait the portal asked for keeps its length, whatever else the body says.
+            assert!(matches!(
+                read_published(&link, &attempt, &reply(429, pending_reply(&attempt), None)),
+                Err(VaultError::Portal(LinkError::RateLimited(Some(30))))
+            ));
+            // Any other status is a failure to connect, even with a state in the body.
+            for status in [202, 204, 400, 403, 404, 409, 500, 503] {
+                assert!(
+                    matches!(
+                        read_published(
+                            &link,
+                            &attempt,
+                            &reply(status, pending_reply(&attempt), None)
+                        ),
+                        Err(VaultError::Portal(LinkError::Network))
+                    ),
+                    "{status}"
+                );
+            }
+            // A 200 that is not this request's state is not believed.
+            let other = serde_json::json!({"request_id":Uuid::from_u128(9),"status":"pending","challenge":null,"acceptance":null,"reason":null});
+            for body in [serde_json::json!({}), serde_json::json!([]), other] {
+                assert!(
+                    matches!(
+                        read_published(&link, &attempt, &reply(200, body, None)),
+                        Err(VaultError::Portal(LinkError::InvalidResponse))
+                    ),
+                    "an unusable 200"
+                );
+            }
+        }
+        /// The three calls that reach the portal, each by name.
+        type Call = fn(&StoredLink, &Attempt, &dyn Fn() -> bool) -> Result<(), VaultError>;
+        const CALLS: [(&str, Call); 3] = [
+            ("publish", |link, attempt, cancelled| {
+                publish(link, attempt, "anchor", cancelled).map(|_| ())
+            }),
+            ("send_code", |link, attempt, cancelled| {
+                send_code(link, attempt, "482193", "anchor", cancelled)
+            }),
+            ("refresh", |link, attempt, cancelled| {
+                refresh(link, attempt, cancelled).map(|_| ())
+            }),
+        ];
+        // The HTTP client is https-only and trusts the platform's certificates, so no loopback
+        // server can stand in for a portal: what is checked here is everything that happens
+        // before, or instead of, a reply.
+        #[test]
+        fn a_cancelled_call_stops_before_it_reaches_the_portal() {
+            let (_, link, attempt) = crate::portal_approval::first_fixture();
+            for (name, call) in CALLS {
+                assert!(
+                    matches!(
+                        call(&link, &attempt, &|| true),
+                        Err(VaultError::Portal(LinkError::Cancelled))
+                    ),
+                    "{name}"
+                );
+            }
+        }
+        #[test]
+        fn a_link_that_cannot_name_a_portal_or_a_clinic_sends_nothing() {
+            let (_, link, attempt) = crate::portal_approval::first_fixture();
+            let mut no_clinic = link.clone();
+            no_clinic.clinic = None;
+            let mut no_portal = link.clone();
+            no_portal.portal_base = "not a url".into();
+            for (name, call) in CALLS {
+                assert!(
+                    matches!(
+                        call(&no_clinic, &attempt, &|| false),
+                        Err(VaultError::Portal(LinkError::InvalidResponse))
+                    ),
+                    "{name}: no clinic to sign for"
+                );
+                assert!(
+                    matches!(
+                        call(&no_portal, &attempt, &|| false),
+                        Err(VaultError::Portal(LinkError::InvalidPortal))
+                    ),
+                    "{name}: no portal to ask"
+                );
+            }
+        }
+        #[test]
+        fn a_portal_that_cannot_be_reached_is_a_failure_to_connect() {
+            // Nothing listens on port 1 of this machine: the connection is refused at once and
+            // no other host is contacted.
+            let (_, mut link, attempt) = crate::portal_approval::first_fixture();
+            link.portal_base = "https://127.0.0.1:1".into();
+            for (name, call) in CALLS {
+                assert!(
+                    matches!(
+                        call(&link, &attempt, &|| false),
+                        Err(VaultError::Portal(LinkError::Network))
+                    ),
+                    "{name}"
+                );
+            }
+        }
+        #[test]
+        fn a_code_that_is_not_six_digits_is_refused_before_anything_is_signed_or_sent() {
+            let (_, link, attempt) = crate::portal_approval::first_fixture();
+            for code in [
+                "",
+                "12345",
+                "1234567",
+                "12345a",
+                "12 456",
+                "١٢٣٤٥٦",
+                "-12345",
+            ] {
+                let asked = std::cell::Cell::new(false);
+                let result = send_code(&link, &attempt, code, "anchor", &|| {
+                    asked.set(true);
+                    false
+                });
+                assert!(matches!(result, Err(VaultError::Invalid)), "{code:?}");
+                assert!(!asked.get(), "{code:?}: the portal call was never started");
+            }
+        }
+        #[test]
+        fn the_http_exchange_passes_each_call_on_unchanged_and_keeps_no_clock_from_a_failure() {
+            use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
+            let (_, link, attempt) = crate::portal_approval::first_fixture();
+            let http = ApprovalHttp::default();
+            assert!(matches!(
+                http.get(&link, &attempt, &|| true),
+                Err(VaultError::Portal(LinkError::Cancelled))
+            ));
+            assert!(matches!(
+                http.post(&link, &attempt, "anchor", &|| true),
+                Err(VaultError::Portal(LinkError::Cancelled))
+            ));
+            assert!(matches!(
+                http.submit_code(&link, &attempt, "482193", "anchor", &|| true),
+                Err(VaultError::Portal(LinkError::Cancelled))
+            ));
+            assert!(matches!(
+                http.submit_code(&link, &attempt, "48219", "anchor", &|| false),
+                Err(VaultError::Invalid)
+            ));
+            assert_eq!(http.portal_time(), None);
+        }
     }
 }
 pub(crate) use native::request_expires_at;
@@ -1467,3 +1638,6 @@ impl ApprovalExchange for ApprovalHttp {
         crate::portal_approval::send_code(link, attempt, code_r, anchor, cancelled)
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

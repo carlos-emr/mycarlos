@@ -9,6 +9,7 @@
   --ink: #12211f;
   --ink-soft: #4a5f5c;
   --ink-faint: #596d6a;
+  --muted: var(--ink-soft);
   --teal: #0f6b62;
   --teal-dark: #0a4f48;
   --teal-soft: #e4f2f0;
@@ -55,6 +56,8 @@
   --thumb-shadow: rgb(0 0 0 / 15%);
   --backdrop: rgb(8 28 25 / 48%);
   --camera-view: #000;
+  --picture-chip-bg: rgb(0 0 0 / 65%);
+  --picture-chip-text: #fff;
   --dialog-shadow: rgb(8 28 25 / 28%);
   --metadata-line: #edf0ef;
   --disabled-ink: #4a5f5c;
@@ -118,6 +121,8 @@
   --thumb-shadow: rgb(0 0 0 / 30%);
   --backdrop: rgb(0 0 0 / 62%);
   --camera-view: #000;
+  --picture-chip-bg: rgb(0 0 0 / 65%);
+  --picture-chip-text: #fff;
   --dialog-shadow: rgb(0 0 0 / 48%);
   --metadata-line: #3b5148;
   --disabled-ink: #b8cbc5;
@@ -1097,6 +1102,29 @@ p {
   outline-offset: 1px;
   border-radius: 2px;
 }
+/* While the page picture shows the quote (its boxes are drawn), the text's mark is not drawn a
+   second time: it keeps the focus, its place in the reading order and its words for assistive
+   technology (it is neither hidden from them nor moved), but a sighted reader sees the picture's
+   highlight only. A keyboard user still sees where the focus is. Forced colours would otherwise
+   paint a mark in Highlight, so they are not adjusted for it here (its colours are the plain
+   text's). Where the words could not be placed on the picture, the class is absent and the mark
+   above is the highlight. */
+.native-reader-text-mark-quiet mark {
+  background: transparent;
+  color: inherit;
+  outline: none;
+  border-radius: 0;
+  forced-color-adjust: none;
+}
+.native-reader-text-mark-quiet mark:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+@media (forced-colors: active) {
+  .native-reader-text-mark-quiet mark:focus-visible {
+    outline-color: Highlight;
+  }
+}
 /* The page picture, and the quoted words' boxes over it (#292). A box is a
    fraction of the picture, so it stays on its words at every zoom. The picture
    is always white paper, so every theme gives the boxes the same colours: an
@@ -1130,7 +1158,7 @@ p {
     mix-blend-mode: normal;
   }
 }
-/* While Show in document marks a quote, the text and the AI panel give the
+/* While Show me in the document marks a quote, the text and the AI panel give the
    picture room, so that a short or narrow window keeps the words in view in
    both places (#292). */
 /* The text box scrolls in its own region; capping the details around it only
@@ -1214,6 +1242,37 @@ p {
   color: var(--ink);
   font-weight: 700;
 }
+/* "Don't show this again" and the short tag's info button sit beside the warning, 44px high. */
+.native-reader-ai .ai-label-hide,
+.native-reader-ai .ai-label-info {
+  margin-inline-start: 4px;
+  min-height: 44px;
+  font-weight: 600;
+}
+.native-reader-ai .ai-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.native-reader-ai .ai-label-row .ai-label,
+.native-reader-ai .ai-label-short .ai-label {
+  margin: 0;
+}
+.native-reader-ai .native-reader-ai-about {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-bottom: 12px;
+}
+.native-reader-ai .native-reader-ai-about h4,
+.native-reader-ai .native-reader-ai-about p {
+  margin: 0;
+}
+.native-reader-ai .native-reader-ai-about p {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
 .native-reader-ai .ai-meta {
   color: var(--ink-soft);
   font-size: 0.875rem;
@@ -1244,6 +1303,26 @@ p {
 }
 .native-anonymize-notes p {
   margin: 0;
+}
+/* "Removing details is never perfect": the warning a patient must not skip. */
+.native-anonymize-notes .native-anonymize-warning {
+  padding: 8px 12px;
+  border: 1px solid var(--warning-line);
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: var(--warning-ink);
+  font-weight: 700;
+}
+/* Beside Save: where to paste, and what the saved file is. */
+.native-anonymize-advice {
+  display: grid;
+  gap: 6px;
+  padding: 8px 20px 0;
+}
+.native-anonymize-advice p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.875rem;
 }
 .native-anonymize-header {
   margin: 0;
@@ -1285,6 +1364,47 @@ p {
   text-decoration: underline;
   text-decoration-style: dotted;
 }
+/* A word still in the text that may identify someone ("check this"): outlined, like the flags on
+   an answer pasted back, and a pointer, since a click offers Remove. */
+.native-anonymize-text .native-anonymize-check {
+  padding: 0 2px;
+  background: transparent;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  color: inherit;
+  text-decoration: underline wavy;
+  cursor: pointer;
+}
+.native-anonymize-text .native-anonymize-check-picked {
+  background: var(--teal-soft);
+}
+.native-anonymize-checks {
+  padding: 8px 20px 0;
+}
+.native-anonymize-checks summary {
+  min-height: 44px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.native-anonymize-checks p {
+  margin: 4px 0 8px;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.native-anonymize-checks ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.native-anonymize-picked {
+  margin: 0;
+  padding: 8px 20px 0;
+  font-size: 0.875rem;
+}
 .native-anonymize-text mark.native-anonymize-flagged {
   background: transparent;
   border: 2px solid currentColor;
@@ -1324,6 +1444,14 @@ p {
 .native-anonymize-paste .native-anonymize-text {
   margin: 0;
 }
+/* What has been removed, by kind, above the text it is marked in. */
+.native-anonymize-summary {
+  margin: 0;
+  padding: 8px 20px 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
 .native-anonymize-possible {
   padding: 8px 20px 0;
 }
@@ -1340,23 +1468,29 @@ p {
   list-style: none;
 }
 .native-anonymize-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px;
+  display: grid;
+  gap: 14px;
   padding: 10px 20px;
 }
-.native-anonymize-tools label {
+/* Each group has a row of its own, its buttons side by side and wrapping. */
+.native-anonymize-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.native-anonymize-phrase {
   display: grid;
-  gap: 5px;
-  flex: 1;
-  min-width: 12em;
+  gap: 6px;
+  min-width: 0;
+}
+.native-anonymize-tools label {
   color: var(--ink-soft);
   font-size: 0.875rem;
   font-weight: 700;
 }
 .native-anonymize-tools input {
   width: 100%;
+  max-width: 36em;
   min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -1366,8 +1500,17 @@ p {
   font: inherit;
 }
 .native-anonymize .native-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
   padding: 10px 20px 16px;
+}
+/* On a wide window Close is the last button of the action row, at its end
+   edge (bottom right; bottom left in a right-to-left language), 44px tall
+   like Save. */
+.native-anonymize .native-dialog-actions .button {
+  min-height: 44px;
 }
 
 .filelist {
@@ -1542,6 +1685,18 @@ p {
   border-color: var(--teal-line);
   background: var(--teal-soft);
   color: var(--teal-dark);
+}
+/* What a handover file says of its own evidence (#360): plain, muted, no mark and no green. */
+.record-file-claim {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--muted);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+/* A row or a tile is one line: the claim is in Details and the reader. */
+:is(.file-row, .file-tile) .record-file-claim {
+  display: none;
 }
 .record-source-name {
   min-width: 0;
@@ -2587,7 +2742,7 @@ p {
 
 /* #67: bigger by default in the app. Body text is 16px; counts, dates, captions and
    other secondary text stay at 14px, the floor. Every button, tick box, field and link
-   is a target of at least 44px. Text size in Preferences still scales all of it. */
+   is a target of at least 44px. App zoom in Preferences still scales all of it. */
 .native-vault-page
   :is(
     .button,
@@ -3524,6 +3679,230 @@ p {
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* Recording a video, and playing one (#359). */
+.record-video-dialog .record-device-note {
+  margin: 0;
+}
+.record-video-dialog .record-device-note:empty {
+  min-height: 0;
+}
+.record-video-dialog .record-devices {
+  display: grid;
+  gap: 8px;
+}
+.record-video-dialog .record-device {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.record-video-dialog .record-device select {
+  min-height: 44px;
+  max-width: 100%;
+}
+.record-video-dialog .record-mic-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.record-video-dialog .record-mic-test meter {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  height: 1.25rem;
+}
+.record-video-dialog .record-quality {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.record-video-dialog .record-quality legend {
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+.record-quality-size {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+/* The Record video dialog (the RestRecord design): a title bar with Close, the picture and its
+   controls in one column and the settings in a column of their own. The settings sit beside the
+   picture on a wide window and below it on a narrow one (a phone, 200% zoom); in the markup they
+   come after the picture and its controls, so the reading and Tab order is the same either way.
+   The picture and Start are centred in their own column. */
+.record-video-dialog {
+  width: min(980px, 100%);
+}
+.record-video-dialog .record-head {
+  align-items: center;
+}
+.record-video-dialog .record-head h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.record-video-dialog .record-close {
+  flex: none;
+  min-height: 44px;
+}
+.record-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.record-main {
+  align-content: start;
+}
+.record-preview {
+  position: relative;
+}
+/* The elapsed time on the camera picture: white on a dark chip in every theme (it sits on the
+   picture, not on the page); the two colours are theme variables like every other. */
+.record-preview .record-clock {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--picture-chip-bg);
+  color: var(--picture-chip-text);
+  font-size: 0.875rem;
+}
+.record-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.record-controls .button {
+  min-height: 44px;
+}
+/* The one red Start pill of the design: --red is dark on a light page and light on a dark one,
+   and --on-accent the opposite, so the label is at least 4.5:1 in both. */
+.record-controls .record-start {
+  min-height: 52px;
+  padding: 0 26px;
+  border-color: var(--red);
+  border-radius: 26px;
+  background: var(--red);
+  color: var(--on-accent);
+  font-size: 1.0625rem;
+}
+.record-start-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.record-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+.record-video-dialog .record-settings .record-devices {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.record-video-dialog .record-settings .record-device select {
+  width: 100%;
+}
+.record-video-dialog .record-mic-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.record-settings-note {
+  margin: auto 0 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+@media (min-width: 52em) {
+  .record-layout.has-settings {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .record-layout.has-settings .record-settings {
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+.record-state {
+  display: grid;
+  gap: 6px;
+}
+.record-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-weight: 700;
+  color: var(--red);
+}
+.record-badge .icon {
+  width: 18px;
+  height: 18px;
+}
+.record-badge-paused {
+  color: var(--ink);
+}
+.record-paused-note,
+.record-delivered {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.record-clock {
+  width: fit-content;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+.record-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+.video-viewer {
+  width: min(960px, 100%);
+}
+.video-frame {
+  padding: 12px 20px;
+}
+.video-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+.video-controls .button {
+  min-height: 44px;
+}
+.video-player {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-sm);
+  background: var(--camera-view);
+}
+.video-unavailable {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.video-unavailable .link-action {
+  width: fit-content;
+}
 .photo-viewer-frame {
   max-height: 70vh;
   overflow: auto;
@@ -3861,12 +4240,157 @@ p {
 }
 .appearance-choice .appearance-option input {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   min-height: 0;
   margin: 0;
   padding: 0;
   border: 0;
+}
+/* Every Settings tick box is drawn in the app's own colour (it is a native box: its tick and its
+   focus ring stay the system's). */
+.appearance-choice .appearance-option input[type="checkbox"] {
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+/* Appearance and Language: real radio buttons (one group, arrow keys, the name
+   and the checked state read as before) drawn as buttons. The radio itself is
+   the button's box: it fills its label with no browser ring, and the words and
+   the check mark sit over it. The chosen one has a fill, a heavier border and a
+   check mark, so it is told apart by more than colour. Appearance is a row that
+   wraps to two by two; Language is a grid of one, two or three columns, by the
+   room its own box has, so a narrow window or enlarged text gets one. */
+.setting-row.choice-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  container-type: inline-size;
+}
+.appearance-choice.choice-segmented,
+.appearance-choice.choice-grid {
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+.appearance-choice.choice-segmented {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.appearance-choice.choice-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Two buttons side by side need about 8.5rem each so that the longest word of a
+   choice (Contraste, Português) fits on one line: with less room, one column.
+   (320px at 100% is about 16.4rem: 2x2. With text at 150% or more it is under
+   12rem: one column.) */
+@container (max-width: 15.99rem) {
+  .appearance-choice.choice-segmented {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (min-width: 42rem) {
+  .appearance-choice.choice-segmented {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container (min-width: 22rem) {
+  .appearance-choice.choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (min-width: 40rem) {
+  .appearance-choice.choice-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.choice-segmented .appearance-option,
+.choice-grid .appearance-option {
+  position: relative;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+}
+/* A mouse or trackpad needs less room than a finger. A device that also has a
+   touch screen (a touch laptop, a Surface) keeps 44px, as does anything else. */
+@media (pointer: fine) and (not (any-pointer: coarse)) {
+  .choice-segmented .appearance-option,
+  .choice-grid .appearance-option {
+    min-height: 36px;
+  }
+}
+.choice-segmented .appearance-option {
+  justify-content: center;
+  padding-inline: 1.25rem;
+  text-align: center;
+}
+/* In the row the words are centred, so the check mark sits in the button's
+   left padding instead of in the line, and choosing moves nothing. */
+.choice-segmented .choice-check {
+  position: absolute;
+  inset-inline-start: -1.125rem;
+  top: 50%;
+  margin-top: -0.5rem;
+}
+.appearance-choice.choice-segmented .appearance-option input,
+.appearance-choice.choice-grid .appearance-option input {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--control-line);
+  border-radius: inherit;
+  background: var(--paper);
+  cursor: pointer;
+}
+.appearance-choice.choice-segmented .appearance-option input:checked,
+.appearance-choice.choice-grid .appearance-option input:checked {
+  border-color: var(--green);
+  background: var(--green-soft);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+.appearance-choice.choice-segmented .appearance-option input:focus-visible,
+.appearance-choice.choice-grid .appearance-option input:focus-visible {
+  /* Inside the button's own box: .setting-list hides what runs past its edge, and
+     the rows' padding is 2px, so a ring drawn outside would be cut on the
+     outermost buttons (and on every button in one column). */
+  outline: 3px solid var(--focus);
+  outline-offset: -4px;
+}
+.choice-segmented .appearance-option > span,
+.choice-grid .appearance-option > span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  pointer-events: none;
+  /* A word breaks only when it cannot fit on a line of its own, never in the
+     middle of one that could (the row's base style allows a break anywhere). */
+  overflow-wrap: break-word;
+}
+.choice-check {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.appearance-option input:checked + span .choice-check {
+  visibility: visible;
+}
+/* A hint (Mandarin, beside Simplified Chinese) is a smaller second line. */
+.choice-hint {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--ink-soft);
 }
 :root[data-theme="high-contrast"]
   :is(button:disabled, .button[aria-disabled="true"]) {
@@ -3993,6 +4517,28 @@ button:disabled,
     outline: 3px solid CanvasText;
     outline-offset: -6px;
   }
+  /* The chosen button of a Preferences choice: the system's selection colours,
+     with its check mark, the words over it in the matching text colour. */
+  .appearance-choice.choice-segmented .appearance-option input:checked,
+  .appearance-choice.choice-grid .appearance-option input:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  /* Focus on the chosen one is drawn inside its Highlight fill, in the text
+     colour that goes with it, so it still shows against the fill. */
+  .appearance-choice.choice-segmented
+    .appearance-option
+    input:checked:focus-visible,
+  .appearance-choice.choice-grid
+    .appearance-option
+    input:checked:focus-visible {
+    outline: 3px solid HighlightText;
+    outline-offset: -6px;
+  }
+  .appearance-option input:checked + span,
+  .appearance-option input:checked + span .choice-hint {
+    color: HighlightText;
+  }
   .text-size-box input[aria-invalid="true"] {
     outline: 2px solid CanvasText;
   }
@@ -4089,8 +4635,22 @@ button:disabled,
   font-size: 0.875rem;
 }
 
+/* Connected clinics is full width, and reads like the other Security sections: the same
+   2px side inset as a settings row, a heading laid out as theirs is (below), and the text
+   under it in the same soft colour and line. */
 .portal-documents {
   margin-block-end: 2rem;
+  padding-inline: 2px;
+}
+/* In Security the clinics sit between two lists of settings. */
+.setting-list + .portal-documents {
+  margin-block-start: 1.25rem;
+}
+.portal-documents > p {
+  max-width: 700px;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  line-height: 1.5;
 }
 .portal-link {
   margin-block: 1.25rem;
@@ -4098,10 +4658,14 @@ button:disabled,
   border: 1px solid var(--line);
   border-radius: 0.5rem;
 }
-/* #124 review: "Clinic documents" is a Security section like the others, so
+/* #124 review: "Connected clinics" is a Security section like the others, so
    its heading has their size (.setting-row h2), and a clinic's name in its
    card is no larger than that heading. */
 .portal-documents > h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--ink);
   font-size: 1rem;
@@ -4137,7 +4701,7 @@ button:disabled,
   overflow-wrap: anywhere;
   font-family: monospace;
 }
-/* Clinic documents lists working links only; earlier attempts and each card's device code and
+/* Connected clinics lists working links only; earlier attempts and each card's device code and
    fingerprint wait behind a button and a disclosure. */
 .portal-device-details {
   margin-block: 0.75rem;
@@ -4152,7 +4716,8 @@ button:disabled,
 .portal-earlier-toggle {
   margin-block: 0.25rem 1rem;
 }
-.portal-address {
+.portal-address,
+.portal-device-line {
   overflow-wrap: anywhere;
 }
 .portal-documents .native-inline-form {
@@ -4264,25 +4829,14 @@ button:disabled,
   gap: 6px;
   min-width: 0;
   margin-bottom: 16px;
+  container-type: inline-size;
 }
 .language-title {
   font-size: 0.875rem;
   font-weight: 700;
 }
-.language-choices-compact {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  min-width: 0;
-  width: 100%;
-  max-width: none;
-}
-.language-choices-compact .appearance-option {
-  flex: 1 1 9rem;
-  min-width: 0;
-}
 .language-choices-compact .appearance-error {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -4590,6 +5144,95 @@ button:disabled,
 .language-button .icon {
   flex: none;
 }
+/* The language dialog's title may be long in some languages: it folds onto more lines (the general
+   .dialog-head h2 cuts it to one) and Close stays at the top right of the head, as in the document
+   details. */
+.native-language-dialog .dialog-head h2 {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.native-language-dialog .dialog-head > div {
+  flex: 1 1 auto;
+}
+/* In the language dialog the list lines up with the title above it: the same
+   20px as .dialog-head. */
 .native-language-dialog .language-compact {
   margin: 0;
+  padding: 14px 20px 6px;
+}
+
+/* Preferences: the tick-box choices read at body size, like the sentences beside them, and a long
+   explanation folds under "More about this" so the key fact stays in view. */
+.native-vault-page .setting-row .preferences-checks .appearance-option {
+  font-size: 1rem;
+}
+.preferences-checks {
+  max-width: 440px;
+}
+.more-about {
+  margin-top: 4px;
+}
+.more-about summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.more-about summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron says it is a control that opens: pointing right when closed, down when open. It is
+   drawn with borders in currentColor, not a text glyph, so it is there in forced-colours mode
+   and in WebView2, which lays the summary out as flex and so drops the browser's own marker. */
+.more-about summary::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.55em;
+  height: 0.55em;
+  margin-inline: 0.2em 0.1em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+.more-about[open] > summary::before {
+  transform: rotate(45deg);
+}
+.more-about summary:focus-visible {
+  outline-offset: 2px;
+}
+.more-about-body p:first-child {
+  margin-top: 2px;
+}
+
+/* Add a video: the button, its progress and its answer, as one item of the library's button row. */
+.add-video {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-video-progress {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-video-progress progress {
+  width: 10rem;
+  max-width: 100%;
+}
+.add-video-result {
+  margin: 0;
+  max-width: 32rem;
+}
+.add-video-progress > span {
+  display: inline-block;
+  min-width: 3.5ch;
+  text-align: end;
 }

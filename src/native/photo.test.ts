@@ -6,9 +6,11 @@ import {
   MAX_CAMERA_JPEG_BYTES,
   MAX_PHOTO_SIDE_PX,
   PHOTO_QUALITY,
+  cameraExplained,
   cameraFailure,
   cameraFailureMessage,
   isPhone,
+  rememberCameraExplained,
   namedAsPdf,
   photoName,
   encodePhoto,
@@ -421,5 +423,46 @@ describe("where the camera is offered (D97)", () => {
     expect(isPhone("ios")).toBe(true);
     for (const computer of ["windows", "macos", "linux", ""])
       expect(isPhone(computer), computer).toBe(false);
+  });
+});
+
+describe("what the camera dialog remembers and says about other failures", () => {
+  it("tells a failure with no better name that the camera could not be started", () => {
+    const message = cameraFailureMessage("other", "windows");
+    expect(message).toBe(
+      translate("en", "interface.photo.theCameraCouldNotBeStartedChoose"),
+    );
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  it("answers 'not explained' when the browser refuses its storage, and remembers nothing", () => {
+    const storage = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new DOMException("FAKE blocked", "SecurityError");
+      });
+    const write = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("FAKE blocked", "SecurityError");
+      });
+    try {
+      expect(cameraExplained()).toBe(false);
+      expect(() => rememberCameraExplained()).not.toThrow();
+    } finally {
+      storage.mockRestore();
+      write.mockRestore();
+    }
+  });
+
+  it("remembers that the camera worked once", () => {
+    window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+    try {
+      expect(cameraExplained()).toBe(false);
+      rememberCameraExplained();
+      expect(cameraExplained()).toBe(true);
+    } finally {
+      window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+    }
   });
 });

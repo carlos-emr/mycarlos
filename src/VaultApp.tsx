@@ -26,6 +26,7 @@ import {
   isLockedError,
   isMissingVaultError,
   isRecoveryModeError,
+  NATIVE_READER_ACTIVITY_EVENT,
   isRestoreUnfinished,
   vaultErrorMessage,
   vaultErrorNote,
@@ -37,11 +38,13 @@ import {
   type VaultStatus,
   type BoxKey,
 } from "./vault";
-import { receiveNoticeText } from "./native/receivedNotice";
+import { receiveNoticeText, sharedAddedText } from "./native/receivedNotice";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
+import { useAddVideo } from "./native/useAddVideo";
 import { ComfortSetup } from "./native/ComfortSetup";
 
+import { ConfirmDialog } from "./native/ConfirmDialog";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
@@ -69,6 +72,10 @@ import {
 } from "./native/unfinishedRecoveryKey";
 import { rememberOldBackupsGuide } from "./native/oldBackups";
 import {
+  rememberUnfinishedHandover,
+  takeUnfinishedHandover,
+} from "./native/unfinishedHandover";
+import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
   persistAutoLockMinutes,
@@ -91,6 +98,7 @@ const ACTIVITY_EVENTS = [
   "wheel",
   "keydown",
   "touchstart",
+  NATIVE_READER_ACTIVITY_EVENT,
   // Not "scroll": the page scrolls itself too (a focus move, content loading),
   // which would keep the vault open with nobody there. Scrolling by the
   // person comes as a wheel, touch, pointer or key event, and counts (#68).
@@ -176,42 +184,89 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   );
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice, noticeValue] = useTextState();
-  // Files shared from another app, waiting. Asked for at start, whenever the
-  // window comes back to the front (which is how a share arrives), and at
-  // unlock. Locked, only their count is shown; open, they go straight into
-  // Shared with me (#61, `acceptShared` below).
+  // Locked, show only the waiting count. Unlocked, import into Shared with me.
+  // One list at a time; an arrival during a list asks for another pass, even
+  // when this window was already focused (#53). An import is not waited for
+  // here: `acceptShared` takes one at a time and asks again once it is done, so
+  // a pending import never holds back a later list, including a new session's.
   const [received, setReceived] = useState<ReceivedFile[]>([]);
-  const acceptSharedRef = useRef<() => Promise<void>>(async () => undefined);
-  const refreshReceived = useCallback(
-    (): Promise<void> =>
-      bridge.listReceived().then(
-        async ({ files, notice: missed }) => {
-          setReceived(files);
-          const text = receiveNoticeText(missed);
-          if (text) setNotice(deferredText(() => receiveNoticeText(missed)));
-          if (files.length) await acceptSharedRef.current();
-        },
-        // Nothing waiting can be shown; the next ask tries again.
-        () => undefined,
-      ),
-    [bridge],
+  const acceptSharedRef = useRef<(ids?: string[]) => Promise<boolean | void>>(
+    async () => undefined,
   );
-  // Files added to Shared with me since this unlock, until the patient opens
-  // it: shown as "2 new" and said once, politely (#61).
+  // Files named by a program started with their path (Open with, a second launch) wait here for
+  // the patient's answer before anything is stored (#133). Cancel forgets them.
+  // Whether the "Import ... into Shared with me?" question is open, set at once (state is not).
+  const confirmOpen = useRef(false);
+  const [confirmReceived, setConfirmReceived] = useState<ReceivedFile[] | null>(
+    null,
+  );
+  const receiveGeneration = useRef(0);
+  const refreshReceivedRef = useRef<() => Promise<void>>(async () => undefined);
+  const refreshReceived = useCallback(() => refreshReceivedRef.current(), []);
+  // Files added since unlock, until the patient opens Shared with me.
   const [sharedNew, setSharedNew] = useState(0);
   const clearSharedNew = useCallback(() => setSharedNew(0), []);
   useEffect(() => {
-    refreshReceived();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refreshReceived();
+    receiveGeneration.current += 1;
+    let disposed = false;
+    let dirty = false;
+    let running: Promise<void> | null = null;
+    const request = (): Promise<void> => {
+      dirty = true;
+      if (disposed || document.visibilityState !== "visible")
+        return Promise.resolve();
+      if (!running) {
+        running = (async () => {
+          while (dirty && !disposed && document.visibilityState === "visible") {
+            dirty = false;
+            try {
+              const { files, notice: missed } = await bridge.listReceived();
+              if (disposed) return;
+              setReceived(files);
+              const text = receiveNoticeText(missed);
+              if (text)
+                setNotice(deferredText(() => receiveNoticeText(missed)));
+              const ask = files.filter((file) => file.needsConfirm);
+              if (ask.length) {
+                // The question in front of the patient is never changed under their cursor: a
+                // file that arrives while it is open waits, and is asked about after the answer
+                // (the answer asks again).
+                if (!confirmOpen.current) {
+                  confirmOpen.current = true;
+                  setConfirmReceived(ask);
+                }
+                // Anything shared from another app is added as it arrives, as before.
+                const shared = files.filter((file) => !file.needsConfirm);
+                if (shared.length)
+                  void acceptSharedRef.current(shared.map((file) => file.id));
+              } else if (files.length) void acceptSharedRef.current();
+            } catch {
+              // No automatic retry. A later arrival/focus/unlock asks again.
+            }
+          }
+        })().finally(() => {
+          running = null;
+        });
+      }
+      return running;
     };
-    window.addEventListener("focus", refreshReceived);
+    refreshReceivedRef.current = request;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void request();
+    };
+    window.addEventListener("mycarlos-received-changed", request);
+    window.addEventListener("focus", request);
     document.addEventListener("visibilitychange", onVisible);
+    void request();
     return () => {
-      window.removeEventListener("focus", refreshReceived);
+      disposed = true;
+      receiveGeneration.current += 1;
+      refreshReceivedRef.current = async () => undefined;
+      window.removeEventListener("mycarlos-received-changed", request);
+      window.removeEventListener("focus", request);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refreshReceived]);
+  }, [bridge]);
   // A message for the library that unlocking or creating the vault is about to
   // show. Its status line reads out only what changes once it is on screen, so
   // the message is written just after (see the effect below).
@@ -228,6 +283,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [openingRecoverySetup, setOpeningRecoverySetup] =
     useState<OpeningRecoverySetup | null>(null);
   const [busy, setBusy] = useState(false);
+  // Library operations in flight, counted by the session they started in. `busy` is only about
+  // the session now shown: a lock ends the session, so an operation of the one before (a picker
+  // the patient left open, whose answer never came) can neither keep the unlock screen's button
+  // greyed nor stand in for work that is not being done now. The operation itself runs on, and
+  // its result is still handled where it is (see `run`).
+  const runsBySessionRef = useRef(new Map<number, number>());
   const [portalBusy, setPortalBusy] = useState(false);
   const portalJobRef = useRef<{
     session: number;
@@ -280,12 +341,33 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // through `run` has finished if one of them ran a transfer, so the transfer
   // has reported its outcome first.
   const [transferHold] = useState(() => new TransferHold());
+  // Video being recorded or played holds the automatic lock for as long as it
+  // runs (#359): how many holds are taken now. A lock ends them all.
+  const mediaHoldsRef = useRef(new Set<symbol>());
+  const holdMedia = useCallback(() => {
+    // Each hold is its own id, so letting go twice, or after a lock ended them
+    // all, cannot take away another's.
+    const hold = Symbol("media hold");
+    mediaHoldsRef.current.add(hold);
+    return () => {
+      mediaHoldsRef.current.delete(hold);
+    };
+  }, []);
   // What was last reported since the latest transfer began: its result, or a
   // partial readable copy to delete. Used only when a lock ends that transfer.
   const transferOutcomeRef = useRef<UiText | null>(null);
+  // `flushPortalNotice` is made again on every render; the bridge below is not, so it reaches
+  // the current one through this ref.
+  const flushPortalNoticeRef = useRef<() => void>(() => undefined);
   // The outcome of a transfer the vault locked on. It is shown after the next
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<UiText | null>(null);
+  // A late share may finish while a failed lock keeps the window concealed.
+  // Retain its explanation/accounting for an authorized unlock of this bridge.
+  const pendingSharedOutcomeRef = useRef<{
+    generation: number;
+    message: UiText;
+  } | null>(null);
   const [autoLockMinutes, setAutoLockMinutes] = useState(readAutoLockMinutes);
   // Read by `lock`, which keeps its identity, for the reason it gives.
   const autoLockMinutesRef = useRef(autoLockMinutes);
@@ -304,6 +386,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Incremented whenever the vault locks. Work started in an earlier session
   // must not put its decrypted results or document names back on screen.
   const sessionRef = useRef(0);
+  const refreshBusy = useCallback(
+    () => setBusy((runsBySessionRef.current.get(sessionRef.current) ?? 0) > 0),
+    [],
+  );
   const appliedCaptureRef = useRef<
     (SnapshotCapture & { owner: number }) | null
   >(null);
@@ -393,13 +479,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // not a transfer's outcome, nor how a key setup ended.
   const forgetReplacedVault = () => {
     pendingOutcomeRef.current = null;
+    pendingSharedOutcomeRef.current = null;
     rememberUnfinishedRecoveryKey(null);
     rememberOldBackupsGuide(null);
+    // The unscoped note: no caller passes a scope today (a test pins that). When vaults get
+    // their own slots (#357) and the notes are scoped, this must clear the erased vault's own
+    // scope, never every scope by prefix: that would wipe another vault's note.
+    rememberUnfinishedHandover(false);
   };
 
   // Taken as a vault opens: what happened while it was locked, and how a
   // recovery key setup that a lock or closing ended actually ended.
   const takeHeldOutcome = (opened: VaultSnapshot) => {
+    const shared = pendingSharedOutcomeRef.current;
+    pendingSharedOutcomeRef.current = null;
     const unfinished = takeUnfinishedRecoveryKey();
     // A key whose kit may have been exposed was replaced as the lock fell:
     // Security shows the steps for its older backups, as after a
@@ -418,10 +511,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         opened.recoveryKeySetAtMs ?? null,
         Boolean(opened.recovery),
       ) !== null;
+    const sharedOutcome =
+      shared?.generation === receiveGeneration.current ? shared.message : null;
     const outcome =
-      pendingOutcomeRef.current || hasUnfinishedOutcome
+      pendingOutcomeRef.current || sharedOutcome || hasUnfinishedOutcome
         ? joinText(
             pendingOutcomeRef.current,
+            sharedOutcome,
             hasUnfinishedOutcome && unfinished
               ? deferredText(
                   () =>
@@ -435,6 +531,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           )
         : null;
     pendingOutcomeRef.current = null;
+    // A handover whose key was shown when the lock fell: the key opens nothing now.
+    if (takeUnfinishedHandover())
+      return joinText(
+        outcome,
+        deferredText(() => t("handover.unfinished")),
+      );
     return outcome || null;
   };
 
@@ -452,6 +554,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await bridge.lock();
       sessionRef.current += 1;
+      // The session shown from here has no operation of its own yet.
+      transferHold.moveTo(sessionRef.current);
+      refreshBusy();
       endedPortalWorkRef.current = Promise.allSettled([
         endedPortalWorkRef.current,
         portalJobRef.current?.promise,
@@ -472,6 +577,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
+      mediaHoldsRef.current.clear();
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
@@ -510,7 +616,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } finally {
       lockingRef.current = false;
     }
-  }, [bridge, holdForUnlock, holdLock, transferHold]);
+  }, [bridge, holdForUnlock, holdLock, refreshBusy, transferHold]);
 
   const requestLock = useCallback(
     (concealImmediately = false) => {
@@ -678,15 +784,80 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }),
     [bridge],
   );
+  // A document is waiting at a clinic, as the tray check found it while the vault was locked
+  // (#230). One fixed sentence on the unlock screen; it clears when the vault unlocks.
+  const [trayWaiting, setTrayWaiting] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void bridge
+      .trayWaiting?.()
+      .then((waiting) => live && setTrayWaiting(waiting))
+      .catch(() => undefined);
+    const stop = bridge.onTrayWaiting?.((waiting) => setTrayWaiting(waiting));
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, [bridge]);
+  // The vault locked natively without this screen asking: the window was
+  // closed to the tray, Quit was chosen, or the native idle lock fell due
+  // (#206). The vault is already locked, so the screen lets go of everything
+  // it shows at once, as its own lock does, whatever is in flight. It does not
+  // wait for a `visibilitychange` that a hidden window may never get.
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  // A native lock that arrives while an unlock is in flight (the window was closed to the tray
+  // meanwhile): the vault is about to open, so the lock is remembered and applied the moment it
+  // does. The native side refuses such an unlock too; this covers the screen's own part.
+  const pendingNativeLockRef = useRef<"closed" | "idle" | null>(null);
+  useEffect(
+    () =>
+      bridge.onVaultLocked?.(({ by }) => {
+        if (statusRef.current !== "unlocked") {
+          if (busyRef.current) pendingNativeLockRef.current = by;
+          return;
+        }
+        lockReasonRef.current ??= by === "idle" ? "idle" : "hidden";
+        requestLock(true);
+      }),
+    [bridge, requestLock],
+  );
+  useEffect(() => {
+    const pending = pendingNativeLockRef.current;
+    if (status === "unlocked" && pending) {
+      pendingNativeLockRef.current = null;
+      lockReasonRef.current ??= pending === "idle" ? "idle" : "hidden";
+      requestLock(true);
+    } else if (status !== "unlocked" && !busy) {
+      pendingNativeLockRef.current = null;
+    }
+  }, [status, busy, requestLock]);
   const trackedBridge = useMemo<VaultBridge>(() => {
+    // Every transfer is its own operation, bracketed here as `run` brackets its own, so that no
+    // caller has to remember to: a transfer started outside `run` (the hand-over dialogs call the
+    // bridge themselves) would otherwise leave the hold at "a transfer ran" for good, and an
+    // automatic lock would hide the screen but never lock the vault. Inside `run` the operations
+    // nest: the count only reaches zero at the outermost end, so `run` still locks once the
+    // operation has reported the transfer's outcome. When the last operation is over the hold is
+    // freed, and a lock owed meanwhile now happens.
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
-      // `run` locks once the operation has reported the transfer's outcome.
-      transferHold.transferStarted();
-      transferOutcomeRef.current = null;
-      // iOS suspends an app in the background, and its transfer with it.
-      if (platformRef.current === "ios")
-        setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
-      return start();
+      // Counted in the session it starts in, as `run` counts its own (#476): without it a
+      // transfer that a lock outlives would end in the NEW session, take one from that session's
+      // count and leave the old session's count at one for good.
+      const startedIn = sessionRef.current;
+      transferHold.operationStarted(startedIn);
+      try {
+        transferHold.transferStarted();
+        transferOutcomeRef.current = null;
+        // iOS suspends an app in the background, and its transfer with it.
+        if (platformRef.current === "ios")
+          setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
+        return await start();
+      } finally {
+        const idle = transferHold.operationEnded(startedIn);
+        if (idle && lockHeldRef.current) requestLock(true);
+        else if (idle) flushPortalNoticeRef.current();
+      }
     };
     return {
       ...bridge,
@@ -700,15 +871,51 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         }),
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
+      pickImportAny:
+        bridge.pickImportAny &&
+        ((profileId, folderIds) =>
+          track(bridge.pickImportAny!(profileId, folderIds))),
+      pickImportVideo:
+        bridge.pickImportVideo &&
+        ((profileId, folderIds) =>
+          track(bridge.pickImportVideo!(profileId, folderIds))),
+      // Adding a video can take minutes: the lock waits for it, as for any transfer.
+      importPickedVideo:
+        bridge.importPickedVideo &&
+        ((pickId, profileId, folderIds) =>
+          transfer(() =>
+            bridge.importPickedVideo!(pickId, profileId, folderIds),
+          )),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
+      // An anonymized text saved to a file is handled as a record's copy is: its picker is
+      // tracked (on a phone the system's chooser sends the app to the background, and that must
+      // not lock the vault under it), and the write is a transfer the lock waits for. Without
+      // these a lock that fell due during either was taken at once.
+      pickTextExportDestination: (recordId, ticket) =>
+        track(bridge.pickTextExportDestination(recordId, ticket)),
+      exportTextToPicked: (pickId, recordId, ticket, text, kept) =>
+        transfer(() =>
+          bridge.exportTextToPicked(pickId, recordId, ticket, text, kept),
+        ),
+      // `copyTextExport` is left as it is on purpose: it only puts the text on the clipboard,
+      // which is instant, so there is no transfer to hold a lock for.
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
       // A native confirmation may be open for as long as a picker.
       confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),
       pickBackupDestination: (localDate) =>
         track(bridge.pickBackupDestination(localDate)),
-      saveBackupToPicked: (pickId) =>
-        transfer(() => bridge.saveBackupToPicked(pickId)),
+      // `leaveVideosOut` must be passed on: dropping it saved every backup whole.
+      saveBackupToPicked: (pickId, leaveVideosOut) =>
+        transfer(() => bridge.saveBackupToPicked(pickId, leaveVideosOut)),
+      // A person's records handed over, or added from a file (#360): pickers are
+      // tracked as the backup's are, and writing or adding is a transfer the lock waits for.
+      pickProfileExportDestination: (exportId, localDate) =>
+        track(bridge.pickProfileExportDestination(exportId, localDate)),
+      saveProfileExportToPicked: (pickId) =>
+        transfer(() => bridge.saveProfileExportToPicked(pickId)),
+      pickProfileImportSource: () => track(bridge.pickProfileImportSource()),
+      importProfile: (request) => transfer(() => bridge.importProfile(request)),
       pickRestoreSource: () => track(bridge.pickRestoreSource()),
       restore: async (pickId, credential, replace) => {
         try {
@@ -735,7 +942,19 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           bridge.aiExplain(term, context, lang, recordId, answerId),
         ),
     };
-  }, [answering, bridge, track, transferHold]);
+  }, [answering, bridge, requestLock, track, transferHold]);
+  // Adding a video lives here, above the screens: leaving the library mid-import keeps its progress,
+  // its Cancel and its answer, and the library shows the video when it is in.
+  const addVideo = useAddVideo({
+    bridge: trackedBridge,
+    onAdded: () => void refresh(),
+  });
+  // A lock stops an import natively. What it left (a failure, a stale "added") must not show after
+  // the next unlock.
+  const resetAddVideo = addVideo.reset;
+  useEffect(() => {
+    if (status === "locked") resetAddVideo();
+  }, [status, resetAddVideo]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -748,6 +967,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // A failed send is retried on every check: until one is accepted, the
     // native deadline keeps its previous delay (the longest, before any).
     let delaySent = false;
+    let mediaTouchedAt = -Infinity;
     const sendDelay = () => {
       bridge.setAutoLock(autoLockMinutes).then(
         () => {
@@ -774,6 +994,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // Nor is the time an AI answer takes to write, up to its limit (D19).
       if ((pickersOpenRef.current > 0 && inPickerGrace()) || inAnswerHold())
         deadline = Date.now() + delayMs;
+      // Video that is recording or playing is not idle time: the deadline stays
+      // a full delay away, and the native one is told, as for user input.
+      if (mediaHoldsRef.current.size > 0) {
+        deadline = Date.now() + delayMs;
+        if (Date.now() - mediaTouchedAt >= TOUCH_THROTTLE_MS) {
+          mediaTouchedAt = Date.now();
+          bridge.touch().catch(() => undefined);
+        }
+      }
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
@@ -975,6 +1204,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     )
       addNotice(held.message);
   };
+  flushPortalNoticeRef.current = flushPortalNotice;
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
    * so that a refusal of it says which box to check. Clinic work clears the
@@ -987,9 +1217,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   ) => {
     const startedIn = sessionRef.current;
     if (!clinicOperation) {
-      setBusy(true);
+      runsBySessionRef.current.set(
+        startedIn,
+        (runsBySessionRef.current.get(startedIn) ?? 0) + 1,
+      );
+      refreshBusy();
       setNotice("");
-      transferHold.operationStarted();
+      transferHold.operationStarted(startedIn);
     } else if (clinicOperation !== "quiet") showPortalNotice(startedIn, "");
     try {
       await operation();
@@ -1071,8 +1305,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }
     } finally {
       if (!clinicOperation) {
-        setBusy(false);
-        const idle = transferHold.operationEnded();
+        // However it ended (done, cancelled, refused, failed, or cut off by a lock), this
+        // operation stops counting, in the session it started in.
+        const left = (runsBySessionRef.current.get(startedIn) ?? 1) - 1;
+        if (left > 0) runsBySessionRef.current.set(startedIn, left);
+        else runsBySessionRef.current.delete(startedIn);
+        refreshBusy();
+        const idle = transferHold.operationEnded(startedIn);
         if (idle && lockHeldRef.current) requestLock(true);
         else if (idle) flushPortalNotice();
       }
@@ -1505,35 +1744,107 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Waiting files go into Shared with me as soon as the vault is open (#61).
   // One that is not a PDF is not added and is named; anything else keeps them
   // all waiting for the next ask.
-  const accepting = useRef(false);
-  acceptSharedRef.current = async () => {
-    if (status !== "unlocked" || !inSession() || accepting.current) return;
-    accepting.current = true;
+  const accepting = useRef<number | null>(null);
+  acceptSharedRef.current = async (ids?: string[]) => {
+    const generation = receiveGeneration.current;
+    if (
+      status !== "unlocked" ||
+      !inSession() ||
+      accepting.current === generation ||
+      document.visibilityState !== "visible" ||
+      concealedRef.current ||
+      lockingRef.current
+    )
+      // Nothing was asked of native code: the caller may ask the patient again.
+      return false;
+    const current = () =>
+      generation === receiveGeneration.current &&
+      inSession() &&
+      statusRef.current === "unlocked";
+    accepting.current = generation;
     let accepted = false;
     try {
-      const outcome = await bridge.acceptReceived();
+      const outcome = await bridge.acceptReceived(ids);
       accepted = true;
-      if (!inSession()) return;
+      if (!current()) return;
       setReceived([]);
-      if (outcome.imported.length) {
-        await refresh();
-        if (!inSession()) return;
-        setSharedNew((count) => count + outcome.imported.length);
-      }
       const said = () => [
         ...outcome.notPdf.map((name) =>
           translateNow("interface.notice.notPdf", { name }),
+        ),
+        ...outcome.unreadable.map((name) =>
+          translateNow("interface.notice.receivedNotOpened", { name }),
         ),
         ...outcome.skippedDuplicates.map((name) =>
           translateNow("interface.notice.alreadyShared", { name }),
         ),
       ];
-      if (outcome.notPdf.length || outcome.skippedDuplicates.length)
+      const deferIfPrivate = () => {
+        if (
+          !concealedRef.current &&
+          !lockingRef.current &&
+          document.visibilityState === "visible"
+        )
+          return false;
+        if (
+          outcome.imported.length ||
+          outcome.notPdf.length ||
+          outcome.unreadable.length ||
+          outcome.skippedDuplicates.length
+        ) {
+          const message = deferredText(() =>
+            [sharedAddedText(outcome.imported.length), ...said()]
+              .filter(Boolean)
+              .join(" "),
+          );
+          const held = pendingSharedOutcomeRef.current;
+          pendingSharedOutcomeRef.current = {
+            generation,
+            message:
+              held?.generation === generation
+                ? joinText(held.message, message)
+                : message,
+          };
+        }
+        return true;
+      };
+      if (deferIfPrivate()) return;
+      if (outcome.imported.length) {
+        // Applied through `refresh`, ordered by the native capture: a library
+        // action that refreshed meanwhile has the newer vault, and this reply
+        // must not roll it back (a photo hidden meanwhile would reappear).
+        let next: VaultSnapshot;
+        try {
+          next = await bridge.snapshot();
+        } catch {
+          // Acceptance already finished. A lock may make the snapshot unavailable;
+          // keep its completed private outcome rather than lose it with the refresh.
+          if (current()) deferIfPrivate();
+          return;
+        }
+        if (!current() || deferIfPrivate()) return;
+        await refresh(next);
+        if (!current()) return;
+        setSharedNew((count) => count + outcome.imported.length);
+      }
+      if (
+        outcome.notPdf.length ||
+        outcome.unreadable.length ||
+        outcome.skippedDuplicates.length
+      )
         setSessionNotice(deferredText(() => said().join(" ")));
-    } catch {
-      // They keep waiting: the next ask tries again.
+    } catch (error) {
+      // They keep waiting: the next ask tries again. Said, unless it is the
+      // vault locking or the work cancelled: without a word, no space, a
+      // paused vault or damage would mean the files never appear.
+      if (
+        inSession() &&
+        !hasVaultErrorCode(error, "locked") &&
+        !hasVaultErrorCode(error, "cancelled")
+      )
+        setSessionNotice(deferredText(() => vaultErrorMessage(error)));
     } finally {
-      accepting.current = false;
+      if (accepting.current === generation) accepting.current = null;
       // A newer unlock may have asked while these files were still taken.
       if (accepted || !inSession()) void refreshReceived();
     }
@@ -1542,6 +1853,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     if (status === "unlocked") void refreshReceived();
     else setSharedNew(0);
   }, [refreshReceived, status]);
+  // A lock takes the question away: nothing was stored, and the files ask again after an unlock.
+  useEffect(() => {
+    if (status !== "unlocked") {
+      confirmOpen.current = false;
+      setConfirmReceived(null);
+    }
+  }, [status]);
 
   // A restored vault is locked: it opens with its own passphrase or key.
   const restored = () => {
@@ -1615,6 +1933,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               installOpeningSnapshot(withDetails);
               // Nothing from a vault that is gone.
               pendingOutcomeRef.current = null;
+              pendingSharedOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
               rememberOldBackupsGuide(null);
               // The passphrase was just typed, so it authorizes the recovery key
@@ -1677,6 +1996,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         busy={busy}
         notice={notice}
         waiting={received.length}
+        trayWaiting={trayWaiting && status === "locked"}
         restoreBridge={trackedBridge}
         onRestored={restored}
         autoLockMinutes={autoLockMinutes}
@@ -1744,9 +2064,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onReset={(confirmation) =>
           run(async () => {
             if (await bridge.reset(confirmation)) {
-              pendingOutcomeRef.current = null;
-              rememberUnfinishedRecoveryKey(null);
-              rememberOldBackupsGuide(null);
+              // The one path for "this vault is gone", as for a restore over it: it forgets
+              // every note held for the vault's next unlock (the unfinished handover too, which
+              // this path used to leave to be told at the next vault's unlock).
+              forgetReplacedVault();
               // Starting again starts with the comfort settings, as a fresh
               // start of the app does.
               setComfortChosen(false);
@@ -1808,8 +2129,63 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   return (
     <>
+      {confirmReceived && status === "unlocked" && (
+        <ConfirmDialog
+          title={
+            confirmReceived.length === 1
+              ? t("interface.received.confirmTitleOne", {
+                  name: confirmReceived[0].name,
+                })
+              : t("interface.received.confirmTitleMany", {
+                  count: confirmReceived.length,
+                })
+          }
+          confirmLabel={t("interface.received.import")}
+          details={
+            confirmReceived.length > 1 ? (
+              <ul>
+                {confirmReceived.map((file) => (
+                  <li key={file.id}>{file.name}</li>
+                ))}
+              </ul>
+            ) : undefined
+          }
+          onConfirm={() => {
+            const files = confirmReceived;
+            const ids = files.map((file) => file.id);
+            confirmOpen.current = false;
+            setConfirmReceived(null);
+            void acceptSharedRef.current(ids).then((ran) => {
+              // Not asked of native code (the window was hidden, or an import was under way):
+              // the files still wait, so the same question comes back rather than being lost.
+              if (ran === false) {
+                confirmOpen.current = true;
+                setConfirmReceived(files);
+              }
+            });
+          }}
+          onCancel={() => {
+            const ids = confirmReceived.map((file) => file.id);
+            confirmOpen.current = false;
+            setConfirmReceived(null);
+            void bridge
+              .discardReceived(ids)
+              .then(() =>
+                setReceived((waiting) =>
+                  waiting.filter((file) => !ids.includes(file.id)),
+                ),
+              )
+              // A file that arrived while the question was open is asked about now.
+              .then(() => refreshReceivedRef.current())
+              .catch(() => undefined);
+          }}
+        >
+          <p>{t("interface.received.confirmBody")}</p>
+        </ConfirmDialog>
+      )}
       <VaultLibrary
         bridge={trackedBridge}
+        addVideo={addVideo}
         snapshot={snapshot}
         busy={busy}
         notice={notice}
@@ -1830,12 +2206,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
         onOfferClosed={offerClosed}
         onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
+        onUnfinishedHandover={rememberUnfinishedHandover}
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         computer={DESKTOP_PLATFORMS.has(platform)}
+        androidPdfReader={platform === "android"}
         sizesIn1024s={platform === "windows"}
         cameraPlatform={CAMERA_PLATFORMS.has(platform) ? platform : null}
         cameraAsking={isPhone(platform) ? track : undefined}
+        holdMedia={holdMedia}
         covered={lockWarning !== null}
         sharedNew={sharedNew}
         onSharedSeen={clearSharedNew}

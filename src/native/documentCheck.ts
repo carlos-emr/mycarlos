@@ -42,7 +42,7 @@ export async function checkClinicDocuments({
         const asked = links.find((link) => link.id === issue.linkId);
         if (asked) waits?.wait(asked.portalBase, undefined, session);
       }
-      // Clinic documents then lists the device with the earlier attempts.
+      // Connected clinics then lists the device with the earlier attempts.
       if (issue.code === "portal_device_removed")
         waits?.deviceRemoved(issue.linkId, session);
     }
@@ -65,6 +65,21 @@ const issueLines = (issues: NonNullable<DocumentCheck["issues"]>) =>
     }),
   );
 
+/** Documents that arrived for a person who is hidden and wait in Shared with me (#360,
+ * section 8.6): said per clinic and never naming the person, so that a glance at the screen
+ * does not show who is hidden. */
+const hiddenArrivalLines = ({ forHidden }: DocumentCheck) => {
+  const perClinic = new Map<string, number>();
+  for (const clinic of forHidden ?? [])
+    perClinic.set(clinic, (perClinic.get(clinic) ?? 0) + 1);
+  return [...perClinic].map(([clinic, count]) =>
+    // A link with no clinic name yet is said without one, never as an empty name.
+    clinic
+      ? t("portal.arrivedForHidden", { clinic, count })
+      : t("portal.arrivedForHiddenNoClinic", { count }),
+  );
+};
+
 /** Saved documents whose pickup the portal has not confirmed yet. */
 const pendingLines = ({ receiptsPending }: DocumentCheck) =>
   receiptsPending > 0
@@ -79,6 +94,7 @@ export function documentCheckText(result: DocumentCheck): string {
       added: result.added,
       refused: result.refused,
     }),
+    ...hiddenArrivalLines(result),
     ...issueLines(issues),
     ...pendingLines(result),
   ].join(" ");
@@ -121,7 +137,7 @@ const retryHelps = (error: unknown) => {
  * button is named only when checking again can help, and not twice.
  * `counted` names the links the check speaks for (those the clinic has
  * approved): a device still waiting for approval has its state on its own
- * card under Clinic documents. A device the portal removed is said whatever
+ * card under Connected clinics. A device the portal removed is said whatever
  * its approval: that is not a state of waiting, and nothing but linking it
  * again can help.
  */

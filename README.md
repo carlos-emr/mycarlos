@@ -134,8 +134,8 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
   recursive canary and Unix mode tests inspect application-controlled storage while locked.
 - A collapsible evaluation panel and reset control that removes session-only metadata.
 - Frontend unit tests, browser viewport tests, automated WCAG 2.0–2.2 A/AA scans (also at 200%
-  text size, with checks for sideways scrolling and cut-off controls; at the reader's 200% default
-  text some controls are known to be cut off, #84), hostile-metadata/network regressions, Rust
+  text size and at the reader's 200% default text, with checks for sideways scrolling and cut-off
+  controls, #84), hostile-metadata/network regressions, Rust
   tests, and unsigned debug builds in CI.
 - CI generates reproducible CycloneDX inventories for both locked dependency graphs and rejects
   known high/critical production npm findings. These are inventories, not signed release
@@ -180,7 +180,10 @@ npm run dev:data
 npm run tauri dev
 ```
 
-This creates five valid PDFs and `FAKE_MANIFEST.json` in `dev-data/`. Every filename, patient
+This creates five valid PDFs, two test-pattern pictures with FAKE GPS and details in their
+metadata (`FAKE_Picture_with_location.jpg`, `FAKE_Picture_with_details.png`), a 2 second FAKE clip
+(`FAKE_demo_clip.mp4`) and `FAKE_MANIFEST.json` in `dev-data/` (`scripts/fake-media.mjs` writes the
+pictures and the clip). Every filename, patient
 profile, folder, provider, and document title starts with `FAKE`. Choose a unique throwaway
 passphrase when creating the test vault; no credential is stored in the fixtures. The manifest
 maps each PDF to a profile and folder. Import
@@ -211,7 +214,8 @@ The generated `src-tauri/gen/android` and `src-tauri/gen/apple` directories are 
 the pinned Tauri CLI rather than reviewed application source, so CI regenerates them on clean
 runners. A checked-in configuration script applies the Android backup policy and `build.rs` enforces
 it for every Android compilation. Android debug builds run on Linux; the unsigned iOS simulator
-build runs on macOS. Use the `dev` commands for live UI updates and automatic Rust
+build runs on macOS. The iOS minimum is 14.5 (`bundle.iOS.minimumSystemVersion` in
+`tauri.conf.json`): Safari's engine records MP4 video from that version (#359). Use the `dev` commands for live UI updates and automatic Rust
 rebuild/relaunch; use `build` for standalone evaluation packages. Picker behaviour is
 Android-specific (the system picker hides the page) and cannot be exercised in the browser tests,
 so run `npm run tauri android dev` against an Android Studio emulator (Device Manager → create a

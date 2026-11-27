@@ -121,24 +121,33 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
-/// Connect native Kotlin callbacks to the current vault. One queued cue suffices because
-/// every token asks for the same authenticated check. No provider data enters the webview.
+/// Pin each callback to the vault and session selected at receipt. Each vault can have one
+/// queued check while the worker is busy. No provider data enters the webview.
 pub(crate) fn listen<R: Runtime>(
     app: &tauri::AppHandle<R>,
-    store: std::sync::Arc<crate::vault::VaultStore>,
+    stores: crate::vault_source::StoreHandle,
 ) -> std::io::Result<()> {
     use crate::document_notifications::NoticeToken;
+    use std::sync::{Arc, Mutex};
     use tauri::ipc::{Channel, InvokeResponseBody};
     let plugin = app.state::<AndroidPush<R>>().0.clone();
     std::thread::Builder::new()
         .name("android-notice-inbox".into())
         .spawn(move || {
-            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            let (wake, receiver) = std::sync::mpsc::sync_channel(1);
+            let pending = Arc::new(Mutex::new(
+                crate::android_push_queue::PendingNotices::default(),
+            ));
+            let incoming = Arc::clone(&pending);
             let channel = Channel::<String>::new(move |body| {
                 if let InvokeResponseBody::Json(json) = body {
                     if let Ok(value) = serde_json::from_str::<String>(&json) {
                         if let Ok(token) = NoticeToken::parse(&value) {
-                            let _ = sender.try_send(token);
+                            incoming
+                                .lock()
+                                .unwrap_or_else(|p| p.into_inner())
+                                .push(Arc::clone(stores.arc()), token);
+                            let _ = wake.try_send(());
                         }
                     }
                 }
@@ -150,22 +159,26 @@ pub(crate) fn listen<R: Runtime>(
             {
                 return;
             }
-            for token in receiver {
-                #[derive(Deserialize)]
-                struct Allowed {
-                    allowed: bool,
-                }
-                if plugin
-                    .run_mobile_plugin::<Allowed>("receiveAllowed", ())
-                    .is_ok_and(|state| state.allowed)
-                {
-                    store.android_notice_received(
-                        &token,
-                        |session| store.check_documents(session),
-                        || {
-                            let _ = plugin.run_mobile_plugin::<()>("showGeneric", ());
-                        },
-                    );
+            for () in receiver {
+                let cues = pending.lock().unwrap_or_else(|p| p.into_inner()).take();
+                for cue in cues {
+                    #[derive(Deserialize)]
+                    struct Allowed {
+                        allowed: bool,
+                    }
+                    if plugin
+                        .run_mobile_plugin::<Allowed>("receiveAllowed", ())
+                        .is_ok_and(|state| state.allowed)
+                    {
+                        cue.store.android_notice_received(
+                            cue.session,
+                            &cue.token,
+                            |session| cue.store.check_documents(session),
+                            || {
+                                let _ = plugin.run_mobile_plugin::<()>("showGeneric", ());
+                            },
+                        );
+                    }
                 }
             }
         })?;
