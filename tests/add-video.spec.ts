@@ -130,3 +130,24 @@ test("a lock in the middle of adding a video leaves no bar, no alert and no stal
   await expect(page.locator(".add-video-result[role=status]")).toBeEmpty();
   await expect(await addVideoItem(page)).toBeEnabled();
 });
+
+test("the Add menu's file item takes one video from the same picker and adds it as a video", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await fakePickVideo(page, "FAKE new clip.mp4");
+  // The Add menu's file item (there is no "+ New" button any more): the one picker, which hands a
+  // video that is the whole pick to the video import.
+  await chooseAdd(page, en("interface.AddMenu.importFile"));
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: en("interface.AddVideo.added") }),
+  ).toBeVisible();
+  await expect(page.getByText("FAKE new clip.mp4").first()).toBeVisible();
+  expect(await fakeCalls(page, "vault_import_any_pick")).toHaveLength(1);
+  expect(await fakeCalls(page, "vault_import_video_picked")).toHaveLength(1);
+  expect(await fakeCalls(page, "vault_import_picked")).toEqual([]);
+});

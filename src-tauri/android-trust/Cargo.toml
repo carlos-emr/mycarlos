@@ -1,0 +1,17 @@
+[package]
+name = "tauri-plugin-android-trust"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+links = "tauri-plugin-android-trust"
+
+[dependencies]
+tauri = { version = "2", default-features = false }
+# The same jni (and verifier) versions as rustls-platform-verifier itself uses, so the Env and the
+# context object handed to it are its own types. tao still pulls in jni 0.21 for the app's
+# window; that is separate and unchanged (`cargo tree -d` shows both, as it did before).
+jni = "=0.22.4"
+rustls-platform-verifier = "=0.7.1"
+
+[build-dependencies]
+tauri-plugin = { version = "=2.6.3", features = ["build"] }

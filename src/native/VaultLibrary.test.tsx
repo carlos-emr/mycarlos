@@ -2626,6 +2626,8 @@ describe("VaultLibrary Add a video, an item of the Add document menu (#490)", ()
   const addApi = (over: Partial<AddVideoApi> = {}): AddVideoApi => ({
     canAdd: true,
     start: vi.fn().mockResolvedValue(undefined),
+    // Main's one picker hands a picked video over here.
+    addPicked: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn(),
     reset: vi.fn(),
     working: false,
