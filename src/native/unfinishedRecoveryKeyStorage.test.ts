@@ -53,6 +53,11 @@ describe("the note an unfinished recovery key setup leaves", () => {
       "a time that is neither a number nor null",
       JSON.stringify({ setAtMs: "5" }),
     ],
+    ["an object with no time at all", "{}"],
+    [
+      "an object with only 'exposed' and no time",
+      JSON.stringify({ exposed: true }),
+    ],
   ])("treats %s as no note, and forgets it", (_, stored) => {
     window.localStorage.setItem(KEY, stored);
 
