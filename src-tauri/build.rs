@@ -214,6 +214,8 @@ fn main() {
             "vault_is_video",
             "vault_video_open",
             "vault_video_close",
+            "vault_mark_seen",
+            "vault_mark_all_seen",
             "vault_hide_record",
             "vault_unhide_record",
             "vault_hide_profile",

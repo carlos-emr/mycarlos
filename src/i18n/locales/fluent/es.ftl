@@ -3012,6 +3012,32 @@ interface-VaultLibrary-help = Ayuda
 
 interface-VaultLibrary-helpButtonName = Ayuda: esta pantalla
 
+interface-clinicNew-fromClinic =
+    { $count ->
+    [one] { $count } documento nuevo de su clínica
+    [many] { $count } documentos nuevos de su clínica
+    *[other] { $count } documentos nuevos de su clínica
+    }
+
+interface-clinicNew-fromClinics =
+    { $count ->
+    [one] { $count } documento nuevo de sus clínicas
+    [many] { $count } documentos nuevos de sus clínicas
+    *[other] { $count } documentos nuevos de sus clínicas
+    }
+
+interface-clinicNew-named = { $action }, { $detail }
+
+interface-clinicNew-showThem = Mostrarlos
+
+interface-clinicNew-showAll = Mostrar todos los documentos
+
+interface-clinicNew-markAll = Marcar todo como visto
+
+interface-clinicNew-showing = Se muestran solo los documentos nuevos.
+
+interface-VaultLibrary-newTag = Nuevo
+
 interface-AddVideo-add = Añadir un video
 
 interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y el nombre y modelo del dispositivo que contiene.

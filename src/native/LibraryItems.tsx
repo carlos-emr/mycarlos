@@ -51,6 +51,18 @@ function EmptyState({ searching }: { searching: boolean }) {
   );
 }
 
+/** "New" beside a clinic document the patient has not looked at yet: words, so it is not colour
+ * alone, and part of the document's name for a reader ("Letter.pdf, New"). */
+function NewTag({ isNew }: { isNew?: boolean }) {
+  if (!isNew) return null;
+  return (
+    <span className="new-tag">
+      <span className="sr-only">, </span>
+      {translateNow("interface.VaultLibrary.newTag")}
+    </span>
+  );
+}
+
 export function LibraryItems({
   view,
   suggestionFor,
@@ -194,6 +206,7 @@ export function LibraryItems({
                   onClick={() => onOpenRecord(record.id)}
                 >
                   {record.displayName}
+                  <NewTag isNew={record.isNew} />
                 </button>
                 <small>
                   {formatBytes(record.plaintextSize)} · {kind.label}
@@ -341,7 +354,10 @@ export function LibraryItems({
                   <Icon name={kind.icon} />
                 </span>
                 <span>
-                  <strong>{record.displayName}</strong>
+                  <strong>
+                    {record.displayName}
+                    <NewTag isNew={record.isNew} />
+                  </strong>
                   <small>
                     {record.clinicServiceDate !== undefined &&
                       `${translateNow("library.column.added")}: `}

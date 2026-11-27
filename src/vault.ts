@@ -160,6 +160,9 @@ export interface VaultRecord {
   mediaType: string;
   plaintextSize: number;
   importedAtMs: number;
+  /** A clinic document the patient has not looked at yet on this device (the New marker); absent
+   * or false for any other document. */
+  isNew?: boolean;
   /** False when the encrypted file was missing at unlock and cannot be saved. */
   available: boolean;
   /** Set while the document is hidden (#71): out of every view but Hidden,
@@ -917,6 +920,11 @@ export interface VaultBridge {
   /** Brings a hidden person back; says which documents arrived for them while they were
    * hidden and wait in Shared with me. */
   restoreProfile?(profileId: string): Promise<ArrivedWhileHidden[]>;
+  /** The patient opened these documents: they stop being new on this device. Optional so that
+   * a bridge without the marker leaves things as they were. */
+  markSeen?(recordIds: string[]): Promise<void>;
+  /** "Mark all as seen": every new clinic document the patient can see stops being new. */
+  markAllSeen?(): Promise<void>;
   hideRecord(recordId: string): Promise<void>;
   /** Puts a hidden document back. One hidden as damaged only once its file
    * is back. */
@@ -1787,6 +1795,9 @@ export function createVaultBridge(): VaultBridge {
       invoke<ArrivedWhileHidden[]>("vault_restore_profile", {
         request: { profileId },
       }),
+    markSeen: (recordIds) =>
+      invoke<void>("vault_mark_seen", { request: { recordIds } }),
+    markAllSeen: () => invoke<void>("vault_mark_all_seen"),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

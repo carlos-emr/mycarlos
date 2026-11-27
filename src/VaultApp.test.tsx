@@ -7623,6 +7623,10 @@ describe("durable vault UI", () => {
     platform: "allowed",
     snapshot: "allowed",
     history: "allowed",
+    // The New marker (#502): only the small local seen file is written, never the vault, so a
+    // read-only vault can still mark what the patient opened as seen.
+    markSeen: "allowed",
+    markAllSeen: "allowed",
     linkPortal: "write",
     connectPortal: "write",
     // Removes a link that has delivered nothing: a change to the vault (main's #476 added it).
@@ -17739,6 +17743,8 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     await waitFor(() => expect(pickImportFiles).toHaveBeenCalledTimes(2));
     // The first session's picker ends while the new one is still open: the new one is still working.
     await act(async () => first.settle(null));
+    // In the overhaul the Add document button says "Working…" too, beside the status line: more
+    // than one place says it, so the check is that the state is shown, not that it is shown once.
     expect(screen.getAllByText(humanText("Working…")).length).toBeGreaterThan(
       0,
     );

@@ -2703,6 +2703,22 @@ interface-VaultLibrary-help = 說明
 
 interface-VaultLibrary-helpButtonName = 說明：此畫面
 
+interface-clinicNew-fromClinic = { $count } 份來自您診所的新文件
+
+interface-clinicNew-fromClinics = { $count } 份來自您各診所的新文件
+
+interface-clinicNew-named = { $action }，{ $detail }
+
+interface-clinicNew-showThem = 顯示這些文件
+
+interface-clinicNew-showAll = 顯示所有文件
+
+interface-clinicNew-markAll = 全部標示為已檢視
+
+interface-clinicNew-showing = 僅顯示新文件。
+
+interface-VaultLibrary-newTag = 新
+
 interface-AddVideo-add = 新增影片
 
 interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點以及裝置名稱和型號會先被刪除。

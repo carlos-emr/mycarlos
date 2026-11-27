@@ -69,6 +69,8 @@ mod original_pdf;
 // the export and import commands of the later PRs.
 #[cfg(test)]
 mod hidden_profiles_tests;
+#[cfg(test)]
+mod new_marker_tests;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_export;
 #[cfg_attr(not(test), allow(dead_code))]
@@ -947,6 +949,10 @@ pub struct VaultRecord {
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
+    /// A clinic document the patient has not looked at yet, on this device: filed after they last
+    /// marked everything as seen and not opened since (`new_marker.rs`). False for any other
+    /// document, a handover's, a hidden one and one waiting in Shared with me.
+    pub is_new: bool,
     /// False when the encrypted object was missing at unlock and cannot be exported.
     pub available: bool,
     /// Set while the document is hidden (#71).
@@ -1232,6 +1238,9 @@ struct PendingRecoveryKey {
 
 struct UnlockedVault {
     master_key: Zeroizing<[u8; 32]>,
+    // What the patient has seen of delivered documents (the "New" marker): read when first asked
+    // for, gone with the session. Never part of the vault itself (`new_marker.rs`).
+    new_marker: crate::new_marker::Slot,
     // When the header's recovery key was set up, if it has one.
     recovery_key_set_at_ms: Option<u64>,
     // Its envelope's id, from which its label comes.
@@ -1877,6 +1886,7 @@ impl VaultStore {
             self.open_session(
                 &mut guard,
                 UnlockedVault {
+                    new_marker: Default::default(),
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms: None,
@@ -2099,6 +2109,7 @@ impl VaultStore {
             self.open_session(
                 guard,
                 UnlockedVault {
+                    new_marker: Default::default(),
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms,
@@ -2166,6 +2177,7 @@ impl VaultStore {
         self.open_session(
             guard,
             UnlockedVault {
+                new_marker: Default::default(),
                 storage_lock,
                 master_key,
                 recovery_key_set_at_ms,
@@ -2255,6 +2267,59 @@ impl VaultStore {
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let capture = self.reserve_snapshot_capture()?;
         Ok(self.snapshot_of(unlocked, capture))
+    }
+
+    fn new_marker_context<'a>(
+        &'a self,
+        unlocked: &'a UnlockedVault,
+    ) -> crate::new_marker::Context<'a> {
+        crate::new_marker::Context {
+            vault_id: unlocked.manifest.vault_id,
+            master_key: &unlocked.master_key,
+            vault_home: vault_home(&self.root).ok(),
+        }
+    }
+
+    /// The patient opened these documents: they stop being new on this device. Ids that are not
+    /// a new clinic document of a visible person are ignored, so the list holds nothing else.
+    /// Not a change to the vault: it writes the local seen file only (`new_marker.rs`).
+    pub fn mark_seen(&self, ids: &[Uuid]) -> Result<(), VaultError> {
+        if ids.len() > crate::new_marker::MAX_OPENED {
+            return Err(VaultError::Invalid);
+        }
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let candidates = new_marker_candidates(unlocked);
+        let wanted: Vec<Uuid> = ids
+            .iter()
+            .copied()
+            .filter(|id| candidates.contains_key(id))
+            .collect();
+        let filed: Vec<(Uuid, u64)> = candidates.iter().map(|(id, at)| (*id, *at)).collect();
+        let now = crate::new_marker::now_ms();
+        unlocked
+            .new_marker
+            .update(&self.new_marker_context(unlocked), now, |state| {
+                let opened = state.mark_opened(&wanted, &filed, now);
+                let pruned = state.prune(|id| candidates.get(&id).copied());
+                opened || pruned
+            })
+            .map_err(|_| VaultError::Storage)
+    }
+
+    /// "Mark all as seen": every clinic document the patient can see now stops being new. A
+    /// document that arrives afterwards is new.
+    pub fn mark_all_seen(&self) -> Result<(), VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let filed: Vec<(Uuid, u64)> = new_marker_candidates(unlocked).into_iter().collect();
+        let now = crate::new_marker::now_ms();
+        unlocked
+            .new_marker
+            .update(&self.new_marker_context(unlocked), now, |state| {
+                state.mark_all(&filed, now)
+            })
+            .map_err(|_| VaultError::Storage)
     }
 
     /// Called only under the session mutex, which orders reservation and
@@ -2466,6 +2531,11 @@ impl VaultStore {
 
     fn snapshot_of(&self, unlocked: &UnlockedVault, capture: SnapshotCapture) -> VaultSnapshot {
         let root = self.root.as_path();
+        let seen = unlocked.new_marker.state(
+            &self.new_marker_context(unlocked),
+            crate::new_marker::now_ms(),
+        );
+        let shared_id = shared_profile_id(unlocked.manifest.vault_id);
         VaultSnapshot {
             capture,
             portal_linking_enabled: crate::portal_client::available(),
@@ -2556,6 +2626,8 @@ impl VaultStore {
                         media_type: record.media_type.clone(),
                         plaintext_size: record.plaintext_size,
                         imported_at_ms: record.imported_at_ms,
+                        is_new: is_new_candidate(record, shared_id)
+                            && seen.is_new(record.id, record.imported_at_ms),
                         // A document hidden as damaged is not looked for at unlock:
                         // its file may have come back since.
                         available: if object_required(record) {
@@ -4831,6 +4903,7 @@ impl VaultStore {
             self.open_session(
                 &mut guard,
                 UnlockedVault {
+                    new_marker: Default::default(),
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms: header
@@ -4874,6 +4947,7 @@ impl VaultStore {
                 self.open_session(
                     &mut guard,
                     UnlockedVault {
+                        new_marker: Default::default(),
                         storage_lock,
                         master_key,
                         recovery_key_set_at_ms: header
@@ -4937,6 +5011,19 @@ impl VaultStore {
                 .with_place(&set_aside_name(&target));
             record_in_session(&self.root, unlocked, vec![entry]);
         }
+        // The id of the vault being set aside, for the small file kept beside it (the New
+        // marker): known from the session when it is open, and from the header (which is not
+        // secret) when it is not.
+        // Every header that could be this vault's names a file: a locked vault may have more than
+        // one candidate, and each one's file goes.
+        let vault_ids: Vec<Uuid> = match guard.as_ref() {
+            Some(unlocked) => vec![unlocked.manifest.vault_id],
+            None => read_header_files(&self.root)
+                .candidates
+                .iter()
+                .map(|header| header.vault_id)
+                .collect(),
+        };
         // A recording in progress is parked in the vault being set aside, and its
         // keys dropped, before the session goes: it must not write into a vault
         // that is no longer where it was.
@@ -4957,6 +5044,16 @@ impl VaultStore {
         fail_at_test_boundary("reset.before-set-aside")?;
         set_aside_to(&self.root, &target)?;
         terminate_at_test_boundary("reset.after-set-aside");
+        // What the patient had looked at in a vault that is set aside goes with it: best effort, and
+        // only the files named for that vault's ids.
+        for vault_id in vault_ids {
+            if let Some(path) = vault_home(&self.root)
+                .ok()
+                .and_then(|home| crate::new_marker::path_beside(home, vault_id))
+            {
+                let _ = remove_owned_file(path, Removable::SeenMarker);
+            }
+        }
         *self
             .last_set_aside
             .lock()
@@ -9009,6 +9106,39 @@ fn read_chunk(reader: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, VaultEr
     Ok(used)
 }
 
+/// Whether a document can be new at all: a clinic's delivery (filed by the portal, not carried by
+/// a handover), not hidden, and not one waiting in Shared with me (that has its own count).
+fn is_new_candidate(record: &StoredRecord, shared_profile: Uuid) -> bool {
+    new_marker_rule(
+        record.delivery.is_some(),
+        record.carried.is_some(),
+        record.hidden.is_some(),
+        record.profile_id == shared_profile,
+    )
+}
+
+/// The rule itself, on what it depends on: a delivered document that was not carried in by a
+/// handover, is not hidden and is not in Shared with me.
+fn new_marker_rule(delivered: bool, carried: bool, hidden: bool, in_shared: bool) -> bool {
+    delivered && !carried && !hidden && !in_shared
+}
+
+/// The documents that can be new and that the patient can see (their person is not hidden), with
+/// the time each was filed.
+fn new_marker_candidates(unlocked: &UnlockedVault) -> HashMap<Uuid, u64> {
+    let shared = shared_profile_id(unlocked.manifest.vault_id);
+    unlocked
+        .manifest
+        .records
+        .iter()
+        .filter(|record| {
+            is_new_candidate(record, shared)
+                && !unlocked.manifest.person_is_hidden(record.profile_id)
+        })
+        .map(|record| (record.id, record.imported_at_ms))
+        .collect()
+}
+
 /// The directory that holds the vault and everything the vault manages beside
 /// it: its lock file, a pending reset, a create stage, the export journal.
 /// Nothing else is ever written there, which is what lets an export refuse the
@@ -9600,6 +9730,9 @@ enum Removable {
     /// recording's object that recovery found nothing complete in (#359).
     #[allow(dead_code)] // constructed by the recording core, which has no caller yet
     Recording,
+    /// The small file that remembers which clinic documents were opened (`new_marker.rs`), when
+    /// the vault it belonged to is set aside.
+    SeenMarker,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.

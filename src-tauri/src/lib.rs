@@ -62,6 +62,7 @@ mod video_scheme;
 // The recording core (#359) and, in the next step, the playback address use it.
 #[allow(dead_code)]
 mod mp4_stream;
+mod new_marker;
 mod notice_key;
 #[cfg(windows)]
 mod notice_store_windows;
@@ -2015,6 +2016,12 @@ impl PendingPicks {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordIdRequest {
     record_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MarkSeenRequest {
+    record_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -7838,6 +7845,27 @@ async fn vault_unlock_pdf(
     .await
 }
 
+/// The patient opened these documents, so they stop being "new" on this device (the New marker,
+/// `new_marker.rs`). Writes the small local seen file only, never the vault.
+#[tauri::command]
+async fn vault_mark_seen(
+    store: State<'_, StoreHandle>,
+    request: MarkSeenRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.mark_seen(&request.record_ids)
+    })
+    .await
+}
+
+/// "Mark all as seen": every clinic document the patient can see now stops being new.
+#[tauri::command]
+async fn vault_mark_all_seen(store: State<'_, StoreHandle>) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| store.mark_all_seen()).await
+}
+
 /// Hides a document (#71). There is no command that deletes one.
 #[tauri::command]
 async fn vault_hide_record(
@@ -8539,6 +8567,8 @@ pub fn run() {
             vault_video_close,
             vault_is_locked_pdf,
             vault_unlock_pdf,
+            vault_mark_seen,
+            vault_mark_all_seen,
             vault_hide_record,
             vault_unhide_record,
             vault_hide_profile,

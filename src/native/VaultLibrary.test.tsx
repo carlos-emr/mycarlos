@@ -1,3 +1,4 @@
+import { computeAccessibleName } from "dom-accessibility-api";
 import { humanText, humanValue, visibleText } from "../test/humanText";
 import {
   addMenuItemNow,
@@ -21,7 +22,12 @@ import type { AddVideoApi } from "./AddVideo";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PortalLinkSummary, VaultBridge, VaultSnapshot } from "../vault";
+import type {
+  PortalLinkSummary,
+  VaultBridge,
+  VaultRecord,
+  VaultSnapshot,
+} from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 import type { ModelStatus } from "../ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
@@ -2495,6 +2501,219 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     expect(native.documentText).not.toHaveBeenCalled();
     expect(native.aiSummarize).not.toHaveBeenCalled();
   });
+});
+
+describe("the New marker", () => {
+  const clinicRecord = (
+    id: string,
+    name: string,
+    extra: Partial<VaultRecord> = {},
+  ): VaultRecord => ({
+    ...record(id, name, []),
+    verifiedClinicName: "FAKE Clinic One",
+    ...extra,
+  });
+  const withRecords = (records: VaultRecord[]): VaultSnapshot => ({
+    ...snapshot,
+    records,
+  });
+  // The names of the document buttons in the list, as a reader hears them.
+  const listedNames = () =>
+    [...document.querySelectorAll(".record-open")].map((button) =>
+      visibleText(computeAccessibleName(button)).replace(/ ,/g, ","),
+    );
+  const stripHeading = () =>
+    screen.queryByRole("heading", {
+      level: 2,
+      name: humanText(/ new from your /),
+    });
+  const politeLine = () =>
+    document.querySelector<HTMLElement>('p.sr-only[aria-live="polite"]')!;
+
+  afterEach(() => {
+    setLocaleOverride(null);
+  });
+
+  it("counts the new clinic documents, tags only those rows, and ends their names with New", () => {
+    renderLibrary(
+      withRecords([
+        clinicRecord("a", "FAKE Blood test.pdf", { isNew: true }),
+        clinicRecord("b", "FAKE X-ray.pdf", { isNew: true }),
+        clinicRecord("c", "FAKE Old letter.pdf"),
+        // Hidden documents are never new, whatever they say.
+        clinicRecord("d", "FAKE Hidden.pdf", {
+          isNew: true,
+          hidden: { atMs: 1, reason: "patient" },
+        }),
+      ]),
+    );
+    expect(stripHeading()).toHaveHumanTextContent("2 new from your clinic");
+    expect(
+      screen.getByRole("button", { name: /^FAKE Blood test\.pdf ?, New$/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /^FAKE X-ray\.pdf ?, New$/ }),
+    ).toBeVisible();
+    // The old one is not tagged, and its name is just its own.
+    expect(
+      screen.getByRole("button", { name: humanText("FAKE Old letter.pdf") }),
+    ).toBeVisible();
+    expect(document.querySelectorAll(".new-tag")).toHaveLength(2);
+    // The strip and the tag use words only: no clinic's name, no document's name.
+    const region = screen.getByRole("region", {
+      name: humanText(/ new from your clinic/),
+    });
+    expect(region.textContent).not.toMatch(/FAKE/);
+  });
+
+  it("says clinics when the new documents come from more than one", () => {
+    renderLibrary(
+      withRecords([
+        clinicRecord("a", "FAKE A.pdf", { isNew: true }),
+        clinicRecord("b", "FAKE B.pdf", {
+          isNew: true,
+          verifiedClinicName: "FAKE Clinic Two",
+        }),
+      ]),
+    );
+    expect(stripHeading()).toHaveHumanTextContent("2 new from your clinics");
+  });
+
+  it("shows no strip and no tag when nothing is new", () => {
+    renderLibrary(withRecords([clinicRecord("c", "FAKE Old letter.pdf")]));
+    expect(stripHeading()).toBeNull();
+    expect(document.querySelector(".new-tag")).toBeNull();
+  });
+
+  it("Show them lists only the new documents, wherever they are filed, and Show all documents comes back", async () => {
+    const user = userEvent.setup();
+    renderLibrary({
+      ...snapshot,
+      records: [
+        clinicRecord("a", "FAKE New in a folder.pdf", {
+          isNew: true,
+          folderIds: ["letters"],
+          importedAtMs: 1,
+        }),
+        clinicRecord("b", "FAKE New at the top.pdf", {
+          isNew: true,
+          importedAtMs: 2,
+        }),
+        clinicRecord("c", "FAKE Old at the top.pdf"),
+      ],
+    });
+    expect(listedNames()).toEqual([
+      "FAKE New at the top.pdf, New",
+      "FAKE Old at the top.pdf",
+    ]);
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Show them/) }),
+    );
+    expect(screen.getByText("Showing only the new documents.")).toBeVisible();
+    expect(listedNames()).toEqual([
+      "FAKE New at the top.pdf, New",
+      "FAKE New in a folder.pdf, New",
+    ]);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Show all documents") }),
+    );
+    expect(listedNames()).toEqual([
+      "FAKE New at the top.pdf, New",
+      "FAKE Old at the top.pdf",
+    ]);
+  });
+
+  it("opening a new document marks that one seen; looking at the list or opening an old one marks nothing", async () => {
+    const user = userEvent.setup();
+    const markSeen = vi.fn().mockResolvedValue(undefined);
+    renderLibrary(
+      withRecords([
+        clinicRecord("a", "FAKE New.pdf", { isNew: true }),
+        clinicRecord("b", "FAKE Old.pdf"),
+      ]),
+      0,
+      { markSeen },
+    );
+    // Looking at the list clears nothing.
+    expect(listedNames()).toHaveLength(2);
+    expect(markSeen).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: humanText("FAKE Old.pdf") }),
+    );
+    expect(markSeen).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: /^FAKE New\.pdf ?, New$/ }),
+    );
+    await waitFor(() => expect(markSeen).toHaveBeenCalledOnce());
+    expect(markSeen).toHaveBeenCalledWith(["a"]);
+  });
+
+  it("Mark all as seen asks the vault, and the heading of the list takes the focus", async () => {
+    const user = userEvent.setup();
+    const markAllSeen = vi.fn().mockResolvedValue(undefined);
+    const view = renderLibrary(
+      withRecords([clinicRecord("a", "FAKE New.pdf", { isNew: true })]),
+      0,
+      { markAllSeen },
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Mark all as seen/) }),
+    );
+    expect(markAllSeen).toHaveBeenCalledOnce();
+    // The vault's answer: nothing is new any more, and the strip leaves the page.
+    view.rerenderSnapshot(withRecords([clinicRecord("a", "FAKE New.pdf")]));
+    expect(stripHeading()).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toHaveFocus(),
+    );
+  });
+
+  it("says a rise in the count politely and once, and says nothing at unlock or on a fall", () => {
+    const one = clinicRecord("a", "FAKE One.pdf", { isNew: true });
+    const two = clinicRecord("b", "FAKE Two.pdf", { isNew: true });
+    const view = renderLibrary(withRecords([one]));
+    // The count the vault opened with is not announced.
+    expect(politeLine()).toHaveTextContent("");
+    view.rerenderSnapshot(withRecords([one, two]));
+    return waitFor(() =>
+      expect(politeLine()).toHaveHumanTextContent("2 new from your clinic"),
+    ).then(() => {
+      // A fall (a document opened) does not say anything new.
+      view.rerenderSnapshot(withRecords([{ ...one, isNew: false }, two]));
+      expect(politeLine()).toHaveHumanTextContent("2 new from your clinic");
+    });
+  });
+
+  it.each(LOCALES)(
+    "uses %s for the strip, the tag and the buttons",
+    (locale) => {
+      setLocaleOverride(locale);
+      renderLibrary(
+        withRecords([clinicRecord("a", "FAKE New.pdf", { isNew: true })]),
+      );
+      expect(
+        screen.getByRole("heading", {
+          level: 2,
+          name: humanText(
+            translate(locale, "interface.clinicNew.fromClinic", { count: 1 }),
+          ),
+        }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(
+          humanText(translate(locale, "interface.VaultLibrary.newTag")),
+        ),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("button", {
+          name: (name) =>
+            visibleText(name).startsWith(
+              visibleText(translate(locale, "interface.clinicNew.markAll")),
+            ),
+        }),
+      ).toBeVisible();
+    },
+  );
 });
 
 describe("VaultLibrary folder tools that are not a drag", () => {

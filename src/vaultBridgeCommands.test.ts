@@ -99,6 +99,13 @@ describe("each bridge method invokes its native command with its arguments", () 
       { linkId: "link-1" },
     ],
     [
+      "markSeen",
+      (b) => b.markSeen(["record-1", "record-2"]),
+      "vault_mark_seen",
+      { request: { recordIds: ["record-1", "record-2"] } },
+    ],
+    ["markAllSeen", (b) => b.markAllSeen(), "vault_mark_all_seen"],
+    [
       "requestDeviceApproval",
       (b) => b.requestDeviceApproval("link-1"),
       "vault_request_device_approval",

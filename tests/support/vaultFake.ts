@@ -237,6 +237,11 @@ export interface FakeVaultSetup {
   /** Photos taken with the camera, already in the vault, by name (FAKE
    * names ending in .jpg): each has a small JPEG made at run time. */
   photos?: string[];
+  /** Clinic documents (FAKE Clinic note 1.pdf ...) the patient has not looked at yet, from
+   * "FAKE Clinic One" (and "FAKE Clinic Two" for the last one when `newFromTwoClinics`): each is
+   * new until it is opened or "Mark all as seen" is pressed. Default: none. */
+  newClinicDocuments?: number;
+  newFromTwoClinics?: boolean;
   /** What runtime_info reports: "windows" (default), "macos", "linux",
    * "android" or "ios". A computer has the app's own zoom; a phone has not. */
   platform?: string;
@@ -311,6 +316,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         plaintextSize: number;
         importedAtMs: number;
         available: boolean;
+        /** A clinic document not looked at yet on this device (the New marker). */
+        isNew?: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
         /** What the clinic wrote as the patient, on a document in Shared with me (#340). */
@@ -584,6 +591,24 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             available: true,
           });
           documentPasswords[setup.ids.locked] = setup.documentPassword;
+        }
+        for (let index = 0; index < setup.newClinicDocuments; index += 1) {
+          records.push({
+            id: makeUuid(900 + index + 1),
+            profileId: setup.ids.profile,
+            folderIds: [],
+            displayName: `FAKE Clinic note ${index + 1}.pdf`,
+            sourceLabel: "Clinic delivery",
+            mediaType: "application/pdf",
+            plaintextSize: 1500 + index,
+            importedAtMs: Date.UTC(2026, 9, 6, 12, index),
+            available: true,
+            isNew: true,
+            verifiedClinicName:
+              setup.newFromTwoClinics && index === setup.newClinicDocuments - 1
+                ? "FAKE Clinic Two"
+                : "FAKE Clinic One",
+          });
         }
         const photoUrls: Record<string, string> = {};
         for (const [index, name] of setup.photos.entries()) {
@@ -1574,6 +1599,20 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_unhide_record":
             recordById(request.recordId).hidden = null;
             return;
+          // The New marker: opening a document, or "Mark all as seen".
+          case "vault_mark_seen": {
+            for (const id of request.recordIds as string[]) {
+              const found = state.snapshot.records.find(
+                (record) => record.id === id,
+              );
+              if (found) found.isNew = false;
+            }
+            return;
+          }
+          case "vault_mark_all_seen":
+            for (const record of state.snapshot.records)
+              if (!record.hidden) record.isNew = false;
+            return;
           // Hiding a whole person (#360): the last visible person and Shared with me stay.
           case "vault_hide_profile": {
             refuseLocked();
@@ -2278,6 +2317,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,
       photos: setup.photos ?? [],
+      newClinicDocuments: setup.newClinicDocuments ?? 0,
+      newFromTwoClinics: setup.newFromTwoClinics ?? false,
       platform: setup.platform ?? "windows",
       drawnPages: setup.drawnPages ?? null,
       boxesAbsent: setup.boxesAbsent ?? null,

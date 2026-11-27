@@ -2703,6 +2703,22 @@ interface-VaultLibrary-help = 帮助
 
 interface-VaultLibrary-helpButtonName = 帮助：本页
 
+interface-clinicNew-fromClinic = { $count } 份来自您诊所的新文件
+
+interface-clinicNew-fromClinics = { $count } 份来自您各诊所的新文件
+
+interface-clinicNew-named = { $action }，{ $detail }
+
+interface-clinicNew-showThem = 显示这些文件
+
+interface-clinicNew-showAll = 显示所有文件
+
+interface-clinicNew-markAll = 全部标记为已查看
+
+interface-clinicNew-showing = 仅显示新文件。
+
+interface-VaultLibrary-newTag = 新
+
 interface-AddVideo-add = 添加视频
 
 interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。

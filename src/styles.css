@@ -5551,6 +5551,58 @@ button:disabled,
   justify-content: flex-start;
 }
 
+/* The New marker: the strip above the list and the tag on a row. Colours come from the note
+   tokens (contrast checked in both themes); the tag is words, never colour alone. */
+.clinic-new-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--teal-line);
+  border-radius: var(--radius-sm);
+  background: var(--teal-soft);
+  color: var(--teal-dark);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.clinic-new-strip h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+.clinic-new-strip p {
+  margin: 0;
+}
+.clinic-new-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.new-tag {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--teal-line);
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--teal-dark);
+  font-size: 0.875rem;
+  font-weight: 800;
+  line-height: 1.5;
+  vertical-align: baseline;
+}
+@media (forced-colors: active) {
+  .clinic-new-strip,
+  .new-tag {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
 /* Add a video: the button, its progress and its answer, as one item of the library's button row. */
 .add-video {
   display: inline-flex;
