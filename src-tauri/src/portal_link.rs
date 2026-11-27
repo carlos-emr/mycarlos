@@ -27,7 +27,7 @@ pub enum LinkError {
     InvalidDeviceName,
     InvalidResponse,
     Network,
-    // Portal replies to a link request, which Android never sends.
+    // Portal replies to a link request.
     #[cfg_attr(target_os = "android", allow(dead_code))]
     CodeRejected,
     #[cfg_attr(target_os = "android", allow(dead_code))]
@@ -444,11 +444,11 @@ impl StoredLink {
         Ok(LinkRequest {
             endpoint,
             body,
-            assertion: format!(
+            assertion: Zeroizing::new(format!(
                 "{}.{}",
                 B64.encode(payload),
                 B64.encode(signature.to_bytes())
-            ),
+            )),
         })
     }
 }
@@ -459,7 +459,8 @@ impl StoredLink {
 pub struct LinkRequest {
     pub endpoint: Url,
     pub body: Zeroizing<Vec<u8>>,
-    pub assertion: String,
+    /// The signed assertion (it lives at most a minute): wiped when the request is dropped.
+    pub assertion: Zeroizing<String>,
 }
 
 pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
@@ -775,3 +776,6 @@ mod tests {
         assert_eq!(summary["incomplete"], true);
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

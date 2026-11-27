@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # First-party plugin crates whose entire source is reviewed in this repository.
-FIRST_PARTY = {"tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml"}
+FIRST_PARTY = {
+    "tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml",
+    "tauri-plugin-android-trust": "src-tauri/android-trust/Cargo.toml",
+}
 
 
 def validate_metadata(metadata):

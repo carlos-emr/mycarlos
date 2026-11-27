@@ -1639,6 +1639,9 @@ fn sync_dir(dir: &Path) {
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

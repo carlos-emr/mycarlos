@@ -84,6 +84,7 @@
     "allow-vault-assign-folders-batch",
     "allow-vault-import-pick",
     "allow-vault-import-picked",
+    "allow-vault-import-any-pick",
     "allow-vault-import-video-pick",
     "allow-vault-import-video-picked",
     "allow-vault-video-import-progress",

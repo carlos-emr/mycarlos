@@ -2036,6 +2036,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                   folderIds: request.folderIds ?? [],
                 })
               : null;
+          // "+ New": one picker for documents, pictures and videos. What the test queued decides
+          // the answer, as the native routing does by file name: a video alone is a video, a video
+          // with other files is refused, anything else is documents.
+          case "vault_import_any_pick": {
+            refusePaused();
+            const options = {
+              profileId: request.profileId,
+              folderIds: request.folderIds ?? [],
+            };
+            if (state.videoQueue && state.importQueue.length)
+              return { kind: "videoAlone" };
+            if (state.videoQueue)
+              return { kind: "video", pickId: makePick("import", options) };
+            return state.importQueue.length
+              ? { kind: "documents", pickId: makePick("import", options) }
+              : null;
+          }
           case "vault_import_picked": {
             const chosen = pick(request.pickId, "import", true);
             if (
