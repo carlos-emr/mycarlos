@@ -12088,7 +12088,6 @@ mod tests {
         );
     }
 
-    #[cfg(all(unix, desktop))]
     #[test]
     fn the_routing_and_the_stored_name_drop_exactly_the_same_hidden_characters() {
         // Every character there is: the routing accepts a provider's name that holds it exactly
@@ -12214,6 +12213,7 @@ mod tests {
         assert_eq!(asked.load(Ordering::SeqCst), 2);
     }
 
+    #[cfg(all(unix, desktop))]
     #[test]
     fn local_import_rejects_symbolic_links() {
         use std::os::unix::fs::symlink;
