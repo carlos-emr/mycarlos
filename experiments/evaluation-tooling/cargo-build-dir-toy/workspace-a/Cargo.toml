@@ -1,0 +1,27 @@
+[package]
+name = "cargo-split-toy"
+version = "0.0.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[workspace]
+resolver = "2"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "split-helper"
+path = "src/main.rs"
+test = false
+bench = false
+
+[[test]]
+name = "contract"
+path = "tests/contract.rs"
+
+[profile.test]
+debug = 0
+incremental = false
+codegen-units = 1

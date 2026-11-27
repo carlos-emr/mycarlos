@@ -1,0 +1,1 @@
+/usr/bin/taskset -c 0 /usr/bin/nice -n 19 /usr/bin/timeout --signal=TERM --kill-after=0.5s 9.5s /bin/bash --noprofile --norc /workspace/codex-astra-first-best-screen-source-20261113/build_and_run.sh "${FIRST_BEST_SCREEN_OUTPUT:?new Root-owned absent output directory required}"

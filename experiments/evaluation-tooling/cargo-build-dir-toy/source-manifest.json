@@ -1,0 +1,21 @@
+{
+  "schema": "source-only-backup-v1",
+  "status": "SOURCE_ONLY_NO_RUNTIME_AUTHORITY",
+  "files": {
+    "README.md": "2e7e4e27ecffdcbf089b783cc39e6c5d1b61432d2ad91879607a1a18edef4dfc",
+    "run-after-grant.sh": "a0b18b1d32175be1a943af91d35500830a5eb3ee4566dc4fbc2fa3a2b69b3bac",
+    "run-toy.py": "e9d8f7abb9b38639d5cd60d35d340128d33e4099348ca27440beb8cf443fe7c7",
+    "workspace-a/Cargo.lock": "b8b55a7f64972cd5eedf3fe8546fb8f544df5556b9fb79f26343860c5a6fb7e1",
+    "workspace-a/Cargo.toml": "30495fa15fbd86a849f95b958cd3ec57a3e0fd6c45a235abf0b43c169c340c75",
+    "workspace-a/build.rs": "4a462012d017e1717a387bdcc06c18c9855067e318f703563c811084a13d3ceb",
+    "workspace-a/src/lib.rs": "5c02398d4f4f469e43161d787238e82097a49a2803eee7e7c187ab2d6415102c",
+    "workspace-a/src/main.rs": "4b20da10a1202825617e28c198dd6bfb1892aa0074e7d78121d13a508c6533d3",
+    "workspace-a/tests/contract.rs": "32e0c235cb44d76ea5ec067dc32e91c8dd779d0f128190f9aab106a5974ddad0",
+    "workspace-b/Cargo.lock": "b8b55a7f64972cd5eedf3fe8546fb8f544df5556b9fb79f26343860c5a6fb7e1",
+    "workspace-b/Cargo.toml": "30495fa15fbd86a849f95b958cd3ec57a3e0fd6c45a235abf0b43c169c340c75",
+    "workspace-b/build.rs": "4a462012d017e1717a387bdcc06c18c9855067e318f703563c811084a13d3ceb",
+    "workspace-b/src/lib.rs": "f17b87e47373e359d21decf7b3badd1a607bfc88d6abf91b3c6b0f293fc1642d",
+    "workspace-b/src/main.rs": "4b20da10a1202825617e28c198dd6bfb1892aa0074e7d78121d13a508c6533d3",
+    "workspace-b/tests/contract.rs": "32e0c235cb44d76ea5ec067dc32e91c8dd779d0f128190f9aab106a5974ddad0"
+  }
+}
