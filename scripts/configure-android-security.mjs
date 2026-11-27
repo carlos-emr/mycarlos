@@ -167,6 +167,8 @@ export function declareMicrophone(manifest) {
 // AAB at all. `debug-overrides` also only applies to a debuggable app, and the release safety gate
 // refuses a build that carries either (scripts/release-safety/checks.mjs).
 const NETWORK_CONFIG_NAME = "mycarlos_network_security_config";
+// The resource name the platform certificate verifier's AAR uses for its own configuration.
+const VERIFIER_NETWORK_CONFIG_NAME = "network_security_config";
 const TEST_CA_NAME = "mycarlos_test_ca";
 const NETWORK_BASE = `  <base-config cleartextTrafficPermitted="false">
     <trust-anchors>
@@ -296,6 +298,19 @@ export async function writeNetworkSecurityConfig(
   await mkdir(xml, { recursive: true });
   await writeFile(
     join(xml, `${NETWORK_CONFIG_NAME}.xml`),
+    NETWORK_CONFIG,
+    "utf8",
+  );
+  // The platform certificate verifier's AAR ships a resource of its own with the name
+  // `network_security_config` (res/xml, 27 KB): `<base-config cleartextTrafficPermitted="false">`
+  // plus one `<domain-config cleartextTrafficPermitted="true">` listing the CRL hosts of public
+  // certificate authorities. The manifest does not use it (`tools:replace`, above), but a library
+  // resource stays in the merged APK whether or not anything refers to it, and the release safety
+  // gate reads every compiled XML in the APK and refuses cleartext anywhere. An app resource of
+  // the same name takes the library's place in the merge, so the APK holds this app's own
+  // system-authorities-only file under that name too, and no cleartext allowance at all.
+  await writeFile(
+    join(xml, `${VERIFIER_NETWORK_CONFIG_NAME}.xml`),
     NETWORK_CONFIG,
     "utf8",
   );

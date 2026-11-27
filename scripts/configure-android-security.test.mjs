@@ -541,6 +541,18 @@ test("the release config trusts the system's authorities only; the test root is 
       /src="user"|debug-overrides|@raw|mycarlos_test_ca/,
     );
     assert.equal((release.match(/<certificates /g) ?? []).length, 1);
+    // The app also owns the resource name the platform verifier's AAR uses for its own file (which
+    // allows cleartext to a list of CRL hosts): the same system-only config, so the merged APK has
+    // no other `network_security_config` for the release gate to find.
+    const overrides = await readFile(
+      join(res, "xml", "network_security_config.xml"),
+      "utf8",
+    );
+    assert.equal(overrides, release);
+    assert.doesNotMatch(
+      overrides,
+      /domain-config|cleartextTrafficPermitted="true"/,
+    );
 
     const debugConfig = await readFile(
       join(debug, "res", "xml", "mycarlos_network_security_config.xml"),
@@ -575,8 +587,10 @@ test("the release config trusts the system's authorities only; the test root is 
     assert.deepEqual(raw, Buffer.from(fixture.trim(), "base64"));
     assert.equal(raw[0], 0x30);
     assert.deepEqual(await readdir(join(res)), ["xml"]);
+    // The app's configuration, and the same one under the name the platform verifier's AAR uses.
     assert.deepEqual(await readdir(join(res, "xml")), [
       "mycarlos_network_security_config.xml",
+      "network_security_config.xml",
     ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
