@@ -2841,6 +2841,12 @@ native-error-49 = Esta sesión desbloqueada ya probó el máximo de frases de co
 
 native-error-50 = Al menos una persona debe quedar en la biblioteca, así que no se puede ocultar a la última. Añada antes a otra persona.
 
+native-error-51 = Esa carpeta pertenece a myCarlos, así que no se puede guardar nada en ella. Elija una carpeta fuera de la carpeta de myCarlos, como Documentos o el Escritorio.
+
+native-error-52 = El archivo se escribió, pero después no se pudo comprobar, así que no se conservó. No se cambió nada. Inténtelo de nuevo y, si sigue ocurriendo, elija otra carpeta.
+
+native-error-53 = La frase de contraseña contiene un salto de línea o un tabulador. Quítelo (al pegar suele añadirse uno al final) e inténtelo de nuevo.
+
 hiddenPeople-title = Personas ocultas
 
 hiddenPeople-body = Las personas que ocultó no aparecen en la biblioteca, la búsqueda ni el asistente de IA. No se elimina nada: siguen en esta bóveda y en sus copias de seguridad. Cualquiera que conozca su frase de contraseña puede recuperarlas.

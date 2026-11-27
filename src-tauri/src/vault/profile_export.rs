@@ -123,10 +123,12 @@ impl VaultStore {
             if let Err(error) = result {
                 return Err(vault_error
                     .take()
-                    .unwrap_or_else(|| error_of_package(error)));
+                    .unwrap_or_else(|| error_of_written_package(error)));
             }
         }
-        let (sink, digests) = writer.finish_with_digests().map_err(error_of_package)?;
+        let (sink, digests) = writer
+            .finish_with_digests()
+            .map_err(error_of_written_package)?;
         Ok(Written {
             sink,
             report,
@@ -321,11 +323,7 @@ impl VaultStore {
         destination: &Path,
         now_ms: u64,
     ) -> Result<ExportReport, VaultError> {
-        let home = fs::canonicalize(vault_home(&self.root)?)?;
-        let parent = destination.parent().ok_or(VaultError::Invalid)?;
-        if fs::canonicalize(parent)?.starts_with(&home) {
-            return Err(VaultError::Invalid);
-        }
+        refuse_destination_inside_home(&self.root, destination)?;
         let mut open = OpenOptions::new();
         open.read(true).write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -697,6 +695,7 @@ fn error_of_package(error: PackageError) -> VaultError {
     match error {
         PackageError::Cancelled => VaultError::Cancelled,
         PackageError::WeakPassphrase => VaultError::WeakPassphrase,
+        PackageError::PassphraseControlCharacter => VaultError::PassphraseControlCharacter,
         PackageError::Storage => VaultError::Storage,
         // A key (or passphrase) that does not open the package: said as the vault says it.
         PackageError::WrongKey => VaultError::WrongPassphrase,
@@ -712,6 +711,18 @@ impl From<PackageError> for VaultError {
     }
 }
 
+/// `error_of_package` for a package this export is WRITING or reading back to check: what the
+/// catch-all would call `Invalid` ("something you typed wasn't accepted") is the file failing its
+/// own check, which no typing caused, so it is `PackageNotVerified`. Cancel, storage, wrong key
+/// (the key the file was just written with not opening it), too large and the rest keep their
+/// own words.
+fn error_of_written_package(error: PackageError) -> VaultError {
+    match error_of_package(error) {
+        VaultError::Invalid => VaultError::PackageNotVerified,
+        other => other,
+    }
+}
+
 /// Reads a finished package back with its key, as the receiving end will: the end is
 /// checked first, then every object is decrypted and hashed, then the whole is verified. It
 /// must find exactly the objects, sizes and hashes the writer saw. Until this passes the
@@ -723,12 +734,14 @@ pub(crate) fn verify_written<R: Read + Seek>(
     expected: &[ObjectRead],
     still_open: &dyn Fn() -> bool,
 ) -> Result<(), VaultError> {
-    let mut reader = PackageReader::open(source, secret)?;
-    reader.verify_tail()?;
+    let mut reader = PackageReader::open(source, secret).map_err(error_of_written_package)?;
+    reader.verify_tail().map_err(error_of_written_package)?;
     while reader.next_object().is_some() {
-        reader.read_object(&mut io::sink(), still_open)?;
+        reader
+            .read_object(&mut io::sink(), still_open)
+            .map_err(error_of_written_package)?;
     }
-    let verified = reader.finish()?;
+    let verified = reader.finish().map_err(error_of_written_package)?;
     if verified.objects() == expected {
         Ok(())
     } else {
@@ -1498,7 +1511,7 @@ mod tests {
             &link.join("handover.mycarlosprofile"),
             1,
         );
-        assert!(matches!(result, Err(VaultError::Invalid)));
+        assert!(matches!(result, Err(VaultError::SaveLocationInsideVault)));
         assert!(!home.join("handover.mycarlosprofile").exists());
     }
 
@@ -1611,8 +1624,74 @@ mod tests {
             &home.join("handover.mycarlosprofile"),
             1,
         );
-        assert!(matches!(result, Err(VaultError::Invalid)));
+        // Its own error (so the save dialog can say "choose another folder"), not the generic
+        // "something you typed" refusal.
+        assert!(matches!(result, Err(VaultError::SaveLocationInsideVault)));
         assert!(!home.join("handover.mycarlosprofile").exists());
+    }
+
+    #[test]
+    fn a_destination_with_no_folder_is_the_same_save_location_refusal() {
+        let v = vault();
+        let (key, _) = generate_package_key();
+        let result = v.store.export_profile_atomic(
+            v.child,
+            WITH_HISTORY,
+            PackageSecret::Key(&key),
+            Path::new("/"),
+            1,
+        );
+        assert!(matches!(result, Err(VaultError::SaveLocationInsideVault)));
+    }
+
+    #[test]
+    fn what_the_package_check_calls_invalid_is_reported_as_a_file_that_did_not_check() {
+        // A package this export wrote or read back that breaks a format rule is the file failing
+        // its own check, never "something you typed".
+        for error in [PackageError::Invalid, PackageError::Unreadable] {
+            assert!(matches!(
+                error_of_written_package(error),
+                VaultError::PackageNotVerified
+            ));
+        }
+        // The rest keep their own words.
+        assert!(matches!(
+            error_of_written_package(PackageError::Cancelled),
+            VaultError::Cancelled
+        ));
+        assert!(matches!(
+            error_of_written_package(PackageError::Storage),
+            VaultError::Storage
+        ));
+        assert!(matches!(
+            error_of_written_package(PackageError::WrongKey),
+            VaultError::WrongPassphrase
+        ));
+        assert!(matches!(
+            error_of_written_package(PackageError::WeakPassphrase),
+            VaultError::WeakPassphrase
+        ));
+        // The generic mapping (used when the patient's input is what is read) is unchanged.
+        assert!(matches!(
+            error_of_package(PackageError::Invalid),
+            VaultError::Invalid
+        ));
+    }
+
+    #[test]
+    fn a_control_character_in_a_typed_package_passphrase_is_said_as_that() {
+        let v = vault();
+        let result = v.store.export_profile(
+            v.child,
+            WITH_HISTORY,
+            PackageSecret::Passphrase("tiger-lamp-orbit-quartz-mellow-7391\n"),
+            Vec::new(),
+            1,
+        );
+        assert!(matches!(
+            result,
+            Err(VaultError::PassphraseControlCharacter)
+        ));
     }
 
     // --- A process killed part way (the recovery matrix's abrupt-termination harness) --------

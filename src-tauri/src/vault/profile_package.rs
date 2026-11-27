@@ -140,6 +140,9 @@ pub(crate) enum PackageError {
     /// A typed passphrase that breaks the vault's rules for a new one.
     #[error("the passphrase is too weak")]
     WeakPassphrase,
+    /// A typed passphrase with a line break, tab or other control character in it.
+    #[error("the passphrase holds a control character")]
+    PassphraseControlCharacter,
     /// A size, count or length past what a package may hold.
     #[error("the package is too large")]
     TooLarge,
@@ -165,6 +168,7 @@ impl From<VaultError> for PackageError {
     fn from(error: VaultError) -> Self {
         match error {
             VaultError::WeakPassphrase => Self::WeakPassphrase,
+            VaultError::PassphraseControlCharacter => Self::PassphraseControlCharacter,
             VaultError::Invalid => Self::Invalid,
             VaultError::Cancelled | VaultError::Locked => Self::Cancelled,
             _ => Self::Storage,

@@ -2841,6 +2841,12 @@ native-error-49 = Cette session déverrouillée a déjà essayé le maximum de p
 
 native-error-50 = Au moins une personne doit rester dans la bibliothèque : la dernière ne peut pas être masquée. Ajoutez d'abord une autre personne.
 
+native-error-51 = Ce dossier appartient à myCarlos : rien ne peut y être enregistré. Choisissez un dossier en dehors du dossier de myCarlos, par exemple Documents ou le Bureau.
+
+native-error-52 = Le fichier a été écrit, mais il n'a pas pu être vérifié ensuite ; il n'a donc pas été conservé. Rien n'a été modifié. Réessayez et, si le problème persiste, choisissez un autre dossier.
+
+native-error-53 = La phrase secrète contient un saut de ligne ou une tabulation. Supprimez-le (un copier-coller en ajoute souvent un à la fin) et réessayez.
+
 hiddenPeople-title = Personnes masquées
 
 hiddenPeople-body = Les personnes que vous avez masquées sont absentes de la bibliothèque, de la recherche et de l'assistant IA. Rien n'est supprimé : elles restent dans ce coffre et dans vos sauvegardes. Toute personne qui connaît votre phrase secrète peut les rétablir.

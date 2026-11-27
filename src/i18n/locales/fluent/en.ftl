@@ -2806,6 +2806,12 @@ native-error-49 = This unlocked session has already tried the most passphrases i
 
 native-error-50 = At least one person has to stay in the library, so the last one cannot be hidden. Add another person first.
 
+native-error-51 = That folder belongs to myCarlos, so nothing can be saved there. Choose a folder outside the myCarlos folder, such as Documents or Desktop.
+
+native-error-52 = The file was written but could not be checked afterwards, so it was not kept. Nothing was changed. Try again, and if it keeps happening, choose a different folder.
+
+native-error-53 = The passphrase contains a line break or a tab. Remove it (a paste often adds one at the end) and try again.
+
 hiddenPeople-title = Hidden people
 
 hiddenPeople-body = People you have hidden are out of the library, search and the AI helper. Nothing is deleted: they stay in this vault and in your backups. Anyone who knows your passphrase can bring them back.

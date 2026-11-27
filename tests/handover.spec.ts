@@ -685,6 +685,56 @@ test("A failed save, or a picker that fails after the preparation was spent, sta
     .getByRole("button", { name: en("handover.export.continue") })
     .click();
   await expect(dialog.getByRole("alert")).toHaveText(en("native.error.49"));
+  // A line break or tab inside the typed passphrase says what to remove, not "something you
+  // typed wasn't accepted" (error 19).
+  await scriptFake(page, "vault_profile_export_prepare", {
+    reject: {
+      code: "passphrase_control_character",
+      messageKey: "native.error.53",
+    },
+  });
+  await dialog
+    .getByRole("button", { name: en("handover.export.continue") })
+    .click();
+  await expect(dialog.getByRole("alert")).toHaveText(en("native.error.53"));
+  await expect(dialog.getByRole("alert")).not.toHaveText(en("native.error.19"));
+});
+
+test("Saving a handover file: a folder inside the myCarlos folder, and a file that did not check, are each said in their own words, never as something typed", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await openSecurity(page);
+  await page
+    .getByRole("button", { name: en("handover.export.button"), exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const refusals: [string, string, string][] = [
+    ["save_location_inside_vault", "native.error.51", en("native.error.51")],
+    ["package_not_verified", "native.error.52", en("native.error.52")],
+  ];
+  for (const [code, messageKey, text] of refusals) {
+    // The key step, then the save: each refusal sends the patient back to the start.
+    await dialog
+      .getByRole("button", { name: en("handover.export.continue") })
+      .click();
+    await dialog.getByLabel(en("handover.export.keySaved")).check();
+    await dialog
+      .getByRole("button", { name: en("handover.export.continue") })
+      .click();
+    await scriptFake(page, "vault_profile_export_picked", {
+      reject: { code, messageKey },
+    });
+    await dialog
+      .getByRole("button", { name: en("handover.export.chooseWhere") })
+      .click();
+    await expect(dialog.getByRole("alert")).toHaveText(text);
+    await expect(dialog.getByRole("alert")).not.toHaveText(
+      en("native.error.19"),
+    );
+  }
 });
 
 test("Add a person from a file: a passphrase file asks for a passphrase, a duplicate asks first, and each kind of refusal is said", async ({
