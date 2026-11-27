@@ -466,6 +466,11 @@ and point the camera at something harmless. Sound is recorded: anyone talking ne
 4. **Stop and save.** The video appears in the list; open it and choose **Play video**. Seek by the bar
    and with the arrow keys; check that it neither starts by itself nor repeats, that sound plays, and that
    the time shown is the time you recorded **without** the pause.
+   **Before a release,** do this with a real piece from each recorder: record in Chromium's
+   `MediaRecorder` (Windows, Linux, Android) **and** on an iPhone (WebKit), and check that it saves,
+   plays with sound and shows the right length. The tests build their MP4 boxes by hand; the repo has
+   no real camera MP4, so "a real file is never refused for being malformed" rests on box-size
+   reasoning (every field is read only from inside its own box) until this is done.
 5. Close the player, then **Lock now** while a video is open: the player goes and nothing plays.
 6. **Idle lock.** Set the automatic lock to 1 minute. Record for 2 minutes without touching the screen:
    it must **not** lock. Pause and wait: it **must** lock about a minute later, and after unlocking the
