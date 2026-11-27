@@ -1567,6 +1567,10 @@ interface-history-event-profileRestored = 患者档案已恢复
 
 interface-history-event-profileImported = 已从交接文件添加患者档案
 
+interface-history-event-folderHidden = 文件夹已隐藏
+
+interface-history-event-folderRestored = 文件夹已恢复
+
 interface-history-event-readingAidFiled = 已保存阅读辅助
 
 interface-history-event-recoveryKeySet = 恢复密钥已设置
@@ -2608,7 +2612,7 @@ portal-arrivedForHidden = 来自 { $clinic } 的 { $count } 份文档已送达�
 
 hiddenPeople-damagedToo = 这还会隐藏已隐藏的人的 { $count } 份受损文档。为了不显示谁被隐藏，这里不列出它们。
 
-interface-history-aboutHiddenPeople = 有 { $count } 条与已隐藏的人有关的记录未显示。它们已保留，恢复这些人后会再次显示。
+interface-history-aboutHiddenPeople = 有 { $count } 条与已隐藏的人或文件夹有关的记录未显示。它们已保留，恢复后会再次显示。
 
 interface-history-how-personHidden = 该人被隐藏期间归档到“与我分享”
 

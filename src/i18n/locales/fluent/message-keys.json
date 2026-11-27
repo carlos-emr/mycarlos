@@ -1249,6 +1249,8 @@
   "interface.history.event.profileHidden",
   "interface.history.event.profileRestored",
   "interface.history.event.profileImported",
+  "interface.history.event.folderHidden",
+  "interface.history.event.folderRestored",
   "handover.section.title",
   "handover.section.body",
   "handover.export.button",

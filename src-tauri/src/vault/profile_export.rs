@@ -42,6 +42,8 @@ pub(crate) struct ExportReport {
     pub with_clinic_evidence: usize,
     /// Documents hidden as damaged: their file is not readable, so they are not in the package.
     pub left_out_damaged: usize,
+    /// Of the folders, those the patient hid, which arrive hidden with their documents (#574).
+    pub hidden_folders: usize,
     /// Documents whose clinic evidence would not stand up on its own, so only the document
     /// went.
     pub evidence_left_out: usize,
@@ -453,10 +455,14 @@ impl VaultStore {
             ai_answers: 0,
             with_clinic_evidence: 0,
             left_out_damaged: 0,
+            hidden_folders: 0,
             evidence_left_out: 0,
             history_entries: 0,
             plaintext_bytes: 0,
         };
+        // A folder the patient hid goes with its documents, carried hidden (#574, Ben's decision):
+        // only the folder that was hidden carries the flag; the folders below it, and the
+        // documents in all of them, are in the package as they are and arrive hidden under it.
         let folders: Vec<PackageFolder> = manifest
             .folders
             .iter()
@@ -466,9 +472,14 @@ impl VaultStore {
                 parent_id: folder.parent_id,
                 name: folder.name.clone(),
                 created_at_ms: folder.created_at_ms,
+                hidden_at_ms: folder.hidden.map(|hidden| hidden.at_ms),
             })
             .collect();
         report.folders = folders.len();
+        report.hidden_folders = folders
+            .iter()
+            .filter(|folder| folder.hidden_at_ms.is_some())
+            .count();
 
         let mut records = Vec::new();
         let mut sources = HashMap::new();

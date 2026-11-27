@@ -611,7 +611,9 @@ fn a_hidden_persons_lost_file_does_not_trap_the_vault_read_only() {
         Err(VaultError::RecoveryMode)
     ));
     // One that does is the way out: the document is hidden as damaged, the vault is writable.
-    let removed = store.hide_unavailable_records_covering(&[], 1, 2).unwrap();
+    let removed = store
+        .hide_unavailable_records_covering(&[], 1, 0, 2)
+        .unwrap();
     assert_eq!(removed, vec![lost]);
     let after = store.snapshot().unwrap();
     assert_eq!(after.recovery, None);

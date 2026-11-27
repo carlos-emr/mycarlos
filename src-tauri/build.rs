@@ -218,6 +218,8 @@ fn main() {
             "vault_unhide_record",
             "vault_hide_profile",
             "vault_restore_profile",
+            "vault_hide_folder",
+            "vault_restore_folder",
             "vault_ai_result_save",
             "vault_ai_results",
             "vault_ai_result_read",

@@ -68,6 +68,8 @@ mod original_pdf;
 // The profile handover package (#360 PR 1): its writer and reader are used by
 // the export and import commands of the later PRs.
 #[cfg(test)]
+mod hidden_folders_tests;
+#[cfg(test)]
 mod hidden_profiles_tests;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_export;
@@ -131,7 +133,18 @@ const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES
 /// manifest field changed; an older build refuses the vault because it cannot read the event.
 /// The number is taken at merge, after the profile handover's 14 and hiding a person's 15.
 const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 16;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_LINK_REMOVAL;
+/// Format 17 (provisional, #574) lets a whole folder be hidden: `hidden` on a folder, with the
+/// folder, every folder below it and every document filed in any of them out of reach as one
+/// thing. **Its number is taken at merge, with no gap** (VAULT_FORMAT.md, "Format numbers are
+/// taken at merge"): 17 (#389, the cloud key) and 18 (#418) are claimed by branches that merge
+/// first, so this becomes the next free number then (19 or later today). A renumber changes this
+/// line, the section in VAULT_FORMAT.md and the tests that name it (they use the constant). An
+/// older build refuses the vault as newer, so none can read it and list a hidden folder.
+const MANIFEST_FORMAT_HIDDEN_FOLDERS: u32 = 17;
+/// The first format that can hold a hidden folder. The library, the lists, search, the AI helper,
+/// the history, the exports and delivery filing all honour `hidden` on a folder from here.
+const HIDDEN_FOLDERS_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_FOLDERS);
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_HIDDEN_FOLDERS;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
 /// And at most this many across every imported profile of a vault, so that handing over many
@@ -717,6 +730,14 @@ pub struct VaultFolder {
     pub parent_id: Option<Uuid>,
     pub name: String,
     pub created_at_ms: u64,
+    /// Set while the folder is hidden (#574): the folder, every folder below it and every document
+    /// filed in any of them are out of reach as one thing (`Manifest::folder_in_reach`). Nothing is
+    /// deleted or re-encrypted and no document's own `hidden` changes, so restoring the folder
+    /// brings back exactly what was visible. Format 17 only (`HIDDEN_FOLDERS_FORMAT`); the reason
+    /// is always `patient`; never inside Shared with me (it holds no folders). Never in a snapshot
+    /// (a hidden folder is not listed there).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<Hidden>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -881,24 +902,61 @@ impl Manifest {
     }
 
     /// Whether a document is in reach: it is listed, opened, searched, exported, renamed, given
-    /// AI answers and so on only while this is true. Today: its person is in reach. (A document
+    /// AI answers and so on only while this is true. Its person is in reach AND it is not hidden
+    /// **in every folder it is filed in** (#574, Ben's decision: a document filed in two folders,
+    /// one of them hidden, stays visible through the other one; it is out of reach only when ALL
+    /// its folders are). A document filed in no folder depends on its person alone. (A document
     /// hidden on its own, or as damaged, is a separate flag that its own callers check.)
     pub(crate) fn record_in_reach(&self, record: &StoredRecord) -> bool {
         self.person_in_reach(record.profile_id)
+            && (record.folder_ids.is_empty()
+                || record
+                    .folder_ids
+                    .iter()
+                    .any(|folder_id| self.folder_in_reach(*folder_id)))
     }
 
-    /// Whether a folder is in reach: it exists, its person is in reach, and every folder above
-    /// it is. Written to be **bounded and to fail closed**: it follows at most
-    /// `MAX_FOLDER_DEPTH + 1` parents, and a cycle, a parent that is not in the manifest, or a
-    /// chain deeper than the limit all answer `false` (never `true`, never a loop, never a
-    /// panic). It also runs on a manifest inside a mutation closure, which no validation has
-    /// seen yet.
+    /// `record_in_reach` for a caller that filters many documents: `folders_in_reach` is the
+    /// set `folders_in_reach()` returned, built once, so that no document costs a walk.
+    pub(crate) fn record_in_reach_given(
+        &self,
+        folders_in_reach: &HashSet<Uuid>,
+        record: &StoredRecord,
+    ) -> bool {
+        self.person_in_reach(record.profile_id)
+            && (record.folder_ids.is_empty()
+                || record
+                    .folder_ids
+                    .iter()
+                    .any(|folder_id| folders_in_reach.contains(folder_id)))
+    }
+
+    /// The documents that are filed ONLY inside `folders` (and in at least one of them): what
+    /// leaves the library when a folder is hidden, since a document also filed in a folder that
+    /// stays visible stays visible (#574).
+    pub(crate) fn records_only_in(&self, folders: &HashSet<Uuid>) -> Vec<Uuid> {
+        self.records
+            .iter()
+            .filter(|record| {
+                !record.folder_ids.is_empty()
+                    && record.folder_ids.iter().all(|id| folders.contains(id))
+            })
+            .map(|record| record.id)
+            .collect()
+    }
+
+    /// Whether a folder is in reach: it exists, it is not hidden, its person is in reach, and
+    /// every folder above it is in reach too (a hidden folder takes its whole subtree with it).
+    /// Written to be **bounded and to fail closed**: it follows at most `MAX_FOLDER_DEPTH + 1`
+    /// parents, and a cycle, a parent that is not in the manifest, or a chain deeper than the
+    /// limit all answer `false` (never `true`, never a loop, never a panic). It also runs on a
+    /// manifest inside a mutation closure, which no validation has seen yet.
     pub(crate) fn folder_in_reach(&self, folder_id: Uuid) -> bool {
         self.walk_in_reach(folder_id, |id| {
             self.folders
                 .iter()
                 .find(|folder| folder.id == id)
-                .map(|folder| (folder.profile_id, folder.parent_id))
+                .map(|folder| (folder.profile_id, folder.parent_id, folder.hidden.is_some()))
         })
     }
 
@@ -907,10 +965,15 @@ impl Manifest {
     /// `folder_in_reach` of each folder, but through an id map built once: O(folders x depth),
     /// not a scan of every folder at every step.
     pub(crate) fn folders_in_reach(&self) -> HashSet<Uuid> {
-        let by_id: HashMap<Uuid, (Uuid, Option<Uuid>)> = self
+        let by_id: HashMap<Uuid, (Uuid, Option<Uuid>, bool)> = self
             .folders
             .iter()
-            .map(|folder| (folder.id, (folder.profile_id, folder.parent_id)))
+            .map(|folder| {
+                (
+                    folder.id,
+                    (folder.profile_id, folder.parent_id, folder.hidden.is_some()),
+                )
+            })
             .collect();
         self.folders
             .iter()
@@ -919,12 +982,77 @@ impl Manifest {
             .collect()
     }
 
+    /// Whether every folder ABOVE `folder_id` is in reach (a top folder has none): what makes a
+    /// hidden folder the one the patient can restore. A folder hidden beneath another hidden
+    /// folder is restored through the upper one (its own flag stays and comes back as hidden).
+    pub(crate) fn folder_parent_in_reach(&self, folder_id: Uuid) -> bool {
+        match self
+            .folders
+            .iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.parent_id)
+        {
+            Some(None) => true,
+            Some(Some(parent)) => self.folder_in_reach(parent),
+            None => false,
+        }
+    }
+
+    /// The ids of `folder_id` and of every folder below it. Bounded by the number of folders (a
+    /// folder is visited once), so a manifest with a cycle in it cannot loop.
+    pub(crate) fn folder_subtree(&self, folder_id: Uuid) -> HashSet<Uuid> {
+        let mut found = HashSet::new();
+        let mut pending = vec![folder_id];
+        while let Some(current) = pending.pop() {
+            if !found.insert(current) {
+                continue;
+            }
+            pending.extend(
+                self.folders
+                    .iter()
+                    .filter(|folder| folder.parent_id == Some(current))
+                    .map(|folder| folder.id),
+            );
+        }
+        found
+    }
+
+    /// The hidden folders Security lists (#574): the TOPMOST hidden folder of each person in
+    /// reach (its flag is set, its person is visible and every folder above it is in reach), with
+    /// the documents in its whole subtree and the folders below it.
+    pub(crate) fn hidden_folder_summaries(&self) -> Vec<HiddenFolder> {
+        self.folders
+            .iter()
+            .filter_map(|folder| {
+                let hidden = folder.hidden?;
+                if !self.person_in_reach(folder.profile_id)
+                    || !self.folder_parent_in_reach(folder.id)
+                {
+                    return None;
+                }
+                let subtree = self.folder_subtree(folder.id);
+                Some(HiddenFolder {
+                    id: folder.id,
+                    profile_id: folder.profile_id,
+                    name: folder.name.clone(),
+                    hidden_at_ms: hidden.at_ms,
+                    documents: self
+                        .records
+                        .iter()
+                        .filter(|record| record.folder_ids.iter().any(|id| subtree.contains(id)))
+                        .count(),
+                    subfolders: subtree.len() - 1,
+                })
+            })
+            .collect()
+    }
+
     /// The one walk behind both: from `folder_id` up through `parent_id`, asking `lookup` for a
-    /// folder's (person, parent). Bounded and fail closed (see `folder_in_reach`).
+    /// folder's (person, parent, hidden). Bounded and fail closed (see `folder_in_reach`).
     fn walk_in_reach(
         &self,
         folder_id: Uuid,
-        lookup: impl Fn(Uuid) -> Option<(Uuid, Option<Uuid>)>,
+        lookup: impl Fn(Uuid) -> Option<(Uuid, Option<Uuid>, bool)>,
     ) -> bool {
         let mut current = folder_id;
         let mut seen = HashSet::new();
@@ -932,10 +1060,10 @@ impl Manifest {
             if !seen.insert(current) {
                 return false;
             }
-            let Some((profile_id, parent_id)) = lookup(current) else {
+            let Some((profile_id, parent_id, hidden)) = lookup(current) else {
                 return false;
             };
-            if !self.person_in_reach(profile_id) {
+            if hidden || !self.person_in_reach(profile_id) {
                 return false;
             }
             match parent_id {
@@ -1084,6 +1212,15 @@ pub struct VaultSnapshot {
     /// are in no list, yet the vault is read-only until they are dealt with, so the
     /// confirmation to hide the damaged documents says "and N of a hidden person".
     pub hidden_people_damaged: usize,
+    /// The hidden folders of people in reach, for Security's Hidden folders list and nothing
+    /// else (#574): one entry per TOPMOST hidden folder (a folder hidden beneath another hidden
+    /// folder is restored through the upper one). Their documents and subfolders are in no list.
+    pub hidden_folders: Vec<HiddenFolder>,
+    /// How many documents inside a hidden folder (of a person in reach) have a missing file: an
+    /// anonymous count, a separate figure from the hidden people's (#574). They are in no list, yet
+    /// the vault is read-only until they are dealt with, so the confirmation to hide the damaged
+    /// documents says "and N in a hidden folder".
+    pub hidden_folders_damaged: usize,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
     pub portal_linking_enabled: bool,
@@ -1143,6 +1280,24 @@ pub struct HiddenProfile {
     pub hidden_at_ms: u64,
     /// All the person's documents, those hidden one by one included.
     pub documents: usize,
+}
+
+/// A hidden folder as Security's Hidden folders list shows it (#574): the topmost hidden folder of
+/// a person who is in reach, with how much it holds. Its documents and subfolders are in no other
+/// list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenFolder {
+    pub id: Uuid,
+    /// The person the folder belongs to, so that the list can say whose it is.
+    pub profile_id: Uuid,
+    pub name: String,
+    pub hidden_at_ms: u64,
+    /// Every document filed in the folder or in any folder below it, those hidden one by one
+    /// included, and those also filed in another folder.
+    pub documents: usize,
+    /// The folders below it (not counting itself), those hidden on their own included.
+    pub subfolders: usize,
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
@@ -2410,7 +2565,7 @@ impl VaultStore {
         let records: HashSet<Uuid> = manifest
             .records
             .iter()
-            .filter(|record| !manifest.record_in_reach(record))
+            .filter(|record| !manifest.record_in_reach_given(&in_reach, record))
             .map(|record| record.id)
             .collect();
         let folders: HashSet<Uuid> = manifest
@@ -2425,10 +2580,20 @@ impl VaultStore {
         if people.is_empty() && records.is_empty() && folders.is_empty() {
             return Ok(view);
         }
+        // An entry is left out when it is ABOUT something out of reach, or when it NAMES a hidden
+        // folder without being about it: a move's `from` / `to` hold the folders a document or a
+        // folder was in "at the time", with their names (#574). One rule, one count.
+        let names_a_folder_out_of_reach = |places: &Option<Vec<history::FolderAtTheTime>>| {
+            places
+                .as_ref()
+                .is_some_and(|places| places.iter().any(|place| folders.contains(&place.id)))
+        };
         let about = |entry: &HistoryEntry| {
             entry.profile_id.is_some_and(|id| people.contains(&id))
                 || entry.record_id.is_some_and(|id| records.contains(&id))
                 || entry.folder_id.is_some_and(|id| folders.contains(&id))
+                || names_a_folder_out_of_reach(&entry.from)
+                || names_a_folder_out_of_reach(&entry.to)
         };
         let before = view.entries.len() + view.later.len();
         view.entries.retain(|entry| !about(entry));
@@ -2552,6 +2717,9 @@ impl VaultStore {
 
     fn snapshot_of(&self, unlocked: &UnlockedVault, capture: SnapshotCapture) -> VaultSnapshot {
         let root = self.root.as_path();
+        // The folders in reach, found once for the whole snapshot (the folder list, each
+        // document's reach and the hidden-folder list all read it).
+        let folders_in_reach = unlocked.manifest.folders_in_reach();
         VaultSnapshot {
             capture,
             portal_linking_enabled: crate::portal_client::available(),
@@ -2619,22 +2787,35 @@ impl VaultStore {
                     })
                 })
                 .collect(),
-            folders: {
-                // The folders in reach, found once for the whole list.
-                let in_reach = unlocked.manifest.folders_in_reach();
-                unlocked
-                    .manifest
-                    .folders
-                    .iter()
-                    .filter(|folder| in_reach.contains(&folder.id))
-                    .cloned()
-                    .collect()
-            },
+            hidden_folders: unlocked.manifest.hidden_folder_summaries(),
+            hidden_folders_damaged: unlocked
+                .manifest
+                .records
+                .iter()
+                .filter(|record| {
+                    unlocked.unavailable.contains(&record.id)
+                        && unlocked.manifest.person_in_reach(record.profile_id)
+                        && !unlocked
+                            .manifest
+                            .record_in_reach_given(&folders_in_reach, record)
+                })
+                .count(),
+            folders: unlocked
+                .manifest
+                .folders
+                .iter()
+                .filter(|folder| folders_in_reach.contains(&folder.id))
+                .cloned()
+                .collect(),
             records: unlocked
                 .manifest
                 .records
                 .iter()
-                .filter(|record| unlocked.manifest.record_in_reach(record))
+                .filter(|record| {
+                    unlocked
+                        .manifest
+                        .record_in_reach_given(&folders_in_reach, record)
+                })
                 .map(|record| {
                     let verified =
                         delivery::verified_clinic(record, &unlocked.manifest.portal_links);
@@ -2642,7 +2823,14 @@ impl VaultStore {
                     VaultRecord {
                         id: record.id,
                         profile_id: record.profile_id,
-                        folder_ids: record.folder_ids.clone(),
+                        // Only the folders in reach: a document also filed in a hidden folder (#574)
+                        // shows no sign of it, not even the folder's id.
+                        folder_ids: record
+                            .folder_ids
+                            .iter()
+                            .copied()
+                            .filter(|id| folders_in_reach.contains(id))
+                            .collect(),
                         display_name: record.display_name.clone(),
                         source_label: record.source_label.clone(),
                         media_type: record.media_type.clone(),
@@ -3211,6 +3399,7 @@ impl VaultStore {
                 parent_id,
                 name: name.trim().to_owned(),
                 created_at_ms: now_ms,
+                hidden: None,
             });
             Ok(id)
         })
@@ -3369,17 +3558,32 @@ impl VaultStore {
             for profile_id in profile_ids {
                 validate_folder_ids(manifest, profile_id, &assignments)?;
             }
-            // One entry for each document whose folders change.
+            // One entry for each document whose folders change. The entry names only the folders
+            // in reach: a hidden folder the document was also in (#574) is not named in it.
+            let in_reach = manifest.folders_in_reach();
+            let visible_places = |ids: &[Uuid]| -> Vec<Uuid> {
+                ids.iter()
+                    .copied()
+                    .filter(|id| in_reach.contains(id))
+                    .collect()
+            };
             let at_ms = crate::now_ms();
             let to = folders_at_the_time(manifest, &assignments);
             for record in &manifest.records {
-                if unique_record_ids.contains(&record.id) && record.folder_ids != assignments {
-                    entries.push(record_entry(HistoryEvent::Moved, at_ms, record).with_move(
-                        folders_at_the_time(manifest, &record.folder_ids),
-                        to.clone(),
-                    ));
+                if !unique_record_ids.contains(&record.id) {
+                    continue;
+                }
+                let before = visible_places(&record.folder_ids);
+                if before != assignments {
+                    entries.push(
+                        record_entry(HistoryEvent::Moved, at_ms, record)
+                            .with_move(folders_at_the_time(manifest, &before), to.clone()),
+                    );
                 }
             }
+            // Filing a document sets ALL its places: one the patient re-files leaves a hidden
+            // folder it was also in (a document that was visible through another folder, and is
+            // now put somewhere, is the patient's choice of where it lives).
             for record in &mut manifest.records {
                 if unique_record_ids.contains(&record.id) {
                     record.folder_ids = assignments.clone();
@@ -4186,6 +4390,24 @@ impl VaultStore {
         self.set_hidden(record_id, None)
     }
 
+    /// The documents in a folder and in every folder below it, hidden or not: what the AI helper
+    /// forgets when the folder is hidden (#574). Ids only; none for a folder that is out of reach.
+    pub(crate) fn folder_record_ids(&self, folder_id: Uuid) -> Vec<Uuid> {
+        let guard = self.session();
+        guard
+            .as_ref()
+            .map(|unlocked| {
+                let manifest = &unlocked.manifest;
+                if !manifest.folder_in_reach(folder_id) {
+                    return Vec::new();
+                }
+                // Only what would leave the library: a document also filed in a folder that stays
+                // visible stays visible, and keeps whatever the AI helper holds for it.
+                manifest.records_only_in(&manifest.folder_subtree(folder_id))
+            })
+            .unwrap_or_default()
+    }
+
     /// The documents of a person, hidden or not: what the AI helper forgets when they are
     /// hidden. Ids only.
     pub(crate) fn profile_record_ids(&self, profile_id: Uuid) -> Vec<Uuid> {
@@ -4269,6 +4491,119 @@ impl VaultStore {
         // A video already playing from one of them stops being served, as when a single document is
         // hidden (the session is held, then the tokens: the order the lock takes).
         self.end_playback_for_records(&their_records);
+        Ok(())
+    }
+
+    /// Hides a whole folder as one thing (#574, the folder twin of `hide_profile`): one flag on the
+    /// folder, one manifest commit, one history entry. The folder, every folder below it and every
+    /// document filed in any of them leave the library, the lists, search and the AI helper's reach
+    /// at once; nothing is deleted or re-encrypted and no document's own `hidden` changes, so
+    /// restoring brings back exactly what was visible.
+    ///
+    /// A folder that is out of reach (hidden already, beneath a hidden folder, of a hidden person,
+    /// or not there) is `NotFound`: it is not named to the caller (the screen cannot offer it, and
+    /// hiding under a hidden parent is refused, *default, Ben can change*). Refused while the vault
+    /// is read-only for any reason, as `hide_profile` is.
+    ///
+    /// Hiding is tidiness, not secrecy: anyone with the passphrase can restore the folder.
+    pub fn hide_folder(&self, folder_id: Uuid, now_ms: u64) -> Result<(), VaultError> {
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let manifest = &unlocked.manifest;
+        if !manifest.folder_in_reach(folder_id) {
+            return Err(VaultError::NotFound);
+        }
+        let folder = manifest
+            .folders
+            .iter()
+            .find(|folder| folder.id == folder_id)
+            .ok_or(VaultError::NotFound)?;
+        let mut entry = HistoryEntry::new(HistoryEvent::FolderHidden, now_ms);
+        entry.profile_id = Some(folder.profile_id);
+        entry.folder_id = Some(folder_id);
+        entry.name = Some(folder.name.clone());
+        // The audit says which folder (id and name), when (the entry's time) and why: the patient
+        // hid it. Security's display only counts the entries it leaves out; this is the record.
+        entry.how = Some("patient".to_owned());
+        // The documents that leave the library, to stop any video playing from them once the hide
+        // is committed (one also filed in a folder that stays visible stays visible, #574).
+        let their_records = manifest.records_only_in(&manifest.folder_subtree(folder_id));
+        let mut next = unlocked.manifest.clone();
+        for folder in &mut next.folders {
+            if folder.id == folder_id {
+                folder.hidden = Some(Hidden {
+                    at_ms: now_ms,
+                    reason: HiddenReason::Patient,
+                });
+            }
+        }
+        let redundant = commit_with_history(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            vec![entry],
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        // A video already playing from one of them stops being served, as when a single document is
+        // hidden (the session is held, then the tokens: the order the lock takes).
+        self.end_playback_for_records(&their_records);
+        Ok(())
+    }
+
+    /// Brings a hidden folder back (#574): exactly what was visible is visible again, since no
+    /// document's own `hidden` and no other folder's flag was touched (a folder hidden on its own
+    /// beneath it stays hidden). Only the TOPMOST hidden folder of a visible person can be
+    /// restored: a folder hidden beneath another hidden folder, or of a hidden person, is
+    /// `NotFound` until the upper one comes back. A visible folder is a no-op, as for a person.
+    /// Refused while the vault is read-only for any reason.
+    pub fn restore_folder(&self, folder_id: Uuid) -> Result<(), VaultError> {
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let manifest = &unlocked.manifest;
+        let folder = manifest
+            .folders
+            .iter()
+            .find(|folder| folder.id == folder_id)
+            .ok_or(VaultError::NotFound)?;
+        if folder.hidden.is_none() {
+            return if manifest.folder_in_reach(folder_id) {
+                Ok(())
+            } else {
+                Err(VaultError::NotFound)
+            };
+        }
+        if !manifest.person_in_reach(folder.profile_id)
+            || !manifest.folder_parent_in_reach(folder_id)
+        {
+            return Err(VaultError::NotFound);
+        }
+        let mut entry = HistoryEntry::new(HistoryEvent::FolderRestored, crate::now_ms());
+        entry.profile_id = Some(folder.profile_id);
+        entry.folder_id = Some(folder_id);
+        entry.name = Some(folder.name.clone());
+        // The patient brought it back (the same audit fields as the hide entry).
+        entry.how = Some("patient".to_owned());
+        let mut next = unlocked.manifest.clone();
+        for folder in &mut next.folders {
+            if folder.id == folder_id {
+                folder.hidden = None;
+            }
+        }
+        let redundant = commit_with_history(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            vec![entry],
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(())
     }
 
@@ -4422,17 +4757,20 @@ impl VaultStore {
         confirmed: &[Uuid],
         now_ms: u64,
     ) -> Result<Vec<Uuid>, VaultError> {
-        self.hide_unavailable_records_covering(confirmed, 0, now_ms)
+        self.hide_unavailable_records_covering(confirmed, 0, 0, now_ms)
     }
 
     /// `hide_unavailable_records`, where the patient's confirmation also covered
     /// `hidden_people_documents` damaged documents of hidden people, who are in no list and so
-    /// are counted, never named (#360). If that count differs from the session's, nothing is
-    /// removed. The ids confirmed are those of people who are shown.
+    /// are counted, never named (#360), and `hidden_folder_documents` damaged documents inside a
+    /// hidden folder of a person who is shown, a separate figure (#574). If either count differs
+    /// from the session's, nothing is removed. The ids confirmed are those the patient was shown:
+    /// a person in reach, and in no hidden folder.
     pub fn hide_unavailable_records_covering(
         &self,
         confirmed: &[Uuid],
         hidden_people_documents: usize,
+        hidden_folder_documents: usize,
         now_ms: u64,
     ) -> Result<Vec<Uuid>, VaultError> {
         let mut guard = self.session();
@@ -4479,19 +4817,35 @@ impl VaultStore {
         }
         // The screen may not have caught up with an earlier refusal.
         let confirmed: HashSet<Uuid> = confirmed.iter().copied().collect();
-        let (of_hidden_people, shown_to_patient): (Vec<Uuid>, Vec<Uuid>) =
-            unlocked.unavailable.iter().copied().partition(|id| {
-                unlocked
-                    .manifest
-                    .records
-                    .iter()
-                    .find(|record| record.id == *id)
-                    // The people's own partition (the screen's confirmation counts hidden
-                    // people's damaged documents separately from a folder's, #574).
-                    .is_some_and(|record| !unlocked.manifest.person_in_reach(record.profile_id))
-            });
+        // Three kinds of damaged document: a hidden person's (counted, never named), one inside a
+        // hidden folder of a shown person (counted separately, never named, #574), and the ones
+        // the patient was shown.
+        let folders_in_reach = unlocked.manifest.folders_in_reach();
+        let (mut of_hidden_people, mut of_hidden_folders, mut shown_to_patient) =
+            (Vec::new(), Vec::new(), Vec::new());
+        for id in unlocked.unavailable.iter().copied() {
+            match unlocked
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == id)
+            {
+                Some(record) if !unlocked.manifest.person_in_reach(record.profile_id) => {
+                    of_hidden_people.push(id);
+                }
+                Some(record)
+                    if !unlocked
+                        .manifest
+                        .record_in_reach_given(&folders_in_reach, record) =>
+                {
+                    of_hidden_folders.push(id);
+                }
+                _ => shown_to_patient.push(id),
+            }
+        }
         if confirmed != shown_to_patient.into_iter().collect::<HashSet<Uuid>>()
             || hidden_people_documents != of_hidden_people.len()
+            || hidden_folder_documents != of_hidden_folders.len()
         {
             return Err(VaultError::RemovalChanged);
         }
@@ -6150,6 +6504,21 @@ fn valid_handover_fields_from(
 
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
+/// Whether a folder's `hidden` flag is one a manifest of `format_version` may hold (#574): none is
+/// always fine; a flag only from `HIDDEN_FOLDERS_FORMAT` on (an older build that accepted a newer
+/// number could otherwise drop what it does not know and list a hidden folder), only for the
+/// patient's own reason (a folder has no file to lose), and never inside Shared with me (a holding
+/// folder that holds no folders). There is deliberately no rule about the flags of a folder's
+/// neighbours: the flag is on one folder, and a subtree is hidden by walking up from it.
+fn valid_folder_hidden(folder: &VaultFolder, format_version: u32, vault_id: Uuid) -> bool {
+    let Some(hidden) = folder.hidden else {
+        return true;
+    };
+    HIDDEN_FOLDERS_FORMAT.is_some_and(|first| format_version >= first)
+        && hidden.reason == HiddenReason::Patient
+        && folder.profile_id != shared_profile_id(vault_id)
+}
+
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
     if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
         || manifest.vault_id != vault_id
@@ -6228,6 +6597,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || !profile_ids.contains(&folder.profile_id)
             || folder.parent_id == Some(folder.id)
             || validate_name(&folder.name).is_err()
+            || !valid_folder_hidden(folder, manifest.format_version, vault_id)
         {
             return Err(VaultError::Corrupt);
         }
@@ -11751,6 +12121,7 @@ mod tests {
                     parent_id: None,
                     name: "Labs".to_owned(),
                     created_at_ms: 3,
+                    hidden: None,
                 },
                 VaultFolder {
                     id: second_folder,
@@ -11758,6 +12129,7 @@ mod tests {
                     parent_id: None,
                     name: "Imaging".to_owned(),
                     created_at_ms: 4,
+                    hidden: None,
                 },
             ],
             records: vec![
