@@ -666,6 +666,7 @@
   "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
+  "portal.deviceNameHelp",
   "portal.deviceDetailsShow",
   "portal.deviceDetailsHide",
   "portal.earlierShow",

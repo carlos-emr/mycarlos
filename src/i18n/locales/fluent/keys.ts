@@ -667,6 +667,7 @@ export const MESSAGE_KEYS = [
   "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
+  "portal.deviceNameHelp",
   "portal.deviceDetailsShow",
   "portal.deviceDetailsHide",
   "portal.earlierShow",
@@ -2204,6 +2205,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
+  "portal.deviceNameHelp": "portal-deviceNameHelp",
   "portal.deviceDetailsShow": "portal-deviceDetailsShow",
   "portal.deviceDetailsHide": "portal-deviceDetailsHide",
   "portal.earlierShow": "portal-earlierShow",
@@ -3893,6 +3895,7 @@ export interface MessageArgsByKey {
   "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
+  "portal.deviceNameHelp": undefined;
   "portal.deviceDetailsShow": undefined;
   "portal.deviceDetailsHide": undefined;
   "portal.earlierShow": { count: FluentArgument };

@@ -95,6 +95,11 @@ test("Security: clinic documents, profiles and the open section are named and re
       - combobox "Whose records"
       - button "Connect and request approval"
   `);
+  await expect(
+    clinic.getByRole("textbox", { name: "Name for this device", exact: true }),
+  ).toHaveAccessibleDescription(
+    "The clinic sees this name. Use something like “Kitchen laptop”, not a person’s name.",
+  );
 
   // An empty profile form is not an error: no alert on arrival, but each field
   // says what it still needs, and the next step is read out as it changes.
