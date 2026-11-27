@@ -1943,6 +1943,7 @@ mod tests {
 #[doc(hidden)]
 #[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
 pub mod testing {
+    use super::engine_testing::words;
     use super::*;
 
     /// Plenty of memory, whatever the computer: the stub needs little.
@@ -2082,7 +2083,7 @@ pub mod engine_testing {
     /// words (an assertion on "ended before its hello" needs them). Test support over FAKE documents
     /// only: in the app these words never leave the runner, which is why `Debug` of `RunnerError`
     /// prints just its name in a release build, and this function must not move into app code.
-    fn words(error: &RunnerError) -> String {
+    pub(super) fn words(error: &RunnerError) -> String {
         match error {
             RunnerError::Start(words)
             | RunnerError::Protocol(words)
