@@ -487,7 +487,11 @@ mod tests {
         // each through `verify_replacement_proof`; `expect_valid` is true for both).
         assert!(by("valid-low-s")["expect_valid"].as_bool().unwrap());
         assert!(by("valid-high-s")["expect_valid"].as_bool().unwrap());
-        // MUTANT_RESULT_PLACEHOLDER
+        // Mutant check (27 Nov): removing `.normalize_s()` from `verify_replacement_proof` left every
+        // test green (the module's 11 tests and the whole filtered run passed), so the call does not
+        // change what verifies with this `p256`/`ecdsa` version, whose P-256 verification already
+        // accepts a high S. It is kept as the explicit statement of the spec (`accept_high_and_low_s`),
+        // and this test is what would fail if a newer crate began to refuse a high S.
     }
 
     #[test]
