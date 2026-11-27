@@ -537,6 +537,7 @@ pub enum MessageId {
     InterfaceRecordDialogCamera,
     InterfaceRecordDialogCameraAndMicrophone,
     InterfaceRecordDialogDeviceFellBack,
+    InterfaceRecordDialogDeviceNotSwitched,
     InterfaceRecordDialogHigh,
     InterfaceRecordDialogKeepRecording,
     InterfaceRecordDialogLowOnRoom,
@@ -550,13 +551,17 @@ pub enum MessageId {
     InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
     InterfaceRecordDialogPictureQuality,
     InterfaceRecordDialogRecordAVideo,
+    InterfaceRecordDialogRecordAVideoFor,
     InterfaceRecordDialogRecorded,
     InterfaceRecordDialogRecording,
     InterfaceRecordDialogRecordingAt,
     InterfaceRecordDialogRecordingPaused,
     InterfaceRecordDialogRecordingResumed,
+    InterfaceRecordDialogRecordingSettings,
     InterfaceRecordDialogResumeRecording,
     InterfaceRecordDialogSavingTheVideo,
+    InterfaceRecordDialogSaySomething,
+    InterfaceRecordDialogSettingsNote,
     InterfaceRecordDialogStandard,
     InterfaceRecordDialogStartRecording,
     InterfaceRecordDialogStartingTheCameraAndMicrophone,
@@ -922,6 +927,7 @@ pub enum MessageId {
     LockWarningTitle,
     NativeBackupNoteEmptied,
     NativeBackupNoteUntouched,
+    NativeBackupExclusionFailed,
     NativeCancel,
     NativeError01,
     NativeError02,
@@ -1972,6 +1978,7 @@ impl MessageId {
         Self::InterfaceRecordDialogCamera,
         Self::InterfaceRecordDialogCameraAndMicrophone,
         Self::InterfaceRecordDialogDeviceFellBack,
+        Self::InterfaceRecordDialogDeviceNotSwitched,
         Self::InterfaceRecordDialogHigh,
         Self::InterfaceRecordDialogKeepRecording,
         Self::InterfaceRecordDialogLowOnRoom,
@@ -1985,13 +1992,17 @@ impl MessageId {
         Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
         Self::InterfaceRecordDialogPictureQuality,
         Self::InterfaceRecordDialogRecordAVideo,
+        Self::InterfaceRecordDialogRecordAVideoFor,
         Self::InterfaceRecordDialogRecorded,
         Self::InterfaceRecordDialogRecording,
         Self::InterfaceRecordDialogRecordingAt,
         Self::InterfaceRecordDialogRecordingPaused,
         Self::InterfaceRecordDialogRecordingResumed,
+        Self::InterfaceRecordDialogRecordingSettings,
         Self::InterfaceRecordDialogResumeRecording,
         Self::InterfaceRecordDialogSavingTheVideo,
+        Self::InterfaceRecordDialogSaySomething,
+        Self::InterfaceRecordDialogSettingsNote,
         Self::InterfaceRecordDialogStandard,
         Self::InterfaceRecordDialogStartRecording,
         Self::InterfaceRecordDialogStartingTheCameraAndMicrophone,
@@ -2357,6 +2368,7 @@ impl MessageId {
         Self::LockWarningTitle,
         Self::NativeBackupNoteEmptied,
         Self::NativeBackupNoteUntouched,
+        Self::NativeBackupExclusionFailed,
         Self::NativeCancel,
         Self::NativeError01,
         Self::NativeError02,
@@ -3571,6 +3583,9 @@ impl MessageId {
                 "interface-RecordDialog-cameraAndMicrophone"
             }
             Self::InterfaceRecordDialogDeviceFellBack => "interface-RecordDialog-deviceFellBack",
+            Self::InterfaceRecordDialogDeviceNotSwitched => {
+                "interface-RecordDialog-deviceNotSwitched"
+            }
             Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
             Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
             Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
@@ -3590,6 +3605,7 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogPictureQuality => "interface-RecordDialog-pictureQuality",
             Self::InterfaceRecordDialogRecordAVideo => "interface-RecordDialog-recordAVideo",
+            Self::InterfaceRecordDialogRecordAVideoFor => "interface-RecordDialog-recordAVideoFor",
             Self::InterfaceRecordDialogRecorded => "interface-RecordDialog-recorded",
             Self::InterfaceRecordDialogRecording => "interface-RecordDialog-recording",
             Self::InterfaceRecordDialogRecordingAt => "interface-RecordDialog-recordingAt",
@@ -3597,8 +3613,13 @@ impl MessageId {
             Self::InterfaceRecordDialogRecordingResumed => {
                 "interface-RecordDialog-recordingResumed"
             }
+            Self::InterfaceRecordDialogRecordingSettings => {
+                "interface-RecordDialog-recordingSettings"
+            }
             Self::InterfaceRecordDialogResumeRecording => "interface-RecordDialog-resumeRecording",
             Self::InterfaceRecordDialogSavingTheVideo => "interface-RecordDialog-savingTheVideo",
+            Self::InterfaceRecordDialogSaySomething => "interface-RecordDialog-saySomething",
+            Self::InterfaceRecordDialogSettingsNote => "interface-RecordDialog-settingsNote",
             Self::InterfaceRecordDialogStandard => "interface-RecordDialog-standard",
             Self::InterfaceRecordDialogStartRecording => "interface-RecordDialog-startRecording",
             Self::InterfaceRecordDialogStartingTheCameraAndMicrophone => {
@@ -4176,6 +4197,7 @@ impl MessageId {
             Self::LockWarningTitle => "lockWarning-title",
             Self::NativeBackupNoteEmptied => "native-backup-noteEmptied",
             Self::NativeBackupNoteUntouched => "native-backup-noteUntouched",
+            Self::NativeBackupExclusionFailed => "native-backupExclusionFailed",
             Self::NativeCancel => "native-cancel",
             Self::NativeError01 => "native-error-01",
             Self::NativeError02 => "native-error-02",
@@ -6279,6 +6301,12 @@ impl MessageId {
             "reader.android.zoomOut" => Some(Self::ReaderAndroidZoomOut),
             "interface.video.name" => Some(Self::InterfaceVideoName),
             "interface.RecordDialog.recordAVideo" => Some(Self::InterfaceRecordDialogRecordAVideo),
+            "interface.RecordDialog.recordAVideoFor" => {
+                Some(Self::InterfaceRecordDialogRecordAVideoFor)
+            }
+            "interface.RecordDialog.recordingSettings" => {
+                Some(Self::InterfaceRecordDialogRecordingSettings)
+            }
             "interface.RecordDialog.unavailable" => Some(Self::InterfaceRecordDialogUnavailable),
             "interface.RecordDialog.why" => Some(Self::InterfaceRecordDialogWhy),
             "interface.RecordDialog.startingTheCameraAndMicrophone" => {
@@ -6316,6 +6344,11 @@ impl MessageId {
             "interface.RecordDialog.deviceFellBack" => {
                 Some(Self::InterfaceRecordDialogDeviceFellBack)
             }
+            "interface.RecordDialog.deviceNotSwitched" => {
+                Some(Self::InterfaceRecordDialogDeviceNotSwitched)
+            }
+            "interface.RecordDialog.saySomething" => Some(Self::InterfaceRecordDialogSaySomething),
+            "interface.RecordDialog.settingsNote" => Some(Self::InterfaceRecordDialogSettingsNote),
             "interface.RecordDialog.testMicrophone" => {
                 Some(Self::InterfaceRecordDialogTestMicrophone)
             }
@@ -6639,6 +6672,7 @@ impl MessageId {
             "notifications.testOff" => Some(Self::NotificationsTestOff),
             "preferences.moreAutomatic" => Some(Self::PreferencesMoreAutomatic),
             "preferences.moreBackground" => Some(Self::PreferencesMoreBackground),
+            "native.backupExclusionFailed" => Some(Self::NativeBackupExclusionFailed),
             "interface.AddVideo.add" => Some(Self::InterfaceAddVideoAdd),
             "interface.AddVideo.hint" => Some(Self::InterfaceAddVideoHint),
             "interface.AddVideo.checking" => Some(Self::InterfaceAddVideoChecking),

@@ -33,7 +33,9 @@ import allowList from "./eponymAllowList.json";
 import {
   bracketedMunicipalities,
   facilitySpans,
+  isKnownGivenName,
   municipalitySpans,
+  isLikelyHanName,
 } from "./gazetteer";
 
 /** A word or a pattern as it stands in the matching copy: accents and
@@ -1741,6 +1743,8 @@ interface Rule {
   uncued?: true;
   /** A header line's name: kept only as "SURNAME, Given" (see find()). */
   uncuedHeader?: true;
+  /** A Han name: taken only when it reads as a known surname and a given name (`isLikelyHanName`). */
+  surnameGate?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
@@ -3266,6 +3270,19 @@ const RULES: Rule[] = [
     uncued: true,
     uncuedHeader: true,
   },
+  // A Chinese care document's subject after "for": "居家护理计划 为张伟", "居家護理計劃 for 陳大文". A
+  // Han name has no spaces, so it is a surname of one or two characters and a given name of one
+  // or two: only a run that reads as one is taken (`surnameGate`, `isLikelyHanName`), as a given-name
+  // list cannot tell a Han given name from any other word.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*[^\\n]{0,24}(?:计划|計劃|方案|总结|總結|小结|小結|报告|報告|评估|評估|记录|記錄|病历|病歷|转诊|轉診|出院)[ \\t]*(?:for|为|為|给|給|针对|針對|对于|對於)[ \\t]*)(\\p{Script=Han}{2,4})(?!\\p{Script=Han})`,
+      "gu",
+    ),
+    group: 1,
+    surnameGate: true,
+  },
   // A person after a care verb: "Paramedics brought Tobiah Farnsworth", "trajo a Lucas …".
   {
     kind: "name",
@@ -3945,6 +3962,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         if (!trimmed) continue;
       }
       if (rule.uncued && uncuedNotName(trimmed)) continue;
+      if (rule.surnameGate && !isLikelyHanName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed
           .split(/[^\p{L}'’]+/u)
@@ -4015,7 +4033,11 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         start,
         end,
         ...(rule.kin ? { kin: true as const } : {}),
-        ...(rule.uncuedHeader ? { uncuedHeader: true as const } : {}),
+        // A header's "X Y" after "for" is the patient when X is a known given name; any other
+        // header subject stays a title (find() drops it unless it reads "SURNAME, Given").
+        ...(rule.uncuedHeader && !forAKnownGivenName(text, start, trimmed)
+          ? { uncuedHeader: true as const }
+          : {}),
       });
       // Only an immediately linked checksum control inherits a SIN/NAS
       // field. An unrelated nine-digit measurement never inherits it.
@@ -4078,6 +4100,27 @@ function keepShortBirthCue(
 // no person cue counts only in this form. A person field near a "Given Surname" run tells a
 // person's document, not that the run is the person: "Referral Letter: Orthopaedic Surgery"
 // stands over "DOB: …" as often as a name does, on the next line or in a column (#264 review).
+// The words that introduce a document's subject in a header: "Home-care plan for Avery Example".
+const HEADER_FOR =
+  /(?:^|[^\p{L}])(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \t]+$/u;
+/**
+ * A header line's name that follows "for" (or its words in the other languages) and whose first
+ * word is a known given name (`isKnownGivenName`): a person, not a topic. "Care Plan: Fall
+ * Prevention" has no such word before it and "Fall" is no given name, so it stays a title. Names
+ * that are also ordinary words (Rose, May, Faith) are in the list on purpose: the rule still
+ * needs the header shape, two words of a name and the care-document heading before them.
+ */
+function forAKnownGivenName(
+  text: string,
+  start: number,
+  name: string,
+): boolean {
+  if (!HEADER_FOR.test(text.slice(Math.max(0, start - 16), start)))
+    return false;
+  const first = name.split(/[ \t]+/u, 1)[0];
+  return isKnownGivenName(first);
+}
+
 const SURNAME_FIRST_IN_CAPITALS = /^\p{Lu}[\p{Lu}'’ -]+,[ \t]+\p{Lu}/u;
 
 function find(text: string, options: DeidentifyOptions): Finding[] {

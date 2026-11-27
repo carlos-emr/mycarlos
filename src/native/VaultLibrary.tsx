@@ -3338,6 +3338,7 @@ export function VaultLibrary({
                 platform={cameraPlatform}
                 bridge={bridge}
                 profileId={profileId}
+                profileName={profile?.displayName}
                 folderIds={currentFolderId ? [currentFolderId] : []}
                 whileAsking={cameraAsking}
                 holdLock={holdMedia}

@@ -57,11 +57,13 @@ pub(crate) const QUOTE_MARK: &str = "The document says: ";
 
 /// A summary sentence for the checks: its words, its quote (empty when not found), and whether
 /// it is a fallback quote already.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Line {
     pub(crate) text: String,
     pub(crate) quote: String,
 }
+redact_debug!(Line);
 
 /// One fallback, for measuring: which check, the sentence's place, and the words before (none
 /// when the quote was added) and after.
