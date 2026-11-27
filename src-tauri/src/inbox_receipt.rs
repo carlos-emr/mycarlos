@@ -39,8 +39,9 @@ pub(crate) enum LockScreen {
 /// The device's lock screen as the sealer may use it (see [`LockScreen`]). A vault the registry
 /// does not list (one found later, #357) is not counted: it has no slot to seal for.
 pub(crate) fn lock_screen_of(handle: &StoreHandle) -> LockScreen {
-    // One pinned handle: the lock state, the vault count and the id are of the same store.
     let handle = handle.pin();
+    // One pinned handle (the pin scan wants this line first): the lock state, the vault count and
+    // the id are of the same store.
     let store = handle.arc();
     if store.is_unlocked_now() != Some(false) {
         return LockScreen::NotSingle;
