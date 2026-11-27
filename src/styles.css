@@ -3788,7 +3788,7 @@ p {
   margin: 0;
   padding: 0 20px 12px;
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 /* The line names keys: a screen that is only touch has no keyboard to press them on. */
 @media (pointer: coarse) and (hover: none) {
