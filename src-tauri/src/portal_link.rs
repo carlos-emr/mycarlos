@@ -27,7 +27,7 @@ pub enum LinkError {
     InvalidDeviceName,
     InvalidResponse,
     Network,
-    // Portal replies to a link request, which Android never sends.
+    // Portal replies to a link request.
     #[cfg_attr(target_os = "android", allow(dead_code))]
     CodeRejected,
     #[cfg_attr(target_os = "android", allow(dead_code))]
@@ -77,10 +77,7 @@ impl PrivateKeys {
 
     pub fn device_key_id(&self) -> String {
         let (x, ed) = self.public();
-        let mut digest = Sha256::new();
-        digest.update(b"mycarlos-device-key-v1");
-        digest.update(frame(&[&x, &ed]));
-        B64.encode(digest.finalize())
+        device_key_id_of(&x, &ed)
     }
 
     pub(crate) fn sign(&self, payload: &[u8]) -> String {
@@ -127,6 +124,16 @@ impl PrivateKeys {
         mac.update(head);
         Ok(hex(&mac.finalize().into_bytes()))
     }
+}
+
+/// The device key id the clinic knows a device by, from its two public keys. A device's own
+/// keys give it through `PrivateKeys::device_key_id`; carried clinic evidence (#360) holds only
+/// the public keys and checks the id with this.
+pub(crate) fn device_key_id_of(x25519: &[u8; 32], ed25519: &[u8; 32]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"mycarlos-device-key-v1");
+    digest.update(frame(&[x25519, ed25519]));
+    B64.encode(digest.finalize())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +240,10 @@ pub struct LinkSummary {
     pub id: Uuid,
     pub portal_base: String,
     pub device_name: String,
+    /// When this link was started (the vault's own clock, milliseconds), so that two cards for
+    /// the same address can be told apart by the day they were made (#160). Already stored with
+    /// the link; only now shown.
+    pub linked_at_ms: u64,
     pub profile_id: Option<Uuid>,
     pub clinic_name: Option<String>,
     pub fingerprints: Vec<String>,
@@ -257,6 +268,12 @@ pub struct LinkSummary {
     /// How many of this clinic's documents failed their checks and are
     /// remembered, so not downloaded again (#143). The store adds it.
     pub refused_deliveries: usize,
+    /// A document or reading aid from this clinic is filed in the vault. Its custody proof needs
+    /// this link's private keys, so such a link cannot be removed (#160). The snapshot adds it.
+    pub has_documents: bool,
+    /// Document notices are on for this clinic (a push destination is enrolled, or its revocation
+    /// is queued): the link cannot be removed until they are turned off (#160). The snapshot adds it.
+    pub notices_enrolled: bool,
 }
 
 impl StoredLink {
@@ -322,6 +339,7 @@ impl StoredLink {
             id: self.id,
             portal_base: self.portal_base.clone(),
             device_name: self.device_name.clone(),
+            linked_at_ms: self.created_at_ms,
             profile_id: self.profile_id,
             clinic_name: self.clinic.as_ref().map(|c| c.clinic_name.clone()),
             fingerprints: self
@@ -353,6 +371,8 @@ impl StoredLink {
             approval_code_submitted: false,
             approval_code_locked: false,
             refused_deliveries: 0,
+            has_documents: false,
+            notices_enrolled: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())
@@ -424,11 +444,11 @@ impl StoredLink {
         Ok(LinkRequest {
             endpoint,
             body,
-            assertion: format!(
+            assertion: Zeroizing::new(format!(
                 "{}.{}",
                 B64.encode(payload),
                 B64.encode(signature.to_bytes())
-            ),
+            )),
         })
     }
 }
@@ -439,7 +459,8 @@ impl StoredLink {
 pub struct LinkRequest {
     pub endpoint: Url,
     pub body: Zeroizing<Vec<u8>>,
-    pub assertion: String,
+    /// The signed assertion (it lives at most a minute): wiped when the request is dropped.
+    pub assertion: Zeroizing<String>,
 }
 
 pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
@@ -755,3 +776,6 @@ mod tests {
         assert_eq!(summary["incomplete"], true);
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

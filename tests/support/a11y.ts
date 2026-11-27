@@ -17,9 +17,17 @@ export const WCAG_TAGS = [
 
 export type VaultStart = "absent" | "locked" | "unlocked";
 
+/** Clinic linking in the fake: off (the section is not shown), on with no
+ * clinic yet, or one linked clinic waiting for or holding its approval. */
+export type FakePortal = "off" | "none" | "awaiting" | "approved";
+
 export interface FakeVaultOptions {
   /** The vault has a recovery key; without one, unlocking may offer one. */
   recoveryKey?: boolean;
+  /** Connected clinics in Security; "off" by default, as on a build without it. */
+  portal?: FakePortal;
+  /** A third document, hidden by the patient, so Hidden has something to list. */
+  hiddenDocument?: boolean;
 }
 
 /**
@@ -35,8 +43,23 @@ export async function fakeVault(
   options: FakeVaultOptions = {},
 ) {
   await page.addInitScript(
-    ({ start, recoveryKey }) => {
+    ({ start, recoveryKey, portal, hiddenDocument }) => {
       let status = start;
+      const link = (approved: boolean) => ({
+        id: "link",
+        portalBase: "https://portal.fake-clinic.example/patient",
+        deviceName: "myCarlos on Windows",
+        profileId: null as string | null,
+        clinicName: "FAKE Family Clinic",
+        fingerprints: ["FAKE-KEY-FINGERPRINT"],
+        incomplete: false,
+        deviceKeyId: "FAKE-device-key",
+        deviceFingerprint: "FAKE 1234 5678 9ABC DEF0 1234 5678 9ABC DEF0",
+        approvalRequested: true,
+        clinicApproved: approved,
+        approvalStatus: (approved ? "accepted" : "pending") as string | null,
+        approvalReason: null as string | null,
+      });
       const captureEpoch = crypto.randomUUID();
       let captureSequence = 0;
       const captured = () => ({
@@ -44,6 +67,13 @@ export async function fakeVault(
         capture: { epoch: captureEpoch, sequence: ++captureSequence },
       });
       const snapshot = {
+        portalLinkingEnabled: portal !== "off",
+        portalLinks:
+          portal === "awaiting"
+            ? [link(false)]
+            : portal === "approved"
+              ? [link(true)]
+              : [],
         profiles: [
           { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
         ],
@@ -86,6 +116,25 @@ export async function fakeVault(
             importedAtMs: Date.UTC(2026, 9, 3, 12),
             available: true,
           },
+          ...(hiddenDocument
+            ? [
+                {
+                  id: "hidden",
+                  profileId: "profile",
+                  folderIds: [] as string[],
+                  displayName: "FAKE Old Referral.pdf",
+                  sourceLabel: "Manual import — unverified",
+                  mediaType: "application/pdf",
+                  plaintextSize: 512,
+                  importedAtMs: Date.UTC(2026, 8, 20, 12),
+                  available: true,
+                  hidden: {
+                    atMs: Date.UTC(2026, 9, 6, 12),
+                    reason: "patient" as "patient" | "damaged",
+                  } as { atMs: number; reason: "patient" | "damaged" } | null,
+                },
+              ]
+            : []),
         ],
         recovery: null,
         recoveryKeySetAtMs: recoveryKey ? 1 : null,
@@ -99,7 +148,10 @@ export async function fakeVault(
           folderId?: string;
           parentId?: string | null;
           name?: string;
+          portalBase?: string;
+          deviceName?: string;
         };
+        linkId?: string;
       };
       const unexpected: string[] = [];
       const calls: string[] = [];
@@ -121,12 +173,30 @@ export async function fakeVault(
               return { state: "notInstalled" };
             case "ai_models":
             case "ai_model_catalog":
+            case "ai_model_limits":
               return [];
+            // No model in use to check (D218).
+            case "ai_model_check":
+              return "skipped";
             // No add or download running when the row opens (#275).
             case "ai_model_add_active":
               return null;
+            // Nothing measured yet (the speed check, #305).
+            case "ai_model_speed":
+              return null;
             case "vault_status":
               return status;
+            // No background mode in these journeys.
+            case "tray_waiting_status":
+              return false;
+            case "background_status":
+              return {
+                supported: false,
+                keepRunning: false,
+                startAtLogin: false,
+                trayReady: false,
+                pausedWhileLocked: false,
+              };
             case "vault_notification_status":
               return {
                 supported: false,
@@ -187,8 +257,85 @@ export async function fakeVault(
                 if (folder.id === request.folderId)
                   folder.parentId = request.parentId ?? null;
               return;
+            // Clinic linking: the native side links, asks for approval and
+            // picks documents up; here it only changes the fake's state.
+            case "vault_portal_link": {
+              const added = {
+                ...link(false),
+                approvalRequested: false,
+                approvalStatus: null,
+                portalBase: request.portalBase ?? "",
+                deviceName: request.deviceName ?? "",
+              };
+              snapshot.portalLinks = [added];
+              return structuredClone(added);
+            }
+            // main's linking (#136, #258): one native call links this device
+            // and asks the clinic to approve it, as tests/support/vaultFake.ts
+            // models it.
+            case "vault_portal_connect": {
+              const added = {
+                ...link(false),
+                approvalRequested: true,
+                approvalStatus: "pending",
+                portalBase: request.portalBase ?? "",
+                deviceName: request.deviceName ?? "",
+                profileId: request.profileId ?? null,
+              };
+              snapshot.portalLinks = [added];
+              return { link: structuredClone(added), approvalError: null };
+            }
+            case "vault_request_device_approval":
+            case "vault_restart_device_approval":
+              for (const item of snapshot.portalLinks)
+                if (item.id === args?.linkId) {
+                  item.approvalRequested = true;
+                  item.approvalStatus = "pending";
+                }
+              return;
+            case "vault_check_documents":
+              return { added: 0, refused: 0, issues: [], receiptsPending: 0 };
+            case "vault_hide_record":
+            case "vault_unhide_record":
+              for (const record of snapshot.records)
+                if (record.id === request.recordId)
+                  Reflect.set(
+                    record,
+                    "hidden",
+                    command === "vault_hide_record"
+                      ? { atMs: Date.UTC(2026, 9, 7, 12), reason: "patient" }
+                      : null,
+                  );
+              return;
+            // Security's history: two events, all checked.
+            case "vault_history": {
+              const event = (seq: number, kind: string) => ({
+                seq,
+                atMs: Date.UTC(2026, 9, 1, 12) + seq * 60_000,
+                app: "FAKE 0.1.0",
+                event: kind,
+                name: kind === "imported" ? "FAKE Bloodwork.pdf" : null,
+                oldName: null,
+                from: null,
+                fromTotal: null,
+                to: null,
+                toTotal: null,
+                how: kind === "imported" ? "picked" : null,
+                place: null,
+                previousSession: null,
+              });
+              return {
+                entries: [event(1, "created"), event(2, "imported")],
+                laterEntries: [],
+                complete: true,
+                checkedUntilMs: null,
+                checkedFromMs: null,
+              };
+            }
             case "vault_import_pick":
               return "FAKE-pick";
+            case "vault_import_any_pick":
+              return { kind: "documents", pickId: "FAKE-pick" };
             case "vault_import_picked":
               snapshot.records.push({
                 id: "scan",
@@ -202,6 +349,27 @@ export async function fakeVault(
                 available: true,
               });
               return { imported: ["scan"], skippedDuplicates: [] };
+            // Video (#359): nothing is waiting to be finished, and no
+            // document starts as an MP4 does.
+            case "vault_backup_size":
+              return {
+                totalBytes: 4096,
+                withoutVideosBytes: 4096,
+                videoBytes: 0,
+                videoCount: 0,
+              };
+            case "vault_left_out_records":
+              return [];
+            case "vault_video_space":
+              return {
+                freeBytes: 50 * 1024 ** 3,
+                level: "ok",
+                canRecord: true,
+              };
+            case "vault_video_pending":
+              return { recordings: [], unreadable: 0 };
+            case "vault_is_video":
+              return false;
             case "vault_touch":
             case "vault_set_auto_lock":
             case "plugin:window|set_theme":
@@ -214,7 +382,12 @@ export async function fakeVault(
         },
       });
     },
-    { start, recoveryKey: options.recoveryKey ?? true },
+    {
+      start,
+      recoveryKey: options.recoveryKey ?? true,
+      portal: options.portal ?? "off",
+      hiddenDocument: options.hiddenDocument ?? false,
+    },
   );
 }
 
@@ -384,15 +557,78 @@ export async function expectHeadingsInOrder(
   expect(skips, `${where}: headings that skip a level`).toEqual([]);
 }
 
-/** axe, names and headings for one screen or dialog. */
+/** The name a screen reader gives the element `locator` points at, read
+ * from Playwright's aria snapshot. Two gaps: a name over 900 characters is
+ * left out of the snapshot, and one written like a pattern (/…/) is not
+ * quoted; either comes back "" (and so is reported, not passed). */
+async function accessibleName(locator: Locator) {
+  let line = (await locator.ariaSnapshot().catch(() => "")).split("\n")[0];
+  line = line.replace(/^- /, "");
+  // A key with ": " in it is written as a single-quoted YAML string, maybe
+  // followed by ": <the control's own text>".
+  const yamlQuoted = /^'((?:[^']|'')*)'(:.*)?$/.exec(line);
+  if (yamlQuoted) line = yamlQuoted[1].replaceAll("''", "'");
+  const quoted = /^[\w-]+ "((?:[^"\\]|\\.)*)"/.exec(line);
+  return quoted ? (JSON.parse(`"${quoted[1]}"`) as string) : "";
+}
+
+const comparable = (text: string) =>
+  visibleHumanText(text)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+/**
+ * WCAG 2.5.3 Label in Name: a control's name starts with the words it shows
+ * (its first visible line), so someone who sees "New" can say "click New".
+ * Anything more (a count, what the control does) goes after them, or in its
+ * description. Icon-only controls show no words and are left to
+ * expectEveryControlNamed.
+ *
+ * At least one control with words must be checked, so that a scope that
+ * matches nothing (a dialog not open yet, a wrong selector) fails rather than
+ * passing with nothing checked. A screen that truly has none says so with
+ * `allowNone`.
+ */
+export async function expectVisibleWordsLeadNames(
+  scope: Locator,
+  where: string,
+  { allowNone = false }: { allowNone?: boolean } = {},
+) {
+  const offenders: string[] = [];
+  let checked = 0;
+  const controls = scope.locator(
+    "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem]",
+  );
+  for (const control of await controls.all()) {
+    if (!(await control.isVisible())) continue;
+    const shown = (await control.innerText()).split("\n")[0] ?? "";
+    if (!comparable(shown)) continue;
+    checked++;
+    const name = await accessibleName(control);
+    if (!comparable(name).startsWith(comparable(shown)))
+      offenders.push(`shows "${shown.trim()}", named "${name}"`);
+  }
+  expect(offenders, `${where}: visible words lead each name`).toEqual([]);
+  if (!allowNone)
+    expect(
+      checked,
+      `${where}: controls with visible words checked (allowNone if none)`,
+    ).toBeGreaterThan(0);
+}
+
+/** axe, names, visible words leading names (WCAG 2.5.3) and headings, for
+ * one screen or dialog. `allowNone`: the screen has no control with words. */
 export async function screenReaderSmoke(
   page: Page,
   where: string,
   dialog?: Locator,
+  { allowNone = false }: { allowNone?: boolean } = {},
 ) {
   await expectNoAxeViolations(page, where);
   const scope = dialog ?? page.locator("body");
   await expectEveryControlNamed(scope, where);
+  await expectVisibleWordsLeadNames(scope, where, { allowNone });
   await expectHeadingsInOrder(scope, where, Boolean(dialog));
 }
 
@@ -670,6 +906,33 @@ function stopHere(scope: string): StopResult {
   return { kind: "stop", label, problems };
 }
 
+/** What Chromium says when it is asked for a screenshot it cannot make just yet. */
+const CAPTURE_REFUSED = /Unable to capture screenshot/;
+
+/**
+ * A clip screenshot, asked again (twice at most, after a short real wait) when the browser
+ * answers that it cannot capture one: on a busy machine a page that has only just been set up
+ * sometimes has no frame yet (the 24 Nov run of main dd05036e). Any other error is the test's
+ * real answer and is thrown at once, as is the same refusal after the last try. The wait is
+ * real time, not animation frames, which page.clock fakes.
+ */
+export async function screenshotClip(
+  page: Pick<Page, "screenshot">,
+  clip: { x: number; y: number; width: number; height: number },
+  { tries = 3, waitMs = 200 }: { tries?: number; waitMs?: number } = {},
+): Promise<Buffer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await page.screenshot({ clip, animations: "disabled" });
+    } catch (error) {
+      const refused =
+        error instanceof Error && CAPTURE_REFUSED.test(error.message);
+      if (!refused || attempt >= tries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, waitMs * attempt));
+    }
+  }
+}
+
 /**
  * Whether the focused element shows its focus: the pixels in and around it
  * differ with and without focus. "Around it" takes in a wrapper that fits
@@ -705,13 +968,13 @@ async function focusShown(page: Page): Promise<boolean> {
   };
   if (clip.width <= 0 || clip.height <= 0) return false;
   const pair = async () => {
-    const focused = await page.screenshot({ clip, animations: "disabled" });
+    const focused = await screenshotClip(page, clip);
     await page.evaluate(() => {
       const element = document.activeElement as HTMLElement;
       Reflect.set(window, "__walkBlurred", element);
       element.blur();
     });
-    const plain = await page.screenshot({ clip, animations: "disabled" });
+    const plain = await screenshotClip(page, clip);
     await page.evaluate(() =>
       (Reflect.get(window, "__walkBlurred") as HTMLElement).focus(),
     );

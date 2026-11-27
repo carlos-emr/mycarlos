@@ -5,6 +5,8 @@ pub const FORMATTING_FAILURE_EN: &str =
 pub enum MessageId {
     AiErrorBusy,
     AiErrorMemory,
+    AiErrorMemoryNumbers,
+    AiErrorMemoryUnknown,
     AiErrorStorage,
     AiExplainBox,
     AiExplainHint,
@@ -14,6 +16,11 @@ pub enum MessageId {
     AiFailed,
     AiKeepFailed,
     AiKeepFull,
+    AiLabelSettingsBody,
+    AiLabelSettingsFullBack,
+    AiLabelSettingsShortShown,
+    AiLabelSettingsShowFull,
+    AiLabelSettingsTitle,
     AiModelAccepted,
     AiModelAdd,
     AiModelAdded,
@@ -25,9 +32,15 @@ pub enum MessageId {
     AiModelDownloadNote,
     AiModelDownloading,
     AiModelInstalled,
+    AiModelLoadCheck,
+    AiModelLoadCheckCannotRun,
+    AiModelLoadCheckMemory,
+    AiModelLoadCheckReady,
+    AiModelLoadCheckRetry,
     AiModelProgressName,
     AiModelProgressValue,
     AiModelReads,
+    AiModelReadsEstimate,
     AiModelRefusedBusy,
     AiModelRefusedDisk,
     AiModelRefusedHash,
@@ -69,6 +82,17 @@ pub enum MessageId {
     AiPreferencesTitle,
     AiResultMeta,
     AiSettingsSubtitle,
+    AiSpeedButton,
+    AiSpeedCancel,
+    AiSpeedCancelled,
+    AiSpeedEstimate,
+    AiSpeedEstimateLong,
+    AiSpeedFailed,
+    AiSpeedNone,
+    AiSpeedNote,
+    AiSpeedResult,
+    AiSpeedTitle,
+    AiSpeedWorking,
     AiSummaryAgain,
     AiSummaryButton,
     AiSummaryEnglishOnly,
@@ -116,6 +140,9 @@ pub enum MessageId {
     AiHelperNoticeTestBuild,
     AiHelperNoticeTitle,
     AiHelperResultLabel,
+    AiHelperResultLabelHide,
+    AiHelperResultLabelInfo,
+    AiHelperResultLabelShort,
     AppearanceDark,
     AppearanceErrorNotRemembered,
     AppearanceErrorUnreadable,
@@ -126,6 +153,16 @@ pub enum MessageId {
     AppearanceSystem,
     AppearanceTitle,
     AuthKicker,
+    BackgroundError,
+    BackgroundKeepRunning,
+    BackgroundKeepRunningHelp,
+    BackgroundKeepRunningSummary,
+    BackgroundPaused,
+    BackgroundStartAtLogin,
+    BackgroundStartAtLoginHelp,
+    BackgroundStartAtLoginSummary,
+    BackgroundTitle,
+    BackgroundUnavailable,
     BoxCurrentPassphrase,
     BoxFolderName,
     BoxName,
@@ -165,6 +202,22 @@ pub enum MessageId {
     ErrorNewerFormatBackup,
     ErrorNewerFormatVault,
     ErrorRetryIn,
+    FileUnderButton,
+    FileUnderChoose,
+    FileUnderClinicWords,
+    FileUnderConfirm,
+    FileUnderDiffers,
+    FileUnderFromClinic,
+    FileUnderNotOnItsOwn,
+    FileUnderPerson,
+    FileUnderRule,
+    FileUnderSaveDetails,
+    FileUnderSaveDetailsOnly,
+    FileUnderTitle,
+    FileUnderWhatBoth,
+    FileUnderWhatDate,
+    FileUnderWhatName,
+    FileUnderWords,
     FrameBannerBody,
     FrameBannerTitle,
     FrameStateLocked,
@@ -173,13 +226,157 @@ pub enum MessageId {
     FrameStateOpening,
     FrameStateSettingUp,
     FrameWindowLabel,
+    HandoverClose,
+    HandoverCountAnswers,
+    HandoverCountDocuments,
+    HandoverCountEvidence,
+    HandoverCountFolders,
+    HandoverCountHidden,
+    HandoverCountSize,
+    HandoverExportAbout,
+    HandoverExportApart,
+    HandoverExportButton,
+    HandoverExportCaution,
+    HandoverExportChooseWhere,
+    HandoverExportContinue,
+    HandoverExportCopied,
+    HandoverExportCopy,
+    HandoverExportCopyFailed,
+    HandoverExportDone,
+    HandoverExportDoneApart,
+    HandoverExportDoneTitle,
+    HandoverExportErrorWeak,
+    HandoverExportEvidenceLeftOut,
+    HandoverExportHideOffer,
+    HandoverExportHistory,
+    HandoverExportKeyBody,
+    HandoverExportKeyGroup,
+    HandoverExportKeyKindGenerated,
+    HandoverExportKeyKindLegend,
+    HandoverExportKeyKindPassphrase,
+    HandoverExportKeyLabel,
+    HandoverExportKeySaved,
+    HandoverExportKeyTitle,
+    HandoverExportLeaveBody,
+    HandoverExportLeaveConfirm,
+    HandoverExportLeaveTitle,
+    HandoverExportLeavingWarning,
+    HandoverExportLeftOut,
+    HandoverExportNoLocation,
+    HandoverExportPassphrase,
+    HandoverExportPassphraseHint,
+    HandoverExportPerson,
+    HandoverExportPreparing,
+    HandoverExportProvider,
+    HandoverExportSaveTitle,
+    HandoverExportSaving,
+    HandoverExportSummary,
+    HandoverExportTitle,
+    HandoverImportAbout,
+    HandoverImportAdd,
+    HandoverImportAdding,
+    HandoverImportBirth,
+    HandoverImportButton,
+    HandoverImportChoose,
+    HandoverImportDone,
+    HandoverImportDoneAnswers,
+    HandoverImportDoneDropped,
+    HandoverImportDoneEvidence,
+    HandoverImportDoneTitle,
+    HandoverImportDuplicateAnyway,
+    HandoverImportDuplicateContent,
+    HandoverImportDuplicateLegend,
+    HandoverImportDuplicatePackage,
+    HandoverImportErrorDamaged,
+    HandoverImportErrorNewer,
+    HandoverImportErrorRecovery,
+    HandoverImportErrorTypo,
+    HandoverImportErrorWrong,
+    HandoverImportEvidenceNote,
+    HandoverImportKey,
+    HandoverImportKeyHint,
+    HandoverImportKeyTitle,
+    HandoverImportMadeOn,
+    HandoverImportNameLabel,
+    HandoverImportNoFile,
+    HandoverImportNothingNew,
+    HandoverImportOpen,
+    HandoverImportOpening,
+    HandoverImportPassphrase,
+    HandoverImportPassphraseHint,
+    HandoverImportPreviewTitle,
+    HandoverImportPreviousNames,
+    HandoverImportReceipt,
+    HandoverImportReceiptNote,
+    HandoverImportSays,
+    HandoverImportTitle,
+    HandoverImportedAnswer,
+    HandoverNowVerified,
+    HandoverSectionBody,
+    HandoverSectionTitle,
+    HandoverUnfinished,
     HiddenBackToSecurity,
+    HiddenPeopleArrivedBody,
+    HiddenPeopleArrivedLeave,
+    HiddenPeopleArrivedList,
+    HiddenPeopleArrivedMove,
+    HiddenPeopleArrivedTitle,
+    HiddenPeopleBody,
+    HiddenPeopleConfirmBody,
+    HiddenPeopleConfirmHide,
+    HiddenPeopleConfirmTitle,
+    HiddenPeopleDamagedToo,
+    HiddenPeopleDocuments,
+    HiddenPeopleHandOver,
+    HiddenPeopleHandOverFor,
+    HiddenPeopleHidden,
+    HiddenPeopleHide,
+    HiddenPeopleHideFor,
+    HiddenPeopleLastPerson,
+    HiddenPeopleList,
+    HiddenPeopleRestore,
+    HiddenPeopleRestoreFor,
+    HiddenPeopleRestored,
+    HiddenPeopleSince,
+    HiddenPeopleTitle,
+    InterfaceAddVideoAdd,
+    InterfaceAddVideoAdded,
+    InterfaceAddVideoAdding,
+    InterfaceAddVideoAudioCodec,
+    InterfaceAddVideoCancel,
+    InterfaceAddVideoCancelled,
+    InterfaceAddVideoCancelling,
+    InterfaceAddVideoChecking,
+    InterfaceAddVideoDamaged,
+    InterfaceAddVideoDuplicate,
+    InterfaceAddVideoExternal,
+    InterfaceAddVideoFragmented,
+    InterfaceAddVideoHevc,
+    InterfaceAddVideoHint,
+    InterfaceAddVideoNoVideo,
+    InterfaceAddVideoNotVideo,
+    InterfaceAddVideoProgressLabel,
+    InterfaceAddVideoStoring,
+    InterfaceAddVideoTooBig,
+    InterfaceAddVideoTooLarge,
+    InterfaceAddVideoTooManyTracks,
+    InterfaceAddVideoVideoAlone,
+    InterfaceAddVideoVideoCodec,
     InterfaceAiHelperNoticeContinue,
+    InterfaceAnonymizePreviewCheckPicked,
     InterfaceAnonymizePreviewClose,
     InterfaceAnonymizePreviewConfirmBody,
     InterfaceAnonymizePreviewConfirmTitle,
+    InterfaceAnonymizePreviewCopied,
+    InterfaceAnonymizePreviewCopy,
+    InterfaceAnonymizePreviewCopyFailed,
+    InterfaceAnonymizePreviewCopyWarning,
     InterfaceAnonymizePreviewCutPages,
     InterfaceAnonymizePreviewEmptyPages,
+    InterfaceAnonymizePreviewEponymKeep,
+    InterfaceAnonymizePreviewEponymKeepAll,
+    InterfaceAnonymizePreviewEponymOne,
+    InterfaceAnonymizePreviewEponymTitle,
     InterfaceAnonymizePreviewFailedPages,
     InterfaceAnonymizePreviewFooterNote,
     InterfaceAnonymizePreviewHeaderNote,
@@ -202,6 +399,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewMovedDate,
     InterfaceAnonymizePreviewNoteAgeOver90,
     InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewNoteOtherForm,
     InterfaceAnonymizePreviewPasteAllMatched,
     InterfaceAnonymizePreviewPasteButton,
     InterfaceAnonymizePreviewPasteFlagged,
@@ -210,6 +408,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewPasteLabel,
     InterfaceAnonymizePreviewPasteResult,
     InterfaceAnonymizePreviewPasteTitle,
+    InterfaceAnonymizePreviewPasteWhereNote,
     InterfaceAnonymizePreviewPhrase,
     InterfaceAnonymizePreviewPhraseNotFound,
     InterfaceAnonymizePreviewPlaceholderAddress,
@@ -234,15 +433,36 @@ pub enum MessageId {
     InterfaceAnonymizePreviewRemovePhrase,
     InterfaceAnonymizePreviewRemoveSelected,
     InterfaceAnonymizePreviewRemoveWord,
+    InterfaceAnonymizePreviewRemovedCountAddress,
+    InterfaceAnonymizePreviewRemovedCountAge,
+    InterfaceAnonymizePreviewRemovedCountClinic,
+    InterfaceAnonymizePreviewRemovedCountDate,
+    InterfaceAnonymizePreviewRemovedCountDateOfBirth,
+    InterfaceAnonymizePreviewRemovedCountDoctor,
+    InterfaceAnonymizePreviewRemovedCountEmail,
+    InterfaceAnonymizePreviewRemovedCountHealthCard,
+    InterfaceAnonymizePreviewRemovedCountManual,
+    InterfaceAnonymizePreviewRemovedCountName,
+    InterfaceAnonymizePreviewRemovedCountPhone,
+    InterfaceAnonymizePreviewRemovedCountPostalCode,
+    InterfaceAnonymizePreviewRemovedCountRecordNumber,
+    InterfaceAnonymizePreviewRemovedCountSin,
+    InterfaceAnonymizePreviewRemovedCountUnclearDate,
+    InterfaceAnonymizePreviewRemovedCountWeb,
     InterfaceAnonymizePreviewRemovedKind,
     InterfaceAnonymizePreviewRemovedPlaces,
+    InterfaceAnonymizePreviewRemovedSummary,
+    InterfaceAnonymizePreviewRemovedSummaryNone,
     InterfaceAnonymizePreviewReplaced,
     InterfaceAnonymizePreviewSave,
     InterfaceAnonymizePreviewSaveCancelled,
     InterfaceAnonymizePreviewSaved,
+    InterfaceAnonymizePreviewSavedFileNote,
     InterfaceAnonymizePreviewSelectFirst,
     InterfaceAnonymizePreviewTextRegion,
     InterfaceAnonymizePreviewTitle,
+    InterfaceAnonymizePreviewToCheck,
+    InterfaceAnonymizePreviewToCheckHelp,
     InterfaceAnonymizePreviewUndo,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
@@ -301,6 +521,76 @@ pub enum MessageId {
     InterfaceRecordDetailsThisDocumentIsUnavailable,
     InterfaceRecordDetailsUnlock,
     InterfaceRecordDetailsViewPhoto,
+    InterfaceRecordDialogAboutHighPerHour,
+    InterfaceRecordDialogAboutStandardPerHour,
+    InterfaceRecordDialogCamera,
+    InterfaceRecordDialogCameraAndMicrophone,
+    InterfaceRecordDialogDeviceFellBack,
+    InterfaceRecordDialogDeviceNotSwitched,
+    InterfaceRecordDialogHigh,
+    InterfaceRecordDialogKeepRecording,
+    InterfaceRecordDialogLowOnRoom,
+    InterfaceRecordDialogLowOnRoomMinutes,
+    InterfaceRecordDialogMicrophone,
+    InterfaceRecordDialogMicrophoneLevel,
+    InterfaceRecordDialogNotEnoughRoom,
+    InterfaceRecordDialogNothingWasRecorded,
+    InterfaceRecordDialogPauseRecording,
+    InterfaceRecordDialogPaused,
+    InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
+    InterfaceRecordDialogPictureQuality,
+    InterfaceRecordDialogRecordAVideo,
+    InterfaceRecordDialogRecordAVideoFor,
+    InterfaceRecordDialogRecorded,
+    InterfaceRecordDialogRecording,
+    InterfaceRecordDialogRecordingAt,
+    InterfaceRecordDialogRecordingPaused,
+    InterfaceRecordDialogRecordingResumed,
+    InterfaceRecordDialogRecordingSettings,
+    InterfaceRecordDialogResumeRecording,
+    InterfaceRecordDialogSavingTheVideo,
+    InterfaceRecordDialogSaySomething,
+    InterfaceRecordDialogSettingsNote,
+    InterfaceRecordDialogStandard,
+    InterfaceRecordDialogStartRecording,
+    InterfaceRecordDialogStartingTheCameraAndMicrophone,
+    InterfaceRecordDialogStopAndSave,
+    InterfaceRecordDialogStopAndSaveTheVideo,
+    InterfaceRecordDialogStopTestingMicrophone,
+    InterfaceRecordDialogSystemDefaultDevice,
+    InterfaceRecordDialogTestMicrophone,
+    InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
+    InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
+    InterfaceRecordDialogTheVideoIsRecordedWithSound,
+    InterfaceRecordDialogThisDeviceCannotRecordMp4,
+    InterfaceRecordDialogUnavailable,
+    InterfaceRecordDialogUnnamedCamera,
+    InterfaceRecordDialogUnnamedMicrophone,
+    InterfaceRecordDialogUseTheCameraAndMicrophone,
+    InterfaceRecordDialogVideoKeptUnfinished,
+    InterfaceRecordDialogVideoNeedsBoth,
+    InterfaceRecordDialogVideoSaved,
+    InterfaceRecordDialogVideoSavedFailed,
+    InterfaceRecordDialogVideoSavedHidden,
+    InterfaceRecordDialogVideoSavedNoRoom,
+    InterfaceRecordDialogVideoSavedSlow,
+    InterfaceRecordDialogVideoSavedStopped,
+    InterfaceRecordDialogWhy,
+    InterfaceRecordDialogYourPhoneAsksOnce,
+    InterfaceRecordingRecoveryAskLater,
+    InterfaceRecordingRecoveryClosed,
+    InterfaceRecordingRecoveryClosedPaused,
+    InterfaceRecordingRecoveryDelete,
+    InterfaceRecordingRecoveryDeleteSure,
+    InterfaceRecordingRecoveryDeleted,
+    InterfaceRecordingRecoveryFinishedWithRoom,
+    InterfaceRecordingRecoveryKeep,
+    InterfaceRecordingRecoveryKept,
+    InterfaceRecordingRecoveryName,
+    InterfaceRecordingRecoveryNothingToKeep,
+    InterfaceRecordingRecoverySavedLocked,
+    InterfaceRecordingRecoverySavedLockedPaused,
+    InterfaceRecordingRecoveryStillNoRoom,
     InterfaceSecuritySettingsEvaluationBuild,
     InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
     InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -359,6 +649,7 @@ pub enum MessageId {
     InterfaceVaultLibraryNoLocationChosenNothingChanged,
     InterfaceVaultLibraryNoRecoveryKeyYet,
     InterfaceVaultLibraryPassphraseChanged,
+    InterfaceVaultLibraryPicturesNote,
     InterfaceVaultLibraryPrivateVault,
     InterfaceVaultLibraryRecords,
     InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere,
@@ -381,6 +672,26 @@ pub enum MessageId {
     InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
     InterfaceVaultLibraryTopLevel,
     InterfaceVaultLibraryWorking,
+    InterfaceVideoHelpEngine,
+    InterfaceVideoHelpRestWorks,
+    InterfaceVideoHelpSystems,
+    InterfaceVideoHelpTitle,
+    InterfaceVideoViewerBack,
+    InterfaceVideoViewerBackBig,
+    InterfaceVideoViewerControls,
+    InterfaceVideoViewerEnd,
+    InterfaceVideoViewerForward,
+    InterfaceVideoViewerForwardBig,
+    InterfaceVideoViewerMute,
+    InterfaceVideoViewerPlayPause,
+    InterfaceVideoViewerPlayVideo,
+    InterfaceVideoViewerPlayer,
+    InterfaceVideoViewerStart,
+    InterfaceVideoViewerThisVideoCouldNotBePlayed,
+    InterfaceVideoViewerUnmute,
+    InterfaceVideoViewerVideo,
+    InterfaceVideoViewerVolumeDown,
+    InterfaceVideoViewerVolumeUp,
     InterfaceCameraDenied,
     InterfaceCountDocuments,
     InterfaceCountFolders,
@@ -394,7 +705,9 @@ pub enum MessageId {
     InterfaceHiddenFileMissing,
     InterfaceHiddenRecord,
     InterfaceHiddenRestore,
+    InterfaceHiddenVideoLeftOut,
     InterfaceHideDamagedTitle,
+    InterfaceHistoryAboutHiddenPeople,
     InterfaceHistoryAppVersion,
     InterfaceHistoryApprovalAccepted,
     InterfaceHistoryApprovalCancelled,
@@ -431,10 +744,15 @@ pub enum MessageId {
     InterfaceHistoryEventMoved,
     InterfaceHistoryEventOther,
     InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventPortalLinkRemoved,
     InterfaceHistoryEventPortalLinkStarted,
     InterfaceHistoryEventPortalLinked,
     InterfaceHistoryEventProfileCreated,
     InterfaceHistoryEventProfileDetailsChanged,
+    InterfaceHistoryEventProfileExported,
+    InterfaceHistoryEventProfileHidden,
+    InterfaceHistoryEventProfileImported,
+    InterfaceHistoryEventProfileRestored,
     InterfaceHistoryEventReadingAidFiled,
     InterfaceHistoryEventRecoveryKeySet,
     InterfaceHistoryEventRenamed,
@@ -455,6 +773,7 @@ pub enum MessageId {
     InterfaceHistoryHowPassphrase,
     InterfaceHistoryHowPatient,
     InterfaceHistoryHowPersonFolder,
+    InterfaceHistoryHowPersonHidden,
     InterfaceHistoryHowPicked,
     InterfaceHistoryHowRecoveryKey,
     InterfaceHistoryHowReplaced,
@@ -499,6 +818,7 @@ pub enum MessageId {
     InterfaceNoticePdfUnlocked,
     InterfaceNoticePersonAdded,
     InterfaceNoticePhotoSaved,
+    InterfaceNoticeReceivedNotOpened,
     InterfaceNoticeRenamedDocument,
     InterfaceNoticeRenamedFolder,
     InterfaceNoticeRestored,
@@ -529,6 +849,10 @@ pub enum MessageId {
     InterfaceReaderZoom,
     InterfaceReceiveDropped,
     InterfaceReceiveRefused,
+    InterfaceReceivedConfirmBody,
+    InterfaceReceivedConfirmTitleMany,
+    InterfaceReceivedConfirmTitleOne,
+    InterfaceReceivedImport,
     InterfaceRecordPresentationImaging,
     InterfaceRecordPresentationPrescription,
     InterfaceRecordPresentationTestResult,
@@ -546,6 +870,7 @@ pub enum MessageId {
     InterfaceTabWithNew,
     InterfaceUnfinishedRecoveryKeyRecoveryKeySetupEndedWhenTheVault,
     InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup,
+    InterfaceVideoName,
     KitKeep,
     KitLabelNote,
     KitLabelPrinted,
@@ -566,6 +891,7 @@ pub enum MessageId {
     LibraryDocumentLabel,
     LibraryEmptyHelp,
     LibraryEmptyTitle,
+    LibraryFileSaysChecked,
     LibraryFolderItems,
     LibraryFolderLabel,
     LibraryFolderOpen,
@@ -590,6 +916,7 @@ pub enum MessageId {
     LockWarningTitle,
     NativeBackupNoteEmptied,
     NativeBackupNoteUntouched,
+    NativeBackupExclusionFailed,
     NativeCancel,
     NativeError01,
     NativeError02,
@@ -639,12 +966,19 @@ pub enum MessageId {
     NativeError46,
     NativeError47,
     NativeError48,
+    NativeError49,
+    NativeError50,
     NativeErrorSpeedTest,
     NativeFilterBackups,
     NativeFilterModels,
     NativeFilterPdf,
+    NativeFilterPdfAndPictures,
+    NativeFilterPdfPicturesAndVideos,
+    NativeFilterPictures,
+    NativeFilterVideo,
     NativeKitText,
     NativeNoticeArrival,
+    NativeNoticeTest,
     NativeRecoveryKeep,
     NativeRecoveryReplace,
     NativeRecoveryTitle,
@@ -662,6 +996,10 @@ pub enum MessageId {
     NativeSetAsideMobile,
     NativeSetAsideTitle,
     NativeSetAsideWarning,
+    NativeTrayOpen,
+    NativeTrayQuit,
+    NativeTrayTooltip,
+    NativeTrayWaiting,
     NativeVaultKeep,
     NoticeAutoLockSet,
     NoticeBackupCutOff,
@@ -682,18 +1020,29 @@ pub enum MessageId {
     NoticesStepDone,
     NoticesStepIntro,
     NoticesStepLater,
+    NoticesStepLaterBackground,
     NoticesStepNotNow,
     NoticesStepTitle,
     NotificationsAllow,
     NotificationsAutoAllow,
+    NotificationsAutoConsent,
     NotificationsAutoHelp,
-    NotificationsAutoNeedsNotices,
     NotificationsAutoPaused,
+    NotificationsAutoSummary,
     NotificationsBlocked,
+    NotificationsBlockedMac,
     NotificationsCheckBusy,
     NotificationsError,
-    NotificationsHelp,
     NotificationsHelpAutomatic,
+    NotificationsNotYetAsked,
+    NotificationsNotYetAskedMac,
+    NotificationsNoticesHelp,
+    NotificationsTestButton,
+    NotificationsTestFailed,
+    NotificationsTestOff,
+    NotificationsTestSent,
+    NotificationsTestSentMac,
+    NotificationsTestWait,
     NotificationsTitle,
     NotificationsUnavailable,
     NotificationsUnknown,
@@ -777,6 +1126,8 @@ pub enum MessageId {
     PortalApprovalWait,
     PortalApproved,
     PortalApprovedByCode,
+    PortalArrivedForHidden,
+    PortalArrivedForHiddenNoClinic,
     PortalAutoCheckStopped,
     PortalAutoChecking,
     PortalAwaiting,
@@ -808,6 +1159,8 @@ pub enum MessageId {
     PortalDeviceCode,
     PortalDeviceDetailsHide,
     PortalDeviceDetailsShow,
+    PortalDeviceLine,
+    PortalDeviceLineLinked,
     PortalDeviceName,
     PortalDeviceRemoved,
     PortalEarlierHide,
@@ -836,6 +1189,13 @@ pub enum MessageId {
     PortalPartialResult,
     PortalPerson,
     PortalRefusedDocuments,
+    PortalRemoveBody,
+    PortalRemoveConfirm,
+    PortalRemoveKept,
+    PortalRemoveLink,
+    PortalRemoveNotices,
+    PortalRemoveTitle,
+    PortalRemoved,
     PortalRequestApproval,
     PortalRestartApproval,
     PortalResult,
@@ -853,7 +1213,20 @@ pub enum MessageId {
     PortalUnlockChecked,
     PortalUnlockRefused,
     PortalWorking,
+    PreferencesMoreAutomatic,
+    PreferencesMoreBackground,
     PreferencesSubtitle,
+    ReaderAndroidFailed,
+    ReaderAndroidNext,
+    ReaderAndroidOpening,
+    ReaderAndroidPage,
+    ReaderAndroidPageFailed,
+    ReaderAndroidPageStatus,
+    ReaderAndroidPrevious,
+    ReaderAndroidTooLarge,
+    ReaderAndroidUnavailable,
+    ReaderAndroidZoomIn,
+    ReaderAndroidZoomOut,
     ReaderIphoneFailed,
     ReaderIphoneOpening,
     ReaderIphoneTooLarge,
@@ -892,6 +1265,7 @@ pub enum MessageId {
     RecoveryKeyHiddenWhileSaving,
     RecoveryKeyInstructions,
     RecoveryKeyKeyboardHint,
+    RecoveryKeyKitCloudWarning,
     RecoveryKeyKitSaved,
     RecoveryKeyLabel,
     RecoveryKeyLeaveOffered,
@@ -949,6 +1323,7 @@ pub enum MessageId {
     RestoreConsequenceSame,
     RestoreConsequenceUnreadable,
     RestoreIntro,
+    RestoreLeftOut,
     RestoreMethodPassphrase,
     RestoreMethodRecoveryKey,
     RestoreOpenWith,
@@ -968,10 +1343,16 @@ pub enum MessageId {
     SecurityAutoLockShorter,
     SecurityAutoLockTitle,
     SecurityBackupBody,
+    SecurityBackupCloudWarning,
+    SecurityBackupLeaveVideosOut,
+    SecurityBackupLeaveVideosOutHelp,
     SecurityBackupSave,
+    SecurityBackupSize,
+    SecurityBackupSizeCalculating,
+    SecurityBackupSizeNoVideos,
+    SecurityBackupSizeWithVideos,
     SecurityBackupTitle,
     SecurityCopiesBody,
-    SecurityCopiesTitle,
     SecurityDevBuildBody,
     SecurityDevBuildTitle,
     SecurityEncryptionBody,
@@ -1057,6 +1438,8 @@ impl MessageId {
     pub const ALL: &'static [Self] = &[
         Self::AiErrorBusy,
         Self::AiErrorMemory,
+        Self::AiErrorMemoryNumbers,
+        Self::AiErrorMemoryUnknown,
         Self::AiErrorStorage,
         Self::AiExplainBox,
         Self::AiExplainHint,
@@ -1066,6 +1449,11 @@ impl MessageId {
         Self::AiFailed,
         Self::AiKeepFailed,
         Self::AiKeepFull,
+        Self::AiLabelSettingsBody,
+        Self::AiLabelSettingsFullBack,
+        Self::AiLabelSettingsShortShown,
+        Self::AiLabelSettingsShowFull,
+        Self::AiLabelSettingsTitle,
         Self::AiModelAccepted,
         Self::AiModelAdd,
         Self::AiModelAdded,
@@ -1077,9 +1465,15 @@ impl MessageId {
         Self::AiModelDownloadNote,
         Self::AiModelDownloading,
         Self::AiModelInstalled,
+        Self::AiModelLoadCheck,
+        Self::AiModelLoadCheckCannotRun,
+        Self::AiModelLoadCheckMemory,
+        Self::AiModelLoadCheckReady,
+        Self::AiModelLoadCheckRetry,
         Self::AiModelProgressName,
         Self::AiModelProgressValue,
         Self::AiModelReads,
+        Self::AiModelReadsEstimate,
         Self::AiModelRefusedBusy,
         Self::AiModelRefusedDisk,
         Self::AiModelRefusedHash,
@@ -1121,6 +1515,17 @@ impl MessageId {
         Self::AiPreferencesTitle,
         Self::AiResultMeta,
         Self::AiSettingsSubtitle,
+        Self::AiSpeedButton,
+        Self::AiSpeedCancel,
+        Self::AiSpeedCancelled,
+        Self::AiSpeedEstimate,
+        Self::AiSpeedEstimateLong,
+        Self::AiSpeedFailed,
+        Self::AiSpeedNone,
+        Self::AiSpeedNote,
+        Self::AiSpeedResult,
+        Self::AiSpeedTitle,
+        Self::AiSpeedWorking,
         Self::AiSummaryAgain,
         Self::AiSummaryButton,
         Self::AiSummaryEnglishOnly,
@@ -1168,6 +1573,9 @@ impl MessageId {
         Self::AiHelperNoticeTestBuild,
         Self::AiHelperNoticeTitle,
         Self::AiHelperResultLabel,
+        Self::AiHelperResultLabelHide,
+        Self::AiHelperResultLabelInfo,
+        Self::AiHelperResultLabelShort,
         Self::AppearanceDark,
         Self::AppearanceErrorNotRemembered,
         Self::AppearanceErrorUnreadable,
@@ -1178,6 +1586,16 @@ impl MessageId {
         Self::AppearanceSystem,
         Self::AppearanceTitle,
         Self::AuthKicker,
+        Self::BackgroundError,
+        Self::BackgroundKeepRunning,
+        Self::BackgroundKeepRunningHelp,
+        Self::BackgroundKeepRunningSummary,
+        Self::BackgroundPaused,
+        Self::BackgroundStartAtLogin,
+        Self::BackgroundStartAtLoginHelp,
+        Self::BackgroundStartAtLoginSummary,
+        Self::BackgroundTitle,
+        Self::BackgroundUnavailable,
         Self::BoxCurrentPassphrase,
         Self::BoxFolderName,
         Self::BoxName,
@@ -1217,6 +1635,22 @@ impl MessageId {
         Self::ErrorNewerFormatBackup,
         Self::ErrorNewerFormatVault,
         Self::ErrorRetryIn,
+        Self::FileUnderButton,
+        Self::FileUnderChoose,
+        Self::FileUnderClinicWords,
+        Self::FileUnderConfirm,
+        Self::FileUnderDiffers,
+        Self::FileUnderFromClinic,
+        Self::FileUnderNotOnItsOwn,
+        Self::FileUnderPerson,
+        Self::FileUnderRule,
+        Self::FileUnderSaveDetails,
+        Self::FileUnderSaveDetailsOnly,
+        Self::FileUnderTitle,
+        Self::FileUnderWhatBoth,
+        Self::FileUnderWhatDate,
+        Self::FileUnderWhatName,
+        Self::FileUnderWords,
         Self::FrameBannerBody,
         Self::FrameBannerTitle,
         Self::FrameStateLocked,
@@ -1225,13 +1659,157 @@ impl MessageId {
         Self::FrameStateOpening,
         Self::FrameStateSettingUp,
         Self::FrameWindowLabel,
+        Self::HandoverClose,
+        Self::HandoverCountAnswers,
+        Self::HandoverCountDocuments,
+        Self::HandoverCountEvidence,
+        Self::HandoverCountFolders,
+        Self::HandoverCountHidden,
+        Self::HandoverCountSize,
+        Self::HandoverExportAbout,
+        Self::HandoverExportApart,
+        Self::HandoverExportButton,
+        Self::HandoverExportCaution,
+        Self::HandoverExportChooseWhere,
+        Self::HandoverExportContinue,
+        Self::HandoverExportCopied,
+        Self::HandoverExportCopy,
+        Self::HandoverExportCopyFailed,
+        Self::HandoverExportDone,
+        Self::HandoverExportDoneApart,
+        Self::HandoverExportDoneTitle,
+        Self::HandoverExportErrorWeak,
+        Self::HandoverExportEvidenceLeftOut,
+        Self::HandoverExportHideOffer,
+        Self::HandoverExportHistory,
+        Self::HandoverExportKeyBody,
+        Self::HandoverExportKeyGroup,
+        Self::HandoverExportKeyKindGenerated,
+        Self::HandoverExportKeyKindLegend,
+        Self::HandoverExportKeyKindPassphrase,
+        Self::HandoverExportKeyLabel,
+        Self::HandoverExportKeySaved,
+        Self::HandoverExportKeyTitle,
+        Self::HandoverExportLeaveBody,
+        Self::HandoverExportLeaveConfirm,
+        Self::HandoverExportLeaveTitle,
+        Self::HandoverExportLeavingWarning,
+        Self::HandoverExportLeftOut,
+        Self::HandoverExportNoLocation,
+        Self::HandoverExportPassphrase,
+        Self::HandoverExportPassphraseHint,
+        Self::HandoverExportPerson,
+        Self::HandoverExportPreparing,
+        Self::HandoverExportProvider,
+        Self::HandoverExportSaveTitle,
+        Self::HandoverExportSaving,
+        Self::HandoverExportSummary,
+        Self::HandoverExportTitle,
+        Self::HandoverImportAbout,
+        Self::HandoverImportAdd,
+        Self::HandoverImportAdding,
+        Self::HandoverImportBirth,
+        Self::HandoverImportButton,
+        Self::HandoverImportChoose,
+        Self::HandoverImportDone,
+        Self::HandoverImportDoneAnswers,
+        Self::HandoverImportDoneDropped,
+        Self::HandoverImportDoneEvidence,
+        Self::HandoverImportDoneTitle,
+        Self::HandoverImportDuplicateAnyway,
+        Self::HandoverImportDuplicateContent,
+        Self::HandoverImportDuplicateLegend,
+        Self::HandoverImportDuplicatePackage,
+        Self::HandoverImportErrorDamaged,
+        Self::HandoverImportErrorNewer,
+        Self::HandoverImportErrorRecovery,
+        Self::HandoverImportErrorTypo,
+        Self::HandoverImportErrorWrong,
+        Self::HandoverImportEvidenceNote,
+        Self::HandoverImportKey,
+        Self::HandoverImportKeyHint,
+        Self::HandoverImportKeyTitle,
+        Self::HandoverImportMadeOn,
+        Self::HandoverImportNameLabel,
+        Self::HandoverImportNoFile,
+        Self::HandoverImportNothingNew,
+        Self::HandoverImportOpen,
+        Self::HandoverImportOpening,
+        Self::HandoverImportPassphrase,
+        Self::HandoverImportPassphraseHint,
+        Self::HandoverImportPreviewTitle,
+        Self::HandoverImportPreviousNames,
+        Self::HandoverImportReceipt,
+        Self::HandoverImportReceiptNote,
+        Self::HandoverImportSays,
+        Self::HandoverImportTitle,
+        Self::HandoverImportedAnswer,
+        Self::HandoverNowVerified,
+        Self::HandoverSectionBody,
+        Self::HandoverSectionTitle,
+        Self::HandoverUnfinished,
         Self::HiddenBackToSecurity,
+        Self::HiddenPeopleArrivedBody,
+        Self::HiddenPeopleArrivedLeave,
+        Self::HiddenPeopleArrivedList,
+        Self::HiddenPeopleArrivedMove,
+        Self::HiddenPeopleArrivedTitle,
+        Self::HiddenPeopleBody,
+        Self::HiddenPeopleConfirmBody,
+        Self::HiddenPeopleConfirmHide,
+        Self::HiddenPeopleConfirmTitle,
+        Self::HiddenPeopleDamagedToo,
+        Self::HiddenPeopleDocuments,
+        Self::HiddenPeopleHandOver,
+        Self::HiddenPeopleHandOverFor,
+        Self::HiddenPeopleHidden,
+        Self::HiddenPeopleHide,
+        Self::HiddenPeopleHideFor,
+        Self::HiddenPeopleLastPerson,
+        Self::HiddenPeopleList,
+        Self::HiddenPeopleRestore,
+        Self::HiddenPeopleRestoreFor,
+        Self::HiddenPeopleRestored,
+        Self::HiddenPeopleSince,
+        Self::HiddenPeopleTitle,
+        Self::InterfaceAddVideoAdd,
+        Self::InterfaceAddVideoAdded,
+        Self::InterfaceAddVideoAdding,
+        Self::InterfaceAddVideoAudioCodec,
+        Self::InterfaceAddVideoCancel,
+        Self::InterfaceAddVideoCancelled,
+        Self::InterfaceAddVideoCancelling,
+        Self::InterfaceAddVideoChecking,
+        Self::InterfaceAddVideoDamaged,
+        Self::InterfaceAddVideoDuplicate,
+        Self::InterfaceAddVideoExternal,
+        Self::InterfaceAddVideoFragmented,
+        Self::InterfaceAddVideoHevc,
+        Self::InterfaceAddVideoHint,
+        Self::InterfaceAddVideoNoVideo,
+        Self::InterfaceAddVideoNotVideo,
+        Self::InterfaceAddVideoProgressLabel,
+        Self::InterfaceAddVideoStoring,
+        Self::InterfaceAddVideoTooBig,
+        Self::InterfaceAddVideoTooLarge,
+        Self::InterfaceAddVideoTooManyTracks,
+        Self::InterfaceAddVideoVideoAlone,
+        Self::InterfaceAddVideoVideoCodec,
         Self::InterfaceAiHelperNoticeContinue,
+        Self::InterfaceAnonymizePreviewCheckPicked,
         Self::InterfaceAnonymizePreviewClose,
         Self::InterfaceAnonymizePreviewConfirmBody,
         Self::InterfaceAnonymizePreviewConfirmTitle,
+        Self::InterfaceAnonymizePreviewCopied,
+        Self::InterfaceAnonymizePreviewCopy,
+        Self::InterfaceAnonymizePreviewCopyFailed,
+        Self::InterfaceAnonymizePreviewCopyWarning,
         Self::InterfaceAnonymizePreviewCutPages,
         Self::InterfaceAnonymizePreviewEmptyPages,
+        Self::InterfaceAnonymizePreviewEponymKeep,
+        Self::InterfaceAnonymizePreviewEponymKeepAll,
+        Self::InterfaceAnonymizePreviewEponymOne,
+        Self::InterfaceAnonymizePreviewEponymTitle,
         Self::InterfaceAnonymizePreviewFailedPages,
         Self::InterfaceAnonymizePreviewFooterNote,
         Self::InterfaceAnonymizePreviewHeaderNote,
@@ -1254,6 +1832,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewMovedDate,
         Self::InterfaceAnonymizePreviewNoteAgeOver90,
         Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewNoteOtherForm,
         Self::InterfaceAnonymizePreviewPasteAllMatched,
         Self::InterfaceAnonymizePreviewPasteButton,
         Self::InterfaceAnonymizePreviewPasteFlagged,
@@ -1262,6 +1841,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewPasteLabel,
         Self::InterfaceAnonymizePreviewPasteResult,
         Self::InterfaceAnonymizePreviewPasteTitle,
+        Self::InterfaceAnonymizePreviewPasteWhereNote,
         Self::InterfaceAnonymizePreviewPhrase,
         Self::InterfaceAnonymizePreviewPhraseNotFound,
         Self::InterfaceAnonymizePreviewPlaceholderAddress,
@@ -1286,15 +1866,36 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewRemovePhrase,
         Self::InterfaceAnonymizePreviewRemoveSelected,
         Self::InterfaceAnonymizePreviewRemoveWord,
+        Self::InterfaceAnonymizePreviewRemovedCountAddress,
+        Self::InterfaceAnonymizePreviewRemovedCountAge,
+        Self::InterfaceAnonymizePreviewRemovedCountClinic,
+        Self::InterfaceAnonymizePreviewRemovedCountDate,
+        Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth,
+        Self::InterfaceAnonymizePreviewRemovedCountDoctor,
+        Self::InterfaceAnonymizePreviewRemovedCountEmail,
+        Self::InterfaceAnonymizePreviewRemovedCountHealthCard,
+        Self::InterfaceAnonymizePreviewRemovedCountManual,
+        Self::InterfaceAnonymizePreviewRemovedCountName,
+        Self::InterfaceAnonymizePreviewRemovedCountPhone,
+        Self::InterfaceAnonymizePreviewRemovedCountPostalCode,
+        Self::InterfaceAnonymizePreviewRemovedCountRecordNumber,
+        Self::InterfaceAnonymizePreviewRemovedCountSin,
+        Self::InterfaceAnonymizePreviewRemovedCountUnclearDate,
+        Self::InterfaceAnonymizePreviewRemovedCountWeb,
         Self::InterfaceAnonymizePreviewRemovedKind,
         Self::InterfaceAnonymizePreviewRemovedPlaces,
+        Self::InterfaceAnonymizePreviewRemovedSummary,
+        Self::InterfaceAnonymizePreviewRemovedSummaryNone,
         Self::InterfaceAnonymizePreviewReplaced,
         Self::InterfaceAnonymizePreviewSave,
         Self::InterfaceAnonymizePreviewSaveCancelled,
         Self::InterfaceAnonymizePreviewSaved,
+        Self::InterfaceAnonymizePreviewSavedFileNote,
         Self::InterfaceAnonymizePreviewSelectFirst,
         Self::InterfaceAnonymizePreviewTextRegion,
         Self::InterfaceAnonymizePreviewTitle,
+        Self::InterfaceAnonymizePreviewToCheck,
+        Self::InterfaceAnonymizePreviewToCheckHelp,
         Self::InterfaceAnonymizePreviewUndo,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
@@ -1353,6 +1954,76 @@ impl MessageId {
         Self::InterfaceRecordDetailsThisDocumentIsUnavailable,
         Self::InterfaceRecordDetailsUnlock,
         Self::InterfaceRecordDetailsViewPhoto,
+        Self::InterfaceRecordDialogAboutHighPerHour,
+        Self::InterfaceRecordDialogAboutStandardPerHour,
+        Self::InterfaceRecordDialogCamera,
+        Self::InterfaceRecordDialogCameraAndMicrophone,
+        Self::InterfaceRecordDialogDeviceFellBack,
+        Self::InterfaceRecordDialogDeviceNotSwitched,
+        Self::InterfaceRecordDialogHigh,
+        Self::InterfaceRecordDialogKeepRecording,
+        Self::InterfaceRecordDialogLowOnRoom,
+        Self::InterfaceRecordDialogLowOnRoomMinutes,
+        Self::InterfaceRecordDialogMicrophone,
+        Self::InterfaceRecordDialogMicrophoneLevel,
+        Self::InterfaceRecordDialogNotEnoughRoom,
+        Self::InterfaceRecordDialogNothingWasRecorded,
+        Self::InterfaceRecordDialogPauseRecording,
+        Self::InterfaceRecordDialogPaused,
+        Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
+        Self::InterfaceRecordDialogPictureQuality,
+        Self::InterfaceRecordDialogRecordAVideo,
+        Self::InterfaceRecordDialogRecordAVideoFor,
+        Self::InterfaceRecordDialogRecorded,
+        Self::InterfaceRecordDialogRecording,
+        Self::InterfaceRecordDialogRecordingAt,
+        Self::InterfaceRecordDialogRecordingPaused,
+        Self::InterfaceRecordDialogRecordingResumed,
+        Self::InterfaceRecordDialogRecordingSettings,
+        Self::InterfaceRecordDialogResumeRecording,
+        Self::InterfaceRecordDialogSavingTheVideo,
+        Self::InterfaceRecordDialogSaySomething,
+        Self::InterfaceRecordDialogSettingsNote,
+        Self::InterfaceRecordDialogStandard,
+        Self::InterfaceRecordDialogStartRecording,
+        Self::InterfaceRecordDialogStartingTheCameraAndMicrophone,
+        Self::InterfaceRecordDialogStopAndSave,
+        Self::InterfaceRecordDialogStopAndSaveTheVideo,
+        Self::InterfaceRecordDialogStopTestingMicrophone,
+        Self::InterfaceRecordDialogSystemDefaultDevice,
+        Self::InterfaceRecordDialogTestMicrophone,
+        Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
+        Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
+        Self::InterfaceRecordDialogTheVideoIsRecordedWithSound,
+        Self::InterfaceRecordDialogThisDeviceCannotRecordMp4,
+        Self::InterfaceRecordDialogUnavailable,
+        Self::InterfaceRecordDialogUnnamedCamera,
+        Self::InterfaceRecordDialogUnnamedMicrophone,
+        Self::InterfaceRecordDialogUseTheCameraAndMicrophone,
+        Self::InterfaceRecordDialogVideoKeptUnfinished,
+        Self::InterfaceRecordDialogVideoNeedsBoth,
+        Self::InterfaceRecordDialogVideoSaved,
+        Self::InterfaceRecordDialogVideoSavedFailed,
+        Self::InterfaceRecordDialogVideoSavedHidden,
+        Self::InterfaceRecordDialogVideoSavedNoRoom,
+        Self::InterfaceRecordDialogVideoSavedSlow,
+        Self::InterfaceRecordDialogVideoSavedStopped,
+        Self::InterfaceRecordDialogWhy,
+        Self::InterfaceRecordDialogYourPhoneAsksOnce,
+        Self::InterfaceRecordingRecoveryAskLater,
+        Self::InterfaceRecordingRecoveryClosed,
+        Self::InterfaceRecordingRecoveryClosedPaused,
+        Self::InterfaceRecordingRecoveryDelete,
+        Self::InterfaceRecordingRecoveryDeleteSure,
+        Self::InterfaceRecordingRecoveryDeleted,
+        Self::InterfaceRecordingRecoveryFinishedWithRoom,
+        Self::InterfaceRecordingRecoveryKeep,
+        Self::InterfaceRecordingRecoveryKept,
+        Self::InterfaceRecordingRecoveryName,
+        Self::InterfaceRecordingRecoveryNothingToKeep,
+        Self::InterfaceRecordingRecoverySavedLocked,
+        Self::InterfaceRecordingRecoverySavedLockedPaused,
+        Self::InterfaceRecordingRecoveryStillNoRoom,
         Self::InterfaceSecuritySettingsEvaluationBuild,
         Self::InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
         Self::InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -1411,6 +2082,7 @@ impl MessageId {
         Self::InterfaceVaultLibraryNoLocationChosenNothingChanged,
         Self::InterfaceVaultLibraryNoRecoveryKeyYet,
         Self::InterfaceVaultLibraryPassphraseChanged,
+        Self::InterfaceVaultLibraryPicturesNote,
         Self::InterfaceVaultLibraryPrivateVault,
         Self::InterfaceVaultLibraryRecords,
         Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere,
@@ -1433,6 +2105,26 @@ impl MessageId {
         Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
         Self::InterfaceVaultLibraryTopLevel,
         Self::InterfaceVaultLibraryWorking,
+        Self::InterfaceVideoHelpEngine,
+        Self::InterfaceVideoHelpRestWorks,
+        Self::InterfaceVideoHelpSystems,
+        Self::InterfaceVideoHelpTitle,
+        Self::InterfaceVideoViewerBack,
+        Self::InterfaceVideoViewerBackBig,
+        Self::InterfaceVideoViewerControls,
+        Self::InterfaceVideoViewerEnd,
+        Self::InterfaceVideoViewerForward,
+        Self::InterfaceVideoViewerForwardBig,
+        Self::InterfaceVideoViewerMute,
+        Self::InterfaceVideoViewerPlayPause,
+        Self::InterfaceVideoViewerPlayVideo,
+        Self::InterfaceVideoViewerPlayer,
+        Self::InterfaceVideoViewerStart,
+        Self::InterfaceVideoViewerThisVideoCouldNotBePlayed,
+        Self::InterfaceVideoViewerUnmute,
+        Self::InterfaceVideoViewerVideo,
+        Self::InterfaceVideoViewerVolumeDown,
+        Self::InterfaceVideoViewerVolumeUp,
         Self::InterfaceCameraDenied,
         Self::InterfaceCountDocuments,
         Self::InterfaceCountFolders,
@@ -1446,7 +2138,9 @@ impl MessageId {
         Self::InterfaceHiddenFileMissing,
         Self::InterfaceHiddenRecord,
         Self::InterfaceHiddenRestore,
+        Self::InterfaceHiddenVideoLeftOut,
         Self::InterfaceHideDamagedTitle,
+        Self::InterfaceHistoryAboutHiddenPeople,
         Self::InterfaceHistoryAppVersion,
         Self::InterfaceHistoryApprovalAccepted,
         Self::InterfaceHistoryApprovalCancelled,
@@ -1483,10 +2177,15 @@ impl MessageId {
         Self::InterfaceHistoryEventMoved,
         Self::InterfaceHistoryEventOther,
         Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventPortalLinkRemoved,
         Self::InterfaceHistoryEventPortalLinkStarted,
         Self::InterfaceHistoryEventPortalLinked,
         Self::InterfaceHistoryEventProfileCreated,
         Self::InterfaceHistoryEventProfileDetailsChanged,
+        Self::InterfaceHistoryEventProfileExported,
+        Self::InterfaceHistoryEventProfileHidden,
+        Self::InterfaceHistoryEventProfileImported,
+        Self::InterfaceHistoryEventProfileRestored,
         Self::InterfaceHistoryEventReadingAidFiled,
         Self::InterfaceHistoryEventRecoveryKeySet,
         Self::InterfaceHistoryEventRenamed,
@@ -1507,6 +2206,7 @@ impl MessageId {
         Self::InterfaceHistoryHowPassphrase,
         Self::InterfaceHistoryHowPatient,
         Self::InterfaceHistoryHowPersonFolder,
+        Self::InterfaceHistoryHowPersonHidden,
         Self::InterfaceHistoryHowPicked,
         Self::InterfaceHistoryHowRecoveryKey,
         Self::InterfaceHistoryHowReplaced,
@@ -1551,6 +2251,7 @@ impl MessageId {
         Self::InterfaceNoticePdfUnlocked,
         Self::InterfaceNoticePersonAdded,
         Self::InterfaceNoticePhotoSaved,
+        Self::InterfaceNoticeReceivedNotOpened,
         Self::InterfaceNoticeRenamedDocument,
         Self::InterfaceNoticeRenamedFolder,
         Self::InterfaceNoticeRestored,
@@ -1581,6 +2282,10 @@ impl MessageId {
         Self::InterfaceReaderZoom,
         Self::InterfaceReceiveDropped,
         Self::InterfaceReceiveRefused,
+        Self::InterfaceReceivedConfirmBody,
+        Self::InterfaceReceivedConfirmTitleMany,
+        Self::InterfaceReceivedConfirmTitleOne,
+        Self::InterfaceReceivedImport,
         Self::InterfaceRecordPresentationImaging,
         Self::InterfaceRecordPresentationPrescription,
         Self::InterfaceRecordPresentationTestResult,
@@ -1598,6 +2303,7 @@ impl MessageId {
         Self::InterfaceTabWithNew,
         Self::InterfaceUnfinishedRecoveryKeyRecoveryKeySetupEndedWhenTheVault,
         Self::InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup,
+        Self::InterfaceVideoName,
         Self::KitKeep,
         Self::KitLabelNote,
         Self::KitLabelPrinted,
@@ -1618,6 +2324,7 @@ impl MessageId {
         Self::LibraryDocumentLabel,
         Self::LibraryEmptyHelp,
         Self::LibraryEmptyTitle,
+        Self::LibraryFileSaysChecked,
         Self::LibraryFolderItems,
         Self::LibraryFolderLabel,
         Self::LibraryFolderOpen,
@@ -1642,6 +2349,7 @@ impl MessageId {
         Self::LockWarningTitle,
         Self::NativeBackupNoteEmptied,
         Self::NativeBackupNoteUntouched,
+        Self::NativeBackupExclusionFailed,
         Self::NativeCancel,
         Self::NativeError01,
         Self::NativeError02,
@@ -1691,12 +2399,19 @@ impl MessageId {
         Self::NativeError46,
         Self::NativeError47,
         Self::NativeError48,
+        Self::NativeError49,
+        Self::NativeError50,
         Self::NativeErrorSpeedTest,
         Self::NativeFilterBackups,
         Self::NativeFilterModels,
         Self::NativeFilterPdf,
+        Self::NativeFilterPdfAndPictures,
+        Self::NativeFilterPdfPicturesAndVideos,
+        Self::NativeFilterPictures,
+        Self::NativeFilterVideo,
         Self::NativeKitText,
         Self::NativeNoticeArrival,
+        Self::NativeNoticeTest,
         Self::NativeRecoveryKeep,
         Self::NativeRecoveryReplace,
         Self::NativeRecoveryTitle,
@@ -1714,6 +2429,10 @@ impl MessageId {
         Self::NativeSetAsideMobile,
         Self::NativeSetAsideTitle,
         Self::NativeSetAsideWarning,
+        Self::NativeTrayOpen,
+        Self::NativeTrayQuit,
+        Self::NativeTrayTooltip,
+        Self::NativeTrayWaiting,
         Self::NativeVaultKeep,
         Self::NoticeAutoLockSet,
         Self::NoticeBackupCutOff,
@@ -1734,18 +2453,29 @@ impl MessageId {
         Self::NoticesStepDone,
         Self::NoticesStepIntro,
         Self::NoticesStepLater,
+        Self::NoticesStepLaterBackground,
         Self::NoticesStepNotNow,
         Self::NoticesStepTitle,
         Self::NotificationsAllow,
         Self::NotificationsAutoAllow,
+        Self::NotificationsAutoConsent,
         Self::NotificationsAutoHelp,
-        Self::NotificationsAutoNeedsNotices,
         Self::NotificationsAutoPaused,
+        Self::NotificationsAutoSummary,
         Self::NotificationsBlocked,
+        Self::NotificationsBlockedMac,
         Self::NotificationsCheckBusy,
         Self::NotificationsError,
-        Self::NotificationsHelp,
         Self::NotificationsHelpAutomatic,
+        Self::NotificationsNotYetAsked,
+        Self::NotificationsNotYetAskedMac,
+        Self::NotificationsNoticesHelp,
+        Self::NotificationsTestButton,
+        Self::NotificationsTestFailed,
+        Self::NotificationsTestOff,
+        Self::NotificationsTestSent,
+        Self::NotificationsTestSentMac,
+        Self::NotificationsTestWait,
         Self::NotificationsTitle,
         Self::NotificationsUnavailable,
         Self::NotificationsUnknown,
@@ -1829,6 +2559,8 @@ impl MessageId {
         Self::PortalApprovalWait,
         Self::PortalApproved,
         Self::PortalApprovedByCode,
+        Self::PortalArrivedForHidden,
+        Self::PortalArrivedForHiddenNoClinic,
         Self::PortalAutoCheckStopped,
         Self::PortalAutoChecking,
         Self::PortalAwaiting,
@@ -1860,6 +2592,8 @@ impl MessageId {
         Self::PortalDeviceCode,
         Self::PortalDeviceDetailsHide,
         Self::PortalDeviceDetailsShow,
+        Self::PortalDeviceLine,
+        Self::PortalDeviceLineLinked,
         Self::PortalDeviceName,
         Self::PortalDeviceRemoved,
         Self::PortalEarlierHide,
@@ -1888,6 +2622,13 @@ impl MessageId {
         Self::PortalPartialResult,
         Self::PortalPerson,
         Self::PortalRefusedDocuments,
+        Self::PortalRemoveBody,
+        Self::PortalRemoveConfirm,
+        Self::PortalRemoveKept,
+        Self::PortalRemoveLink,
+        Self::PortalRemoveNotices,
+        Self::PortalRemoveTitle,
+        Self::PortalRemoved,
         Self::PortalRequestApproval,
         Self::PortalRestartApproval,
         Self::PortalResult,
@@ -1905,7 +2646,20 @@ impl MessageId {
         Self::PortalUnlockChecked,
         Self::PortalUnlockRefused,
         Self::PortalWorking,
+        Self::PreferencesMoreAutomatic,
+        Self::PreferencesMoreBackground,
         Self::PreferencesSubtitle,
+        Self::ReaderAndroidFailed,
+        Self::ReaderAndroidNext,
+        Self::ReaderAndroidOpening,
+        Self::ReaderAndroidPage,
+        Self::ReaderAndroidPageFailed,
+        Self::ReaderAndroidPageStatus,
+        Self::ReaderAndroidPrevious,
+        Self::ReaderAndroidTooLarge,
+        Self::ReaderAndroidUnavailable,
+        Self::ReaderAndroidZoomIn,
+        Self::ReaderAndroidZoomOut,
         Self::ReaderIphoneFailed,
         Self::ReaderIphoneOpening,
         Self::ReaderIphoneTooLarge,
@@ -1944,6 +2698,7 @@ impl MessageId {
         Self::RecoveryKeyHiddenWhileSaving,
         Self::RecoveryKeyInstructions,
         Self::RecoveryKeyKeyboardHint,
+        Self::RecoveryKeyKitCloudWarning,
         Self::RecoveryKeyKitSaved,
         Self::RecoveryKeyLabel,
         Self::RecoveryKeyLeaveOffered,
@@ -2001,6 +2756,7 @@ impl MessageId {
         Self::RestoreConsequenceSame,
         Self::RestoreConsequenceUnreadable,
         Self::RestoreIntro,
+        Self::RestoreLeftOut,
         Self::RestoreMethodPassphrase,
         Self::RestoreMethodRecoveryKey,
         Self::RestoreOpenWith,
@@ -2020,10 +2776,16 @@ impl MessageId {
         Self::SecurityAutoLockShorter,
         Self::SecurityAutoLockTitle,
         Self::SecurityBackupBody,
+        Self::SecurityBackupCloudWarning,
+        Self::SecurityBackupLeaveVideosOut,
+        Self::SecurityBackupLeaveVideosOutHelp,
         Self::SecurityBackupSave,
+        Self::SecurityBackupSize,
+        Self::SecurityBackupSizeCalculating,
+        Self::SecurityBackupSizeNoVideos,
+        Self::SecurityBackupSizeWithVideos,
         Self::SecurityBackupTitle,
         Self::SecurityCopiesBody,
-        Self::SecurityCopiesTitle,
         Self::SecurityDevBuildBody,
         Self::SecurityDevBuildTitle,
         Self::SecurityEncryptionBody,
@@ -2109,6 +2871,8 @@ impl MessageId {
         match self {
             Self::AiErrorBusy => "ai-error-busy",
             Self::AiErrorMemory => "ai-error-memory",
+            Self::AiErrorMemoryNumbers => "ai-error-memoryNumbers",
+            Self::AiErrorMemoryUnknown => "ai-error-memoryUnknown",
             Self::AiErrorStorage => "ai-error-storage",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
@@ -2118,6 +2882,11 @@ impl MessageId {
             Self::AiFailed => "ai-failed",
             Self::AiKeepFailed => "ai-keepFailed",
             Self::AiKeepFull => "ai-keepFull",
+            Self::AiLabelSettingsBody => "ai-label-settingsBody",
+            Self::AiLabelSettingsFullBack => "ai-label-settingsFullBack",
+            Self::AiLabelSettingsShortShown => "ai-label-settingsShortShown",
+            Self::AiLabelSettingsShowFull => "ai-label-settingsShowFull",
+            Self::AiLabelSettingsTitle => "ai-label-settingsTitle",
             Self::AiModelAccepted => "ai-model-accepted",
             Self::AiModelAdd => "ai-model-add",
             Self::AiModelAdded => "ai-model-added",
@@ -2129,9 +2898,15 @@ impl MessageId {
             Self::AiModelDownloadNote => "ai-model-downloadNote",
             Self::AiModelDownloading => "ai-model-downloading",
             Self::AiModelInstalled => "ai-model-installed",
+            Self::AiModelLoadCheck => "ai-model-loadCheck",
+            Self::AiModelLoadCheckCannotRun => "ai-model-loadCheckCannotRun",
+            Self::AiModelLoadCheckMemory => "ai-model-loadCheckMemory",
+            Self::AiModelLoadCheckReady => "ai-model-loadCheckReady",
+            Self::AiModelLoadCheckRetry => "ai-model-loadCheckRetry",
             Self::AiModelProgressName => "ai-model-progressName",
             Self::AiModelProgressValue => "ai-model-progressValue",
             Self::AiModelReads => "ai-model-reads",
+            Self::AiModelReadsEstimate => "ai-model-readsEstimate",
             Self::AiModelRefusedBusy => "ai-model-refusedBusy",
             Self::AiModelRefusedDisk => "ai-model-refusedDisk",
             Self::AiModelRefusedHash => "ai-model-refusedHash",
@@ -2173,6 +2948,17 @@ impl MessageId {
             Self::AiPreferencesTitle => "ai-preferences-title",
             Self::AiResultMeta => "ai-result-meta",
             Self::AiSettingsSubtitle => "ai-settings-subtitle",
+            Self::AiSpeedButton => "ai-speed-button",
+            Self::AiSpeedCancel => "ai-speed-cancel",
+            Self::AiSpeedCancelled => "ai-speed-cancelled",
+            Self::AiSpeedEstimate => "ai-speed-estimate",
+            Self::AiSpeedEstimateLong => "ai-speed-estimateLong",
+            Self::AiSpeedFailed => "ai-speed-failed",
+            Self::AiSpeedNone => "ai-speed-none",
+            Self::AiSpeedNote => "ai-speed-note",
+            Self::AiSpeedResult => "ai-speed-result",
+            Self::AiSpeedTitle => "ai-speed-title",
+            Self::AiSpeedWorking => "ai-speed-working",
             Self::AiSummaryAgain => "ai-summary-again",
             Self::AiSummaryButton => "ai-summary-button",
             Self::AiSummaryEnglishOnly => "ai-summary-englishOnly",
@@ -2220,6 +3006,9 @@ impl MessageId {
             Self::AiHelperNoticeTestBuild => "aiHelper-notice-testBuild",
             Self::AiHelperNoticeTitle => "aiHelper-notice-title",
             Self::AiHelperResultLabel => "aiHelper-resultLabel",
+            Self::AiHelperResultLabelHide => "aiHelper-resultLabelHide",
+            Self::AiHelperResultLabelInfo => "aiHelper-resultLabelInfo",
+            Self::AiHelperResultLabelShort => "aiHelper-resultLabelShort",
             Self::AppearanceDark => "appearance-dark",
             Self::AppearanceErrorNotRemembered => "appearance-error-notRemembered",
             Self::AppearanceErrorUnreadable => "appearance-error-unreadable",
@@ -2230,6 +3019,16 @@ impl MessageId {
             Self::AppearanceSystem => "appearance-system",
             Self::AppearanceTitle => "appearance-title",
             Self::AuthKicker => "auth-kicker",
+            Self::BackgroundError => "background-error",
+            Self::BackgroundKeepRunning => "background-keepRunning",
+            Self::BackgroundKeepRunningHelp => "background-keepRunningHelp",
+            Self::BackgroundKeepRunningSummary => "background-keepRunningSummary",
+            Self::BackgroundPaused => "background-paused",
+            Self::BackgroundStartAtLogin => "background-startAtLogin",
+            Self::BackgroundStartAtLoginHelp => "background-startAtLoginHelp",
+            Self::BackgroundStartAtLoginSummary => "background-startAtLoginSummary",
+            Self::BackgroundTitle => "background-title",
+            Self::BackgroundUnavailable => "background-unavailable",
             Self::BoxCurrentPassphrase => "box-currentPassphrase",
             Self::BoxFolderName => "box-folderName",
             Self::BoxName => "box-name",
@@ -2269,6 +3068,22 @@ impl MessageId {
             Self::ErrorNewerFormatBackup => "error-newerFormat-backup",
             Self::ErrorNewerFormatVault => "error-newerFormat-vault",
             Self::ErrorRetryIn => "error-retryIn",
+            Self::FileUnderButton => "fileUnder-button",
+            Self::FileUnderChoose => "fileUnder-choose",
+            Self::FileUnderClinicWords => "fileUnder-clinicWords",
+            Self::FileUnderConfirm => "fileUnder-confirm",
+            Self::FileUnderDiffers => "fileUnder-differs",
+            Self::FileUnderFromClinic => "fileUnder-fromClinic",
+            Self::FileUnderNotOnItsOwn => "fileUnder-notOnItsOwn",
+            Self::FileUnderPerson => "fileUnder-person",
+            Self::FileUnderRule => "fileUnder-rule",
+            Self::FileUnderSaveDetails => "fileUnder-saveDetails",
+            Self::FileUnderSaveDetailsOnly => "fileUnder-saveDetailsOnly",
+            Self::FileUnderTitle => "fileUnder-title",
+            Self::FileUnderWhatBoth => "fileUnder-what-both",
+            Self::FileUnderWhatDate => "fileUnder-what-date",
+            Self::FileUnderWhatName => "fileUnder-what-name",
+            Self::FileUnderWords => "fileUnder-words",
             Self::FrameBannerBody => "frame-banner-body",
             Self::FrameBannerTitle => "frame-banner-title",
             Self::FrameStateLocked => "frame-state-locked",
@@ -2277,15 +3092,161 @@ impl MessageId {
             Self::FrameStateOpening => "frame-state-opening",
             Self::FrameStateSettingUp => "frame-state-settingUp",
             Self::FrameWindowLabel => "frame-window-label",
+            Self::HandoverClose => "handover-close",
+            Self::HandoverCountAnswers => "handover-count-answers",
+            Self::HandoverCountDocuments => "handover-count-documents",
+            Self::HandoverCountEvidence => "handover-count-evidence",
+            Self::HandoverCountFolders => "handover-count-folders",
+            Self::HandoverCountHidden => "handover-count-hidden",
+            Self::HandoverCountSize => "handover-count-size",
+            Self::HandoverExportAbout => "handover-export-about",
+            Self::HandoverExportApart => "handover-export-apart",
+            Self::HandoverExportButton => "handover-export-button",
+            Self::HandoverExportCaution => "handover-export-caution",
+            Self::HandoverExportChooseWhere => "handover-export-chooseWhere",
+            Self::HandoverExportContinue => "handover-export-continue",
+            Self::HandoverExportCopied => "handover-export-copied",
+            Self::HandoverExportCopy => "handover-export-copy",
+            Self::HandoverExportCopyFailed => "handover-export-copyFailed",
+            Self::HandoverExportDone => "handover-export-done",
+            Self::HandoverExportDoneApart => "handover-export-doneApart",
+            Self::HandoverExportDoneTitle => "handover-export-doneTitle",
+            Self::HandoverExportErrorWeak => "handover-export-error-weak",
+            Self::HandoverExportEvidenceLeftOut => "handover-export-evidenceLeftOut",
+            Self::HandoverExportHideOffer => "handover-export-hideOffer",
+            Self::HandoverExportHistory => "handover-export-history",
+            Self::HandoverExportKeyBody => "handover-export-keyBody",
+            Self::HandoverExportKeyGroup => "handover-export-keyGroup",
+            Self::HandoverExportKeyKindGenerated => "handover-export-keyKind-generated",
+            Self::HandoverExportKeyKindLegend => "handover-export-keyKind-legend",
+            Self::HandoverExportKeyKindPassphrase => "handover-export-keyKind-passphrase",
+            Self::HandoverExportKeyLabel => "handover-export-keyLabel",
+            Self::HandoverExportKeySaved => "handover-export-keySaved",
+            Self::HandoverExportKeyTitle => "handover-export-keyTitle",
+            Self::HandoverExportLeaveBody => "handover-export-leave-body",
+            Self::HandoverExportLeaveConfirm => "handover-export-leave-confirm",
+            Self::HandoverExportLeaveTitle => "handover-export-leave-title",
+            Self::HandoverExportLeavingWarning => "handover-export-leavingWarning",
+            Self::HandoverExportLeftOut => "handover-export-leftOut",
+            Self::HandoverExportNoLocation => "handover-export-noLocation",
+            Self::HandoverExportPassphrase => "handover-export-passphrase",
+            Self::HandoverExportPassphraseHint => "handover-export-passphraseHint",
+            Self::HandoverExportPerson => "handover-export-person",
+            Self::HandoverExportPreparing => "handover-export-preparing",
+            Self::HandoverExportProvider => "handover-export-provider",
+            Self::HandoverExportSaveTitle => "handover-export-saveTitle",
+            Self::HandoverExportSaving => "handover-export-saving",
+            Self::HandoverExportSummary => "handover-export-summary",
+            Self::HandoverExportTitle => "handover-export-title",
+            Self::HandoverImportAbout => "handover-import-about",
+            Self::HandoverImportAdd => "handover-import-add",
+            Self::HandoverImportAdding => "handover-import-adding",
+            Self::HandoverImportBirth => "handover-import-birth",
+            Self::HandoverImportButton => "handover-import-button",
+            Self::HandoverImportChoose => "handover-import-choose",
+            Self::HandoverImportDone => "handover-import-done",
+            Self::HandoverImportDoneAnswers => "handover-import-doneAnswers",
+            Self::HandoverImportDoneDropped => "handover-import-doneDropped",
+            Self::HandoverImportDoneEvidence => "handover-import-doneEvidence",
+            Self::HandoverImportDoneTitle => "handover-import-doneTitle",
+            Self::HandoverImportDuplicateAnyway => "handover-import-duplicate-anyway",
+            Self::HandoverImportDuplicateContent => "handover-import-duplicate-content",
+            Self::HandoverImportDuplicateLegend => "handover-import-duplicate-legend",
+            Self::HandoverImportDuplicatePackage => "handover-import-duplicate-package",
+            Self::HandoverImportErrorDamaged => "handover-import-error-damaged",
+            Self::HandoverImportErrorNewer => "handover-import-error-newer",
+            Self::HandoverImportErrorRecovery => "handover-import-error-recovery",
+            Self::HandoverImportErrorTypo => "handover-import-error-typo",
+            Self::HandoverImportErrorWrong => "handover-import-error-wrong",
+            Self::HandoverImportEvidenceNote => "handover-import-evidenceNote",
+            Self::HandoverImportKey => "handover-import-key",
+            Self::HandoverImportKeyHint => "handover-import-keyHint",
+            Self::HandoverImportKeyTitle => "handover-import-keyTitle",
+            Self::HandoverImportMadeOn => "handover-import-madeOn",
+            Self::HandoverImportNameLabel => "handover-import-nameLabel",
+            Self::HandoverImportNoFile => "handover-import-noFile",
+            Self::HandoverImportNothingNew => "handover-import-nothingNew",
+            Self::HandoverImportOpen => "handover-import-open",
+            Self::HandoverImportOpening => "handover-import-opening",
+            Self::HandoverImportPassphrase => "handover-import-passphrase",
+            Self::HandoverImportPassphraseHint => "handover-import-passphraseHint",
+            Self::HandoverImportPreviewTitle => "handover-import-previewTitle",
+            Self::HandoverImportPreviousNames => "handover-import-previousNames",
+            Self::HandoverImportReceipt => "handover-import-receipt",
+            Self::HandoverImportReceiptNote => "handover-import-receiptNote",
+            Self::HandoverImportSays => "handover-import-says",
+            Self::HandoverImportTitle => "handover-import-title",
+            Self::HandoverImportedAnswer => "handover-importedAnswer",
+            Self::HandoverNowVerified => "handover-nowVerified",
+            Self::HandoverSectionBody => "handover-section-body",
+            Self::HandoverSectionTitle => "handover-section-title",
+            Self::HandoverUnfinished => "handover-unfinished",
             Self::HiddenBackToSecurity => "hidden-backToSecurity",
+            Self::HiddenPeopleArrivedBody => "hiddenPeople-arrived-body",
+            Self::HiddenPeopleArrivedLeave => "hiddenPeople-arrived-leave",
+            Self::HiddenPeopleArrivedList => "hiddenPeople-arrived-list",
+            Self::HiddenPeopleArrivedMove => "hiddenPeople-arrived-move",
+            Self::HiddenPeopleArrivedTitle => "hiddenPeople-arrived-title",
+            Self::HiddenPeopleBody => "hiddenPeople-body",
+            Self::HiddenPeopleConfirmBody => "hiddenPeople-confirm-body",
+            Self::HiddenPeopleConfirmHide => "hiddenPeople-confirm-hide",
+            Self::HiddenPeopleConfirmTitle => "hiddenPeople-confirm-title",
+            Self::HiddenPeopleDamagedToo => "hiddenPeople-damagedToo",
+            Self::HiddenPeopleDocuments => "hiddenPeople-documents",
+            Self::HiddenPeopleHandOver => "hiddenPeople-handOver",
+            Self::HiddenPeopleHandOverFor => "hiddenPeople-handOverFor",
+            Self::HiddenPeopleHidden => "hiddenPeople-hidden",
+            Self::HiddenPeopleHide => "hiddenPeople-hide",
+            Self::HiddenPeopleHideFor => "hiddenPeople-hideFor",
+            Self::HiddenPeopleLastPerson => "hiddenPeople-lastPerson",
+            Self::HiddenPeopleList => "hiddenPeople-list",
+            Self::HiddenPeopleRestore => "hiddenPeople-restore",
+            Self::HiddenPeopleRestoreFor => "hiddenPeople-restoreFor",
+            Self::HiddenPeopleRestored => "hiddenPeople-restored",
+            Self::HiddenPeopleSince => "hiddenPeople-since",
+            Self::HiddenPeopleTitle => "hiddenPeople-title",
+            Self::InterfaceAddVideoAdd => "interface-AddVideo-add",
+            Self::InterfaceAddVideoAdded => "interface-AddVideo-added",
+            Self::InterfaceAddVideoAdding => "interface-AddVideo-adding",
+            Self::InterfaceAddVideoAudioCodec => "interface-AddVideo-audioCodec",
+            Self::InterfaceAddVideoCancel => "interface-AddVideo-cancel",
+            Self::InterfaceAddVideoCancelled => "interface-AddVideo-cancelled",
+            Self::InterfaceAddVideoCancelling => "interface-AddVideo-cancelling",
+            Self::InterfaceAddVideoChecking => "interface-AddVideo-checking",
+            Self::InterfaceAddVideoDamaged => "interface-AddVideo-damaged",
+            Self::InterfaceAddVideoDuplicate => "interface-AddVideo-duplicate",
+            Self::InterfaceAddVideoExternal => "interface-AddVideo-external",
+            Self::InterfaceAddVideoFragmented => "interface-AddVideo-fragmented",
+            Self::InterfaceAddVideoHevc => "interface-AddVideo-hevc",
+            Self::InterfaceAddVideoHint => "interface-AddVideo-hint",
+            Self::InterfaceAddVideoNoVideo => "interface-AddVideo-noVideo",
+            Self::InterfaceAddVideoNotVideo => "interface-AddVideo-notVideo",
+            Self::InterfaceAddVideoProgressLabel => "interface-AddVideo-progressLabel",
+            Self::InterfaceAddVideoStoring => "interface-AddVideo-storing",
+            Self::InterfaceAddVideoTooBig => "interface-AddVideo-tooBig",
+            Self::InterfaceAddVideoTooLarge => "interface-AddVideo-tooLarge",
+            Self::InterfaceAddVideoTooManyTracks => "interface-AddVideo-tooManyTracks",
+            Self::InterfaceAddVideoVideoAlone => "interface-AddVideo-videoAlone",
+            Self::InterfaceAddVideoVideoCodec => "interface-AddVideo-videoCodec",
             Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
+            Self::InterfaceAnonymizePreviewCheckPicked => "interface-AnonymizePreview-checkPicked",
             Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
             Self::InterfaceAnonymizePreviewConfirmBody => "interface-AnonymizePreview-confirmBody",
             Self::InterfaceAnonymizePreviewConfirmTitle => {
                 "interface-AnonymizePreview-confirmTitle"
             }
+            Self::InterfaceAnonymizePreviewCopied => "interface-AnonymizePreview-copied",
+            Self::InterfaceAnonymizePreviewCopy => "interface-AnonymizePreview-copy",
+            Self::InterfaceAnonymizePreviewCopyFailed => "interface-AnonymizePreview-copyFailed",
+            Self::InterfaceAnonymizePreviewCopyWarning => "interface-AnonymizePreview-copyWarning",
             Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
             Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
+            Self::InterfaceAnonymizePreviewEponymKeep => "interface-AnonymizePreview-eponymKeep",
+            Self::InterfaceAnonymizePreviewEponymKeepAll => {
+                "interface-AnonymizePreview-eponymKeepAll"
+            }
+            Self::InterfaceAnonymizePreviewEponymOne => "interface-AnonymizePreview-eponymOne",
+            Self::InterfaceAnonymizePreviewEponymTitle => "interface-AnonymizePreview-eponymTitle",
             Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
             Self::InterfaceAnonymizePreviewFooterNote => "interface-AnonymizePreview-footerNote",
             Self::InterfaceAnonymizePreviewHeaderNote => "interface-AnonymizePreview-headerNote",
@@ -2322,6 +3283,9 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewNoteDaysAfter => {
                 "interface-AnonymizePreview-note-daysAfter"
             }
+            Self::InterfaceAnonymizePreviewNoteOtherForm => {
+                "interface-AnonymizePreview-note-otherForm"
+            }
             Self::InterfaceAnonymizePreviewPasteAllMatched => {
                 "interface-AnonymizePreview-pasteAllMatched"
             }
@@ -2336,6 +3300,9 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
             Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
             Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
+            Self::InterfaceAnonymizePreviewPasteWhereNote => {
+                "interface-AnonymizePreview-pasteWhereNote"
+            }
             Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
             Self::InterfaceAnonymizePreviewPhraseNotFound => {
                 "interface-AnonymizePreview-phraseNotFound"
@@ -2398,9 +3365,63 @@ impl MessageId {
                 "interface-AnonymizePreview-removeSelected"
             }
             Self::InterfaceAnonymizePreviewRemoveWord => "interface-AnonymizePreview-removeWord",
+            Self::InterfaceAnonymizePreviewRemovedCountAddress => {
+                "interface-AnonymizePreview-removedCount-address"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountAge => {
+                "interface-AnonymizePreview-removedCount-age"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountClinic => {
+                "interface-AnonymizePreview-removedCount-clinic"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDate => {
+                "interface-AnonymizePreview-removedCount-date"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth => {
+                "interface-AnonymizePreview-removedCount-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDoctor => {
+                "interface-AnonymizePreview-removedCount-doctor"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountEmail => {
+                "interface-AnonymizePreview-removedCount-email"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountHealthCard => {
+                "interface-AnonymizePreview-removedCount-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountManual => {
+                "interface-AnonymizePreview-removedCount-manual"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountName => {
+                "interface-AnonymizePreview-removedCount-name"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountPhone => {
+                "interface-AnonymizePreview-removedCount-phone"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountPostalCode => {
+                "interface-AnonymizePreview-removedCount-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountRecordNumber => {
+                "interface-AnonymizePreview-removedCount-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountSin => {
+                "interface-AnonymizePreview-removedCount-sin"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountUnclearDate => {
+                "interface-AnonymizePreview-removedCount-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountWeb => {
+                "interface-AnonymizePreview-removedCount-web"
+            }
             Self::InterfaceAnonymizePreviewRemovedKind => "interface-AnonymizePreview-removedKind",
             Self::InterfaceAnonymizePreviewRemovedPlaces => {
                 "interface-AnonymizePreview-removedPlaces"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummary => {
+                "interface-AnonymizePreview-removedSummary"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummaryNone => {
+                "interface-AnonymizePreview-removedSummaryNone"
             }
             Self::InterfaceAnonymizePreviewReplaced => "interface-AnonymizePreview-replaced",
             Self::InterfaceAnonymizePreviewSave => "interface-AnonymizePreview-save",
@@ -2408,9 +3429,14 @@ impl MessageId {
                 "interface-AnonymizePreview-saveCancelled"
             }
             Self::InterfaceAnonymizePreviewSaved => "interface-AnonymizePreview-saved",
+            Self::InterfaceAnonymizePreviewSavedFileNote => {
+                "interface-AnonymizePreview-savedFileNote"
+            }
             Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
             Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
             Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
+            Self::InterfaceAnonymizePreviewToCheck => "interface-AnonymizePreview-toCheck",
+            Self::InterfaceAnonymizePreviewToCheckHelp => "interface-AnonymizePreview-toCheckHelp",
             Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
@@ -2519,6 +3545,138 @@ impl MessageId {
             }
             Self::InterfaceRecordDetailsUnlock => "interface-RecordDetails-unlock",
             Self::InterfaceRecordDetailsViewPhoto => "interface-RecordDetails-viewPhoto",
+            Self::InterfaceRecordDialogAboutHighPerHour => {
+                "interface-RecordDialog-aboutHighPerHour"
+            }
+            Self::InterfaceRecordDialogAboutStandardPerHour => {
+                "interface-RecordDialog-aboutStandardPerHour"
+            }
+            Self::InterfaceRecordDialogCamera => "interface-RecordDialog-camera",
+            Self::InterfaceRecordDialogCameraAndMicrophone => {
+                "interface-RecordDialog-cameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogDeviceFellBack => "interface-RecordDialog-deviceFellBack",
+            Self::InterfaceRecordDialogDeviceNotSwitched => {
+                "interface-RecordDialog-deviceNotSwitched"
+            }
+            Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
+            Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
+            Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
+            Self::InterfaceRecordDialogLowOnRoomMinutes => {
+                "interface-RecordDialog-lowOnRoomMinutes"
+            }
+            Self::InterfaceRecordDialogMicrophone => "interface-RecordDialog-microphone",
+            Self::InterfaceRecordDialogMicrophoneLevel => "interface-RecordDialog-microphoneLevel",
+            Self::InterfaceRecordDialogNotEnoughRoom => "interface-RecordDialog-notEnoughRoom",
+            Self::InterfaceRecordDialogNothingWasRecorded => {
+                "interface-RecordDialog-nothingWasRecorded"
+            }
+            Self::InterfaceRecordDialogPauseRecording => "interface-RecordDialog-pauseRecording",
+            Self::InterfaceRecordDialogPaused => "interface-RecordDialog-paused",
+            Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn => {
+                "interface-RecordDialog-pausedCameraAndMicrophoneStillOn"
+            }
+            Self::InterfaceRecordDialogPictureQuality => "interface-RecordDialog-pictureQuality",
+            Self::InterfaceRecordDialogRecordAVideo => "interface-RecordDialog-recordAVideo",
+            Self::InterfaceRecordDialogRecordAVideoFor => "interface-RecordDialog-recordAVideoFor",
+            Self::InterfaceRecordDialogRecorded => "interface-RecordDialog-recorded",
+            Self::InterfaceRecordDialogRecording => "interface-RecordDialog-recording",
+            Self::InterfaceRecordDialogRecordingAt => "interface-RecordDialog-recordingAt",
+            Self::InterfaceRecordDialogRecordingPaused => "interface-RecordDialog-recordingPaused",
+            Self::InterfaceRecordDialogRecordingResumed => {
+                "interface-RecordDialog-recordingResumed"
+            }
+            Self::InterfaceRecordDialogRecordingSettings => {
+                "interface-RecordDialog-recordingSettings"
+            }
+            Self::InterfaceRecordDialogResumeRecording => "interface-RecordDialog-resumeRecording",
+            Self::InterfaceRecordDialogSavingTheVideo => "interface-RecordDialog-savingTheVideo",
+            Self::InterfaceRecordDialogSaySomething => "interface-RecordDialog-saySomething",
+            Self::InterfaceRecordDialogSettingsNote => "interface-RecordDialog-settingsNote",
+            Self::InterfaceRecordDialogStandard => "interface-RecordDialog-standard",
+            Self::InterfaceRecordDialogStartRecording => "interface-RecordDialog-startRecording",
+            Self::InterfaceRecordDialogStartingTheCameraAndMicrophone => {
+                "interface-RecordDialog-startingTheCameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogStopAndSave => "interface-RecordDialog-stopAndSave",
+            Self::InterfaceRecordDialogStopAndSaveTheVideo => {
+                "interface-RecordDialog-stopAndSaveTheVideo"
+            }
+            Self::InterfaceRecordDialogStopTestingMicrophone => {
+                "interface-RecordDialog-stopTestingMicrophone"
+            }
+            Self::InterfaceRecordDialogSystemDefaultDevice => {
+                "interface-RecordDialog-systemDefaultDevice"
+            }
+            Self::InterfaceRecordDialogTestMicrophone => "interface-RecordDialog-testMicrophone",
+            Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn => {
+                "interface-RecordDialog-theCameraAndMicrophoneAreOn"
+            }
+            Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow => {
+                "interface-RecordDialog-theCameraAndMicrophoneAreOnNow"
+            }
+            Self::InterfaceRecordDialogTheVideoIsRecordedWithSound => {
+                "interface-RecordDialog-theVideoIsRecordedWithSound"
+            }
+            Self::InterfaceRecordDialogThisDeviceCannotRecordMp4 => {
+                "interface-RecordDialog-thisDeviceCannotRecordMp4"
+            }
+            Self::InterfaceRecordDialogUnavailable => "interface-RecordDialog-unavailable",
+            Self::InterfaceRecordDialogUnnamedCamera => "interface-RecordDialog-unnamedCamera",
+            Self::InterfaceRecordDialogUnnamedMicrophone => {
+                "interface-RecordDialog-unnamedMicrophone"
+            }
+            Self::InterfaceRecordDialogUseTheCameraAndMicrophone => {
+                "interface-RecordDialog-useTheCameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogVideoKeptUnfinished => {
+                "interface-RecordDialog-videoKeptUnfinished"
+            }
+            Self::InterfaceRecordDialogVideoNeedsBoth => "interface-RecordDialog-videoNeedsBoth",
+            Self::InterfaceRecordDialogVideoSaved => "interface-RecordDialog-videoSaved",
+            Self::InterfaceRecordDialogVideoSavedFailed => {
+                "interface-RecordDialog-videoSavedFailed"
+            }
+            Self::InterfaceRecordDialogVideoSavedHidden => {
+                "interface-RecordDialog-videoSavedHidden"
+            }
+            Self::InterfaceRecordDialogVideoSavedNoRoom => {
+                "interface-RecordDialog-videoSavedNoRoom"
+            }
+            Self::InterfaceRecordDialogVideoSavedSlow => "interface-RecordDialog-videoSavedSlow",
+            Self::InterfaceRecordDialogVideoSavedStopped => {
+                "interface-RecordDialog-videoSavedStopped"
+            }
+            Self::InterfaceRecordDialogWhy => "interface-RecordDialog-why",
+            Self::InterfaceRecordDialogYourPhoneAsksOnce => {
+                "interface-RecordDialog-yourPhoneAsksOnce"
+            }
+            Self::InterfaceRecordingRecoveryAskLater => "interface-RecordingRecovery-askLater",
+            Self::InterfaceRecordingRecoveryClosed => "interface-RecordingRecovery-closed",
+            Self::InterfaceRecordingRecoveryClosedPaused => {
+                "interface-RecordingRecovery-closedPaused"
+            }
+            Self::InterfaceRecordingRecoveryDelete => "interface-RecordingRecovery-delete",
+            Self::InterfaceRecordingRecoveryDeleteSure => "interface-RecordingRecovery-deleteSure",
+            Self::InterfaceRecordingRecoveryDeleted => "interface-RecordingRecovery-deleted",
+            Self::InterfaceRecordingRecoveryFinishedWithRoom => {
+                "interface-RecordingRecovery-finishedWithRoom"
+            }
+            Self::InterfaceRecordingRecoveryKeep => "interface-RecordingRecovery-keep",
+            Self::InterfaceRecordingRecoveryKept => "interface-RecordingRecovery-kept",
+            Self::InterfaceRecordingRecoveryName => "interface-RecordingRecovery-name",
+            Self::InterfaceRecordingRecoveryNothingToKeep => {
+                "interface-RecordingRecovery-nothingToKeep"
+            }
+            Self::InterfaceRecordingRecoverySavedLocked => {
+                "interface-RecordingRecovery-savedLocked"
+            }
+            Self::InterfaceRecordingRecoverySavedLockedPaused => {
+                "interface-RecordingRecovery-savedLockedPaused"
+            }
+            Self::InterfaceRecordingRecoveryStillNoRoom => {
+                "interface-RecordingRecovery-stillNoRoom"
+            }
             Self::InterfaceSecuritySettingsEvaluationBuild => {
                 "interface-SecuritySettings-evaluationBuild"
             }
@@ -2649,6 +3807,7 @@ impl MessageId {
             Self::InterfaceVaultLibraryPassphraseChanged => {
                 "interface-VaultLibrary-passphraseChanged"
             }
+            Self::InterfaceVaultLibraryPicturesNote => "interface-VaultLibrary-picturesNote",
             Self::InterfaceVaultLibraryPrivateVault => "interface-VaultLibrary-privateVault",
             Self::InterfaceVaultLibraryRecords => "interface-VaultLibrary-records",
             Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere => {
@@ -2701,6 +3860,28 @@ impl MessageId {
             }
             Self::InterfaceVaultLibraryTopLevel => "interface-VaultLibrary-topLevel",
             Self::InterfaceVaultLibraryWorking => "interface-VaultLibrary-working",
+            Self::InterfaceVideoHelpEngine => "interface-VideoHelp-engine",
+            Self::InterfaceVideoHelpRestWorks => "interface-VideoHelp-restWorks",
+            Self::InterfaceVideoHelpSystems => "interface-VideoHelp-systems",
+            Self::InterfaceVideoHelpTitle => "interface-VideoHelp-title",
+            Self::InterfaceVideoViewerBack => "interface-VideoViewer-back",
+            Self::InterfaceVideoViewerBackBig => "interface-VideoViewer-backBig",
+            Self::InterfaceVideoViewerControls => "interface-VideoViewer-controls",
+            Self::InterfaceVideoViewerEnd => "interface-VideoViewer-end",
+            Self::InterfaceVideoViewerForward => "interface-VideoViewer-forward",
+            Self::InterfaceVideoViewerForwardBig => "interface-VideoViewer-forwardBig",
+            Self::InterfaceVideoViewerMute => "interface-VideoViewer-mute",
+            Self::InterfaceVideoViewerPlayPause => "interface-VideoViewer-playPause",
+            Self::InterfaceVideoViewerPlayVideo => "interface-VideoViewer-playVideo",
+            Self::InterfaceVideoViewerPlayer => "interface-VideoViewer-player",
+            Self::InterfaceVideoViewerStart => "interface-VideoViewer-start",
+            Self::InterfaceVideoViewerThisVideoCouldNotBePlayed => {
+                "interface-VideoViewer-thisVideoCouldNotBePlayed"
+            }
+            Self::InterfaceVideoViewerUnmute => "interface-VideoViewer-unmute",
+            Self::InterfaceVideoViewerVideo => "interface-VideoViewer-video",
+            Self::InterfaceVideoViewerVolumeDown => "interface-VideoViewer-volumeDown",
+            Self::InterfaceVideoViewerVolumeUp => "interface-VideoViewer-volumeUp",
             Self::InterfaceCameraDenied => "interface-camera-denied",
             Self::InterfaceCountDocuments => "interface-count-documents",
             Self::InterfaceCountFolders => "interface-count-folders",
@@ -2714,7 +3895,9 @@ impl MessageId {
             Self::InterfaceHiddenFileMissing => "interface-hidden-fileMissing",
             Self::InterfaceHiddenRecord => "interface-hidden-record",
             Self::InterfaceHiddenRestore => "interface-hidden-restore",
+            Self::InterfaceHiddenVideoLeftOut => "interface-hidden-videoLeftOut",
             Self::InterfaceHideDamagedTitle => "interface-hideDamaged-title",
+            Self::InterfaceHistoryAboutHiddenPeople => "interface-history-aboutHiddenPeople",
             Self::InterfaceHistoryAppVersion => "interface-history-appVersion",
             Self::InterfaceHistoryApprovalAccepted => "interface-history-approval-accepted",
             Self::InterfaceHistoryApprovalCancelled => "interface-history-approval-cancelled",
@@ -2767,6 +3950,9 @@ impl MessageId {
             Self::InterfaceHistoryEventPassphraseChanged => {
                 "interface-history-event-passphraseChanged"
             }
+            Self::InterfaceHistoryEventPortalLinkRemoved => {
+                "interface-history-event-portalLinkRemoved"
+            }
             Self::InterfaceHistoryEventPortalLinkStarted => {
                 "interface-history-event-portalLinkStarted"
             }
@@ -2775,6 +3961,10 @@ impl MessageId {
             Self::InterfaceHistoryEventProfileDetailsChanged => {
                 "interface-history-event-profileDetailsChanged"
             }
+            Self::InterfaceHistoryEventProfileExported => "interface-history-event-profileExported",
+            Self::InterfaceHistoryEventProfileHidden => "interface-history-event-profileHidden",
+            Self::InterfaceHistoryEventProfileImported => "interface-history-event-profileImported",
+            Self::InterfaceHistoryEventProfileRestored => "interface-history-event-profileRestored",
             Self::InterfaceHistoryEventReadingAidFiled => "interface-history-event-readingAidFiled",
             Self::InterfaceHistoryEventRecoveryKeySet => "interface-history-event-recoveryKeySet",
             Self::InterfaceHistoryEventRenamed => "interface-history-event-renamed",
@@ -2795,6 +3985,7 @@ impl MessageId {
             Self::InterfaceHistoryHowPassphrase => "interface-history-how-passphrase",
             Self::InterfaceHistoryHowPatient => "interface-history-how-patient",
             Self::InterfaceHistoryHowPersonFolder => "interface-history-how-personFolder",
+            Self::InterfaceHistoryHowPersonHidden => "interface-history-how-personHidden",
             Self::InterfaceHistoryHowPicked => "interface-history-how-picked",
             Self::InterfaceHistoryHowRecoveryKey => "interface-history-how-recoveryKey",
             Self::InterfaceHistoryHowReplaced => "interface-history-how-replaced",
@@ -2845,6 +4036,7 @@ impl MessageId {
             Self::InterfaceNoticePdfUnlocked => "interface-notice-pdfUnlocked",
             Self::InterfaceNoticePersonAdded => "interface-notice-personAdded",
             Self::InterfaceNoticePhotoSaved => "interface-notice-photoSaved",
+            Self::InterfaceNoticeReceivedNotOpened => "interface-notice-receivedNotOpened",
             Self::InterfaceNoticeRenamedDocument => "interface-notice-renamedDocument",
             Self::InterfaceNoticeRenamedFolder => "interface-notice-renamedFolder",
             Self::InterfaceNoticeRestored => "interface-notice-restored",
@@ -2903,6 +4095,10 @@ impl MessageId {
             Self::InterfaceReaderZoom => "interface-reader-zoom",
             Self::InterfaceReceiveDropped => "interface-receive-dropped",
             Self::InterfaceReceiveRefused => "interface-receive-refused",
+            Self::InterfaceReceivedConfirmBody => "interface-received-confirmBody",
+            Self::InterfaceReceivedConfirmTitleMany => "interface-received-confirmTitleMany",
+            Self::InterfaceReceivedConfirmTitleOne => "interface-received-confirmTitleOne",
+            Self::InterfaceReceivedImport => "interface-received-import",
             Self::InterfaceRecordPresentationImaging => "interface-recordPresentation-imaging",
             Self::InterfaceRecordPresentationPrescription => {
                 "interface-recordPresentation-prescription"
@@ -2928,6 +4124,7 @@ impl MessageId {
             Self::InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup => {
                 "interface-unfinishedRecoveryKey-yourRecoveryKeyWasNotReplacedSetup"
             }
+            Self::InterfaceVideoName => "interface-video-name",
             Self::KitKeep => "kit-keep",
             Self::KitLabelNote => "kit-labelNote",
             Self::KitLabelPrinted => "kit-labelPrinted",
@@ -2948,6 +4145,7 @@ impl MessageId {
             Self::LibraryDocumentLabel => "library-document-label",
             Self::LibraryEmptyHelp => "library-empty-help",
             Self::LibraryEmptyTitle => "library-empty-title",
+            Self::LibraryFileSaysChecked => "library-fileSaysChecked",
             Self::LibraryFolderItems => "library-folder-items",
             Self::LibraryFolderLabel => "library-folder-label",
             Self::LibraryFolderOpen => "library-folder-open",
@@ -2972,6 +4170,7 @@ impl MessageId {
             Self::LockWarningTitle => "lockWarning-title",
             Self::NativeBackupNoteEmptied => "native-backup-noteEmptied",
             Self::NativeBackupNoteUntouched => "native-backup-noteUntouched",
+            Self::NativeBackupExclusionFailed => "native-backupExclusionFailed",
             Self::NativeCancel => "native-cancel",
             Self::NativeError01 => "native-error-01",
             Self::NativeError02 => "native-error-02",
@@ -3021,12 +4220,19 @@ impl MessageId {
             Self::NativeError46 => "native-error-46",
             Self::NativeError47 => "native-error-47",
             Self::NativeError48 => "native-error-48",
+            Self::NativeError49 => "native-error-49",
+            Self::NativeError50 => "native-error-50",
             Self::NativeErrorSpeedTest => "native-error-speedTest",
             Self::NativeFilterBackups => "native-filter-backups",
             Self::NativeFilterModels => "native-filter-models",
             Self::NativeFilterPdf => "native-filter-pdf",
+            Self::NativeFilterPdfAndPictures => "native-filter-pdfAndPictures",
+            Self::NativeFilterPdfPicturesAndVideos => "native-filter-pdfPicturesAndVideos",
+            Self::NativeFilterPictures => "native-filter-pictures",
+            Self::NativeFilterVideo => "native-filter-video",
             Self::NativeKitText => "native-kit-text",
             Self::NativeNoticeArrival => "native-notice-arrival",
+            Self::NativeNoticeTest => "native-notice-test",
             Self::NativeRecoveryKeep => "native-recovery-keep",
             Self::NativeRecoveryReplace => "native-recovery-replace",
             Self::NativeRecoveryTitle => "native-recovery-title",
@@ -3044,6 +4250,10 @@ impl MessageId {
             Self::NativeSetAsideMobile => "native-setAside-mobile",
             Self::NativeSetAsideTitle => "native-setAside-title",
             Self::NativeSetAsideWarning => "native-setAside-warning",
+            Self::NativeTrayOpen => "native-tray-open",
+            Self::NativeTrayQuit => "native-tray-quit",
+            Self::NativeTrayTooltip => "native-tray-tooltip",
+            Self::NativeTrayWaiting => "native-tray-waiting",
             Self::NativeVaultKeep => "native-vault-keep",
             Self::NoticeAutoLockSet => "notice-autoLockSet",
             Self::NoticeBackupCutOff => "notice-backupCutOff",
@@ -3064,18 +4274,29 @@ impl MessageId {
             Self::NoticesStepDone => "noticesStep-done",
             Self::NoticesStepIntro => "noticesStep-intro",
             Self::NoticesStepLater => "noticesStep-later",
+            Self::NoticesStepLaterBackground => "noticesStep-laterBackground",
             Self::NoticesStepNotNow => "noticesStep-notNow",
             Self::NoticesStepTitle => "noticesStep-title",
             Self::NotificationsAllow => "notifications-allow",
             Self::NotificationsAutoAllow => "notifications-autoAllow",
+            Self::NotificationsAutoConsent => "notifications-autoConsent",
             Self::NotificationsAutoHelp => "notifications-autoHelp",
-            Self::NotificationsAutoNeedsNotices => "notifications-autoNeedsNotices",
             Self::NotificationsAutoPaused => "notifications-autoPaused",
+            Self::NotificationsAutoSummary => "notifications-autoSummary",
             Self::NotificationsBlocked => "notifications-blocked",
+            Self::NotificationsBlockedMac => "notifications-blockedMac",
             Self::NotificationsCheckBusy => "notifications-checkBusy",
             Self::NotificationsError => "notifications-error",
-            Self::NotificationsHelp => "notifications-help",
             Self::NotificationsHelpAutomatic => "notifications-helpAutomatic",
+            Self::NotificationsNotYetAsked => "notifications-notYetAsked",
+            Self::NotificationsNotYetAskedMac => "notifications-notYetAskedMac",
+            Self::NotificationsNoticesHelp => "notifications-noticesHelp",
+            Self::NotificationsTestButton => "notifications-testButton",
+            Self::NotificationsTestFailed => "notifications-testFailed",
+            Self::NotificationsTestOff => "notifications-testOff",
+            Self::NotificationsTestSent => "notifications-testSent",
+            Self::NotificationsTestSentMac => "notifications-testSentMac",
+            Self::NotificationsTestWait => "notifications-testWait",
             Self::NotificationsTitle => "notifications-title",
             Self::NotificationsUnavailable => "notifications-unavailable",
             Self::NotificationsUnknown => "notifications-unknown",
@@ -3159,6 +4380,8 @@ impl MessageId {
             Self::PortalApprovalWait => "portal-approvalWait",
             Self::PortalApproved => "portal-approved",
             Self::PortalApprovedByCode => "portal-approvedByCode",
+            Self::PortalArrivedForHidden => "portal-arrivedForHidden",
+            Self::PortalArrivedForHiddenNoClinic => "portal-arrivedForHiddenNoClinic",
             Self::PortalAutoCheckStopped => "portal-autoCheckStopped",
             Self::PortalAutoChecking => "portal-autoChecking",
             Self::PortalAwaiting => "portal-awaiting",
@@ -3190,6 +4413,8 @@ impl MessageId {
             Self::PortalDeviceCode => "portal-deviceCode",
             Self::PortalDeviceDetailsHide => "portal-deviceDetailsHide",
             Self::PortalDeviceDetailsShow => "portal-deviceDetailsShow",
+            Self::PortalDeviceLine => "portal-deviceLine",
+            Self::PortalDeviceLineLinked => "portal-deviceLineLinked",
             Self::PortalDeviceName => "portal-deviceName",
             Self::PortalDeviceRemoved => "portal-deviceRemoved",
             Self::PortalEarlierHide => "portal-earlierHide",
@@ -3218,6 +4443,13 @@ impl MessageId {
             Self::PortalPartialResult => "portal-partialResult",
             Self::PortalPerson => "portal-person",
             Self::PortalRefusedDocuments => "portal-refusedDocuments",
+            Self::PortalRemoveBody => "portal-removeBody",
+            Self::PortalRemoveConfirm => "portal-removeConfirm",
+            Self::PortalRemoveKept => "portal-removeKept",
+            Self::PortalRemoveLink => "portal-removeLink",
+            Self::PortalRemoveNotices => "portal-removeNotices",
+            Self::PortalRemoveTitle => "portal-removeTitle",
+            Self::PortalRemoved => "portal-removed",
             Self::PortalRequestApproval => "portal-requestApproval",
             Self::PortalRestartApproval => "portal-restartApproval",
             Self::PortalResult => "portal-result",
@@ -3235,7 +4467,20 @@ impl MessageId {
             Self::PortalUnlockChecked => "portal-unlockChecked",
             Self::PortalUnlockRefused => "portal-unlockRefused",
             Self::PortalWorking => "portal-working",
+            Self::PreferencesMoreAutomatic => "preferences-moreAutomatic",
+            Self::PreferencesMoreBackground => "preferences-moreBackground",
             Self::PreferencesSubtitle => "preferences-subtitle",
+            Self::ReaderAndroidFailed => "reader-android-failed",
+            Self::ReaderAndroidNext => "reader-android-next",
+            Self::ReaderAndroidOpening => "reader-android-opening",
+            Self::ReaderAndroidPage => "reader-android-page",
+            Self::ReaderAndroidPageFailed => "reader-android-pageFailed",
+            Self::ReaderAndroidPageStatus => "reader-android-pageStatus",
+            Self::ReaderAndroidPrevious => "reader-android-previous",
+            Self::ReaderAndroidTooLarge => "reader-android-tooLarge",
+            Self::ReaderAndroidUnavailable => "reader-android-unavailable",
+            Self::ReaderAndroidZoomIn => "reader-android-zoomIn",
+            Self::ReaderAndroidZoomOut => "reader-android-zoomOut",
             Self::ReaderIphoneFailed => "reader-iphone-failed",
             Self::ReaderIphoneOpening => "reader-iphone-opening",
             Self::ReaderIphoneTooLarge => "reader-iphone-tooLarge",
@@ -3274,6 +4519,7 @@ impl MessageId {
             Self::RecoveryKeyHiddenWhileSaving => "recoveryKey-hiddenWhileSaving",
             Self::RecoveryKeyInstructions => "recoveryKey-instructions",
             Self::RecoveryKeyKeyboardHint => "recoveryKey-keyboardHint",
+            Self::RecoveryKeyKitCloudWarning => "recoveryKey-kitCloudWarning",
             Self::RecoveryKeyKitSaved => "recoveryKey-kitSaved",
             Self::RecoveryKeyLabel => "recoveryKey-label",
             Self::RecoveryKeyLeaveOffered => "recoveryKey-leave-offered",
@@ -3331,6 +4577,7 @@ impl MessageId {
             Self::RestoreConsequenceSame => "restore-consequence-same",
             Self::RestoreConsequenceUnreadable => "restore-consequence-unreadable",
             Self::RestoreIntro => "restore-intro",
+            Self::RestoreLeftOut => "restore-leftOut",
             Self::RestoreMethodPassphrase => "restore-method-passphrase",
             Self::RestoreMethodRecoveryKey => "restore-method-recoveryKey",
             Self::RestoreOpenWith => "restore-openWith",
@@ -3350,10 +4597,16 @@ impl MessageId {
             Self::SecurityAutoLockShorter => "security-autoLock-shorter",
             Self::SecurityAutoLockTitle => "security-autoLock-title",
             Self::SecurityBackupBody => "security-backup-body",
+            Self::SecurityBackupCloudWarning => "security-backup-cloudWarning",
+            Self::SecurityBackupLeaveVideosOut => "security-backup-leaveVideosOut",
+            Self::SecurityBackupLeaveVideosOutHelp => "security-backup-leaveVideosOutHelp",
             Self::SecurityBackupSave => "security-backup-save",
+            Self::SecurityBackupSize => "security-backup-size",
+            Self::SecurityBackupSizeCalculating => "security-backup-sizeCalculating",
+            Self::SecurityBackupSizeNoVideos => "security-backup-sizeNoVideos",
+            Self::SecurityBackupSizeWithVideos => "security-backup-sizeWithVideos",
             Self::SecurityBackupTitle => "security-backup-title",
             Self::SecurityCopiesBody => "security-copies-body",
-            Self::SecurityCopiesTitle => "security-copies-title",
             Self::SecurityDevBuildBody => "security-devBuild-body",
             Self::SecurityDevBuildTitle => "security-devBuild-title",
             Self::SecurityEncryptionBody => "security-encryption-body",
@@ -3630,6 +4883,7 @@ impl MessageId {
             "interface.VaultApp.chooseFilesToImport" => {
                 Some(Self::InterfaceVaultAppChooseFilesToImport)
             }
+            "interface.VaultLibrary.picturesNote" => Some(Self::InterfaceVaultLibraryPicturesNote),
             "interface.VaultApp.finishingTheTransfer" => {
                 Some(Self::InterfaceVaultAppFinishingTheTransfer)
             }
@@ -3830,6 +5084,7 @@ impl MessageId {
             "interface.notice.movedMany" => Some(Self::InterfaceNoticeMovedMany),
             "interface.notice.movedNamed" => Some(Self::InterfaceNoticeMovedNamed),
             "interface.notice.notPdf" => Some(Self::InterfaceNoticeNotPdf),
+            "interface.notice.receivedNotOpened" => Some(Self::InterfaceNoticeReceivedNotOpened),
             "interface.notice.pdfUnlocked" => Some(Self::InterfaceNoticePdfUnlocked),
             "interface.notice.personAdded" => Some(Self::InterfaceNoticePersonAdded),
             "interface.notice.photoSaved" => Some(Self::InterfaceNoticePhotoSaved),
@@ -4009,6 +5264,10 @@ impl MessageId {
             "native.error.speedTest" => Some(Self::NativeErrorSpeedTest),
             "native.filter.backups" => Some(Self::NativeFilterBackups),
             "native.filter.pdf" => Some(Self::NativeFilterPdf),
+            "native.filter.video" => Some(Self::NativeFilterVideo),
+            "native.filter.pictures" => Some(Self::NativeFilterPictures),
+            "native.filter.pdfAndPictures" => Some(Self::NativeFilterPdfAndPictures),
+            "native.filter.pdfPicturesAndVideos" => Some(Self::NativeFilterPdfPicturesAndVideos),
             "native.kit.text" => Some(Self::NativeKitText),
             "native.recovery.keep" => Some(Self::NativeRecoveryKeep),
             "native.recovery.replace" => Some(Self::NativeRecoveryReplace),
@@ -4099,6 +5358,7 @@ impl MessageId {
             "recoveryKey.hiddenWhileSaving" => Some(Self::RecoveryKeyHiddenWhileSaving),
             "recoveryKey.instructions" => Some(Self::RecoveryKeyInstructions),
             "recoveryKey.keyboardHint" => Some(Self::RecoveryKeyKeyboardHint),
+            "recoveryKey.kitCloudWarning" => Some(Self::RecoveryKeyKitCloudWarning),
             "recoveryKey.kitSaved" => Some(Self::RecoveryKeyKitSaved),
             "recoveryKey.label" => Some(Self::RecoveryKeyLabel),
             "recoveryKey.leave.offered" => Some(Self::RecoveryKeyLeaveOffered),
@@ -4169,10 +5429,10 @@ impl MessageId {
             "security.autoLock.shorter" => Some(Self::SecurityAutoLockShorter),
             "security.autoLock.title" => Some(Self::SecurityAutoLockTitle),
             "security.backup.body" => Some(Self::SecurityBackupBody),
+            "security.backup.cloudWarning" => Some(Self::SecurityBackupCloudWarning),
             "security.backup.save" => Some(Self::SecurityBackupSave),
             "security.backup.title" => Some(Self::SecurityBackupTitle),
             "security.copies.body" => Some(Self::SecurityCopiesBody),
-            "security.copies.title" => Some(Self::SecurityCopiesTitle),
             "security.devBuild.body" => Some(Self::SecurityDevBuildBody),
             "security.devBuild.title" => Some(Self::SecurityDevBuildTitle),
             "security.encryption.body" => Some(Self::SecurityEncryptionBody),
@@ -4414,6 +5674,9 @@ impl MessageId {
                 Some(Self::InterfaceHistoryEventPortalLinkStarted)
             }
             "interface.history.event.portalLinked" => Some(Self::InterfaceHistoryEventPortalLinked),
+            "interface.history.event.portalLinkRemoved" => {
+                Some(Self::InterfaceHistoryEventPortalLinkRemoved)
+            }
             "interface.history.event.profileCreated" => {
                 Some(Self::InterfaceHistoryEventProfileCreated)
             }
@@ -4525,6 +5788,13 @@ impl MessageId {
             "portal.tryAgain" => Some(Self::PortalTryAgain),
             "portal.tryAgainFor" => Some(Self::PortalTryAgainFor),
             "portal.linkAnother" => Some(Self::PortalLinkAnother),
+            "portal.removeLink" => Some(Self::PortalRemoveLink),
+            "portal.removeTitle" => Some(Self::PortalRemoveTitle),
+            "portal.removeBody" => Some(Self::PortalRemoveBody),
+            "portal.removeConfirm" => Some(Self::PortalRemoveConfirm),
+            "portal.removeKept" => Some(Self::PortalRemoveKept),
+            "portal.removeNotices" => Some(Self::PortalRemoveNotices),
+            "portal.removed" => Some(Self::PortalRemoved),
             "interface.history.damagedStorageOnly" => {
                 Some(Self::InterfaceHistoryDamagedStorageOnly)
             }
@@ -4535,6 +5805,14 @@ impl MessageId {
             "ai.notInstalled.body" => Some(Self::AiNotInstalledBody),
             "ai.notInstalled.openPreferences" => Some(Self::AiNotInstalledOpenPreferences),
             "aiHelper.resultLabel" => Some(Self::AiHelperResultLabel),
+            "aiHelper.resultLabelShort" => Some(Self::AiHelperResultLabelShort),
+            "aiHelper.resultLabelHide" => Some(Self::AiHelperResultLabelHide),
+            "aiHelper.resultLabelInfo" => Some(Self::AiHelperResultLabelInfo),
+            "ai.label.settingsTitle" => Some(Self::AiLabelSettingsTitle),
+            "ai.label.settingsBody" => Some(Self::AiLabelSettingsBody),
+            "ai.label.settingsShowFull" => Some(Self::AiLabelSettingsShowFull),
+            "ai.label.settingsFullBack" => Some(Self::AiLabelSettingsFullBack),
+            "ai.label.settingsShortShown" => Some(Self::AiLabelSettingsShortShown),
             "ai.result.meta" => Some(Self::AiResultMeta),
             "ai.summary.showInDocument" => Some(Self::AiSummaryShowInDocument),
             "ai.summary.folded" => Some(Self::AiSummaryFolded),
@@ -4561,6 +5839,19 @@ impl MessageId {
             "ai.explain.ready" => Some(Self::AiExplainReady),
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
+            "ai.speed.title" => Some(Self::AiSpeedTitle),
+            "ai.speed.note" => Some(Self::AiSpeedNote),
+            "ai.speed.button" => Some(Self::AiSpeedButton),
+            "ai.speed.working" => Some(Self::AiSpeedWorking),
+            "ai.speed.cancel" => Some(Self::AiSpeedCancel),
+            "ai.speed.result" => Some(Self::AiSpeedResult),
+            "ai.speed.cancelled" => Some(Self::AiSpeedCancelled),
+            "ai.speed.none" => Some(Self::AiSpeedNone),
+            "ai.speed.failed" => Some(Self::AiSpeedFailed),
+            "ai.speed.estimate" => Some(Self::AiSpeedEstimate),
+            "ai.speed.estimateLong" => Some(Self::AiSpeedEstimateLong),
+            "ai.error.memoryNumbers" => Some(Self::AiErrorMemoryNumbers),
+            "ai.error.memoryUnknown" => Some(Self::AiErrorMemoryUnknown),
             "ai.error.busy" => Some(Self::AiErrorBusy),
             "ai.error.storage" => Some(Self::AiErrorStorage),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
@@ -4709,6 +6000,93 @@ impl MessageId {
             "interface.AnonymizePreview.removeWord" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveWord)
             }
+            "interface.AnonymizePreview.eponymTitle" => {
+                Some(Self::InterfaceAnonymizePreviewEponymTitle)
+            }
+            "interface.AnonymizePreview.eponymOne" => {
+                Some(Self::InterfaceAnonymizePreviewEponymOne)
+            }
+            "interface.AnonymizePreview.eponymKeep" => {
+                Some(Self::InterfaceAnonymizePreviewEponymKeep)
+            }
+            "interface.AnonymizePreview.eponymKeepAll" => {
+                Some(Self::InterfaceAnonymizePreviewEponymKeepAll)
+            }
+            "interface.AnonymizePreview.removedSummary" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummary)
+            }
+            "interface.AnonymizePreview.removedCount.name" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountName)
+            }
+            "interface.AnonymizePreview.removedCount.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDoctor)
+            }
+            "interface.AnonymizePreview.removedCount.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountClinic)
+            }
+            "interface.AnonymizePreview.removedCount.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountHealthCard)
+            }
+            "interface.AnonymizePreview.removedCount.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountRecordNumber)
+            }
+            "interface.AnonymizePreview.removedCount.sin" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountSin)
+            }
+            "interface.AnonymizePreview.removedCount.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth)
+            }
+            "interface.AnonymizePreview.removedCount.age" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountAge)
+            }
+            "interface.AnonymizePreview.removedCount.address" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountAddress)
+            }
+            "interface.AnonymizePreview.removedCount.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountPostalCode)
+            }
+            "interface.AnonymizePreview.removedCount.phone" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountPhone)
+            }
+            "interface.AnonymizePreview.removedCount.email" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountEmail)
+            }
+            "interface.AnonymizePreview.removedCount.web" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountWeb)
+            }
+            "interface.AnonymizePreview.removedCount.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountUnclearDate)
+            }
+            "interface.AnonymizePreview.removedCount.manual" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountManual)
+            }
+            "interface.AnonymizePreview.removedCount.date" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDate)
+            }
+            "interface.AnonymizePreview.removedSummaryNone" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummaryNone)
+            }
+            "interface.AnonymizePreview.toCheck" => Some(Self::InterfaceAnonymizePreviewToCheck),
+            "interface.AnonymizePreview.toCheckHelp" => {
+                Some(Self::InterfaceAnonymizePreviewToCheckHelp)
+            }
+            "interface.AnonymizePreview.checkPicked" => {
+                Some(Self::InterfaceAnonymizePreviewCheckPicked)
+            }
+            "interface.AnonymizePreview.savedFileNote" => {
+                Some(Self::InterfaceAnonymizePreviewSavedFileNote)
+            }
+            "interface.AnonymizePreview.pasteWhereNote" => {
+                Some(Self::InterfaceAnonymizePreviewPasteWhereNote)
+            }
+            "interface.AnonymizePreview.copy" => Some(Self::InterfaceAnonymizePreviewCopy),
+            "interface.AnonymizePreview.copied" => Some(Self::InterfaceAnonymizePreviewCopied),
+            "interface.AnonymizePreview.copyFailed" => {
+                Some(Self::InterfaceAnonymizePreviewCopyFailed)
+            }
+            "interface.AnonymizePreview.copyWarning" => {
+                Some(Self::InterfaceAnonymizePreviewCopyWarning)
+            }
             "interface.AnonymizePreview.removeSelected" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveSelected)
             }
@@ -4749,6 +6127,9 @@ impl MessageId {
             "interface.AnonymizePreview.note.ageOver90" => {
                 Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
             }
+            "interface.AnonymizePreview.note.otherForm" => {
+                Some(Self::InterfaceAnonymizePreviewNoteOtherForm)
+            }
             "interface.AnonymizePreview.pasteTitle" => {
                 Some(Self::InterfaceAnonymizePreviewPasteTitle)
             }
@@ -4776,12 +6157,16 @@ impl MessageId {
             "notifications.allow" => Some(Self::NotificationsAllow),
             "notifications.blocked" => Some(Self::NotificationsBlocked),
             "notifications.error" => Some(Self::NotificationsError),
-            "notifications.help" => Some(Self::NotificationsHelp),
             "notifications.title" => Some(Self::NotificationsTitle),
+            "notifications.blockedMac" => Some(Self::NotificationsBlockedMac),
+            "notifications.notYetAsked" => Some(Self::NotificationsNotYetAsked),
+            "notifications.notYetAskedMac" => Some(Self::NotificationsNotYetAskedMac),
             "notifications.unknown" => Some(Self::NotificationsUnknown),
             "notifications.unavailable" => Some(Self::NotificationsUnavailable),
             "notifications.helpAutomatic" => Some(Self::NotificationsHelpAutomatic),
             "notifications.autoAllow" => Some(Self::NotificationsAutoAllow),
+            "notifications.autoConsent" => Some(Self::NotificationsAutoConsent),
+            "notifications.noticesHelp" => Some(Self::NotificationsNoticesHelp),
             "notifications.autoHelp" => Some(Self::NotificationsAutoHelp),
             "notifications.autoPaused" => Some(Self::NotificationsAutoPaused),
             "notifications.checkBusy" => Some(Self::NotificationsCheckBusy),
@@ -4789,6 +6174,12 @@ impl MessageId {
             "ai.model.add" => Some(Self::AiModelAdd),
             "ai.model.accepted" => Some(Self::AiModelAccepted),
             "ai.model.reads" => Some(Self::AiModelReads),
+            "ai.model.readsEstimate" => Some(Self::AiModelReadsEstimate),
+            "ai.model.loadCheck" => Some(Self::AiModelLoadCheck),
+            "ai.model.loadCheckCannotRun" => Some(Self::AiModelLoadCheckCannotRun),
+            "ai.model.loadCheckMemory" => Some(Self::AiModelLoadCheckMemory),
+            "ai.model.loadCheckReady" => Some(Self::AiModelLoadCheckReady),
+            "ai.model.loadCheckRetry" => Some(Self::AiModelLoadCheckRetry),
             "ai.model.where" => Some(Self::AiModelWhere),
             "ai.model.copy" => Some(Self::AiModelCopy),
             "ai.model.copied" => Some(Self::AiModelCopied),
@@ -4824,9 +6215,9 @@ impl MessageId {
             "noticesStep.title" => Some(Self::NoticesStepTitle),
             "noticesStep.intro" => Some(Self::NoticesStepIntro),
             "noticesStep.later" => Some(Self::NoticesStepLater),
+            "noticesStep.laterBackground" => Some(Self::NoticesStepLaterBackground),
             "noticesStep.done" => Some(Self::NoticesStepDone),
             "noticesStep.notNow" => Some(Self::NoticesStepNotNow),
-            "notifications.autoNeedsNotices" => Some(Self::NotificationsAutoNeedsNotices),
             "ai.settings.subtitle" => Some(Self::AiSettingsSubtitle),
             "ai.model.progressName" => Some(Self::AiModelProgressName),
             "ai.model.progressValue" => Some(Self::AiModelProgressValue),
@@ -4855,15 +6246,424 @@ impl MessageId {
             "personDetails.notNow" => Some(Self::PersonDetailsNotNow),
             "personDetails.notSaved" => Some(Self::PersonDetailsNotSaved),
             "ai.summaryTooLarge" => Some(Self::AiSummaryTooLarge),
+            "background.title" => Some(Self::BackgroundTitle),
+            "background.keepRunning" => Some(Self::BackgroundKeepRunning),
+            "background.keepRunningHelp" => Some(Self::BackgroundKeepRunningHelp),
+            "background.startAtLogin" => Some(Self::BackgroundStartAtLogin),
+            "background.startAtLoginHelp" => Some(Self::BackgroundStartAtLoginHelp),
+            "background.paused" => Some(Self::BackgroundPaused),
+            "background.unavailable" => Some(Self::BackgroundUnavailable),
+            "background.error" => Some(Self::BackgroundError),
+            "native.tray.open" => Some(Self::NativeTrayOpen),
+            "native.tray.quit" => Some(Self::NativeTrayQuit),
+            "native.tray.tooltip" => Some(Self::NativeTrayTooltip),
+            "native.tray.waiting" => Some(Self::NativeTrayWaiting),
             "personDetails.previousTitle" => Some(Self::PersonDetailsPreviousTitle),
             "personDetails.previousHelp" => Some(Self::PersonDetailsPreviousHelp),
             "personDetails.previousEntry" => Some(Self::PersonDetailsPreviousEntry),
             "personDetails.previousRemove" => Some(Self::PersonDetailsPreviousRemove),
             "personDetails.previousAdd" => Some(Self::PersonDetailsPreviousAdd),
             "personDetails.previousInvalid" => Some(Self::PersonDetailsPreviousInvalid),
-            "reader.iphone.failed" => Some(Self::ReaderIphoneFailed),
+            "reader.android.failed" => Some(Self::ReaderAndroidFailed),
+            "reader.android.next" => Some(Self::ReaderAndroidNext),
+            "reader.android.opening" => Some(Self::ReaderAndroidOpening),
             "reader.iphone.opening" => Some(Self::ReaderIphoneOpening),
+            "reader.iphone.failed" => Some(Self::ReaderIphoneFailed),
             "reader.iphone.tooLarge" => Some(Self::ReaderIphoneTooLarge),
+            "reader.android.page" => Some(Self::ReaderAndroidPage),
+            "reader.android.pageStatus" => Some(Self::ReaderAndroidPageStatus),
+            "reader.android.pageFailed" => Some(Self::ReaderAndroidPageFailed),
+            "reader.android.previous" => Some(Self::ReaderAndroidPrevious),
+            "reader.android.tooLarge" => Some(Self::ReaderAndroidTooLarge),
+            "reader.android.unavailable" => Some(Self::ReaderAndroidUnavailable),
+            "reader.android.zoomIn" => Some(Self::ReaderAndroidZoomIn),
+            "reader.android.zoomOut" => Some(Self::ReaderAndroidZoomOut),
+            "interface.video.name" => Some(Self::InterfaceVideoName),
+            "interface.RecordDialog.recordAVideo" => Some(Self::InterfaceRecordDialogRecordAVideo),
+            "interface.RecordDialog.recordAVideoFor" => {
+                Some(Self::InterfaceRecordDialogRecordAVideoFor)
+            }
+            "interface.RecordDialog.recordingSettings" => {
+                Some(Self::InterfaceRecordDialogRecordingSettings)
+            }
+            "interface.RecordDialog.unavailable" => Some(Self::InterfaceRecordDialogUnavailable),
+            "interface.RecordDialog.why" => Some(Self::InterfaceRecordDialogWhy),
+            "interface.RecordDialog.startingTheCameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogStartingTheCameraAndMicrophone)
+            }
+            "interface.RecordDialog.theVideoIsRecordedWithSound" => {
+                Some(Self::InterfaceRecordDialogTheVideoIsRecordedWithSound)
+            }
+            "interface.RecordDialog.yourPhoneAsksOnce" => {
+                Some(Self::InterfaceRecordDialogYourPhoneAsksOnce)
+            }
+            "interface.RecordDialog.theCameraAndMicrophoneAreOn" => {
+                Some(Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn)
+            }
+            "interface.RecordDialog.theCameraAndMicrophoneAreOnNow" => {
+                Some(Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow)
+            }
+            "interface.RecordDialog.pictureQuality" => {
+                Some(Self::InterfaceRecordDialogPictureQuality)
+            }
+            "interface.RecordDialog.cameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogCameraAndMicrophone)
+            }
+            "interface.RecordDialog.camera" => Some(Self::InterfaceRecordDialogCamera),
+            "interface.RecordDialog.microphone" => Some(Self::InterfaceRecordDialogMicrophone),
+            "interface.RecordDialog.unnamedCamera" => {
+                Some(Self::InterfaceRecordDialogUnnamedCamera)
+            }
+            "interface.RecordDialog.unnamedMicrophone" => {
+                Some(Self::InterfaceRecordDialogUnnamedMicrophone)
+            }
+            "interface.RecordDialog.systemDefaultDevice" => {
+                Some(Self::InterfaceRecordDialogSystemDefaultDevice)
+            }
+            "interface.RecordDialog.deviceFellBack" => {
+                Some(Self::InterfaceRecordDialogDeviceFellBack)
+            }
+            "interface.RecordDialog.deviceNotSwitched" => {
+                Some(Self::InterfaceRecordDialogDeviceNotSwitched)
+            }
+            "interface.RecordDialog.saySomething" => Some(Self::InterfaceRecordDialogSaySomething),
+            "interface.RecordDialog.settingsNote" => Some(Self::InterfaceRecordDialogSettingsNote),
+            "interface.RecordDialog.testMicrophone" => {
+                Some(Self::InterfaceRecordDialogTestMicrophone)
+            }
+            "interface.RecordDialog.stopTestingMicrophone" => {
+                Some(Self::InterfaceRecordDialogStopTestingMicrophone)
+            }
+            "interface.RecordDialog.microphoneLevel" => {
+                Some(Self::InterfaceRecordDialogMicrophoneLevel)
+            }
+            "interface.RecordDialog.standard" => Some(Self::InterfaceRecordDialogStandard),
+            "interface.RecordDialog.high" => Some(Self::InterfaceRecordDialogHigh),
+            "interface.RecordDialog.aboutStandardPerHour" => {
+                Some(Self::InterfaceRecordDialogAboutStandardPerHour)
+            }
+            "interface.RecordDialog.aboutHighPerHour" => {
+                Some(Self::InterfaceRecordDialogAboutHighPerHour)
+            }
+            "interface.RecordDialog.useTheCameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogUseTheCameraAndMicrophone)
+            }
+            "interface.RecordDialog.startRecording" => {
+                Some(Self::InterfaceRecordDialogStartRecording)
+            }
+            "interface.RecordDialog.recording" => Some(Self::InterfaceRecordDialogRecording),
+            "interface.RecordDialog.paused" => Some(Self::InterfaceRecordDialogPaused),
+            "interface.RecordDialog.pausedCameraAndMicrophoneStillOn" => {
+                Some(Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn)
+            }
+            "interface.RecordDialog.recorded" => Some(Self::InterfaceRecordDialogRecorded),
+            "interface.RecordDialog.recordingAt" => Some(Self::InterfaceRecordDialogRecordingAt),
+            "interface.RecordDialog.pauseRecording" => {
+                Some(Self::InterfaceRecordDialogPauseRecording)
+            }
+            "interface.RecordDialog.resumeRecording" => {
+                Some(Self::InterfaceRecordDialogResumeRecording)
+            }
+            "interface.RecordDialog.stopAndSave" => Some(Self::InterfaceRecordDialogStopAndSave),
+            "interface.RecordDialog.stopAndSaveTheVideo" => {
+                Some(Self::InterfaceRecordDialogStopAndSaveTheVideo)
+            }
+            "interface.RecordDialog.keepRecording" => {
+                Some(Self::InterfaceRecordDialogKeepRecording)
+            }
+            "interface.RecordDialog.savingTheVideo" => {
+                Some(Self::InterfaceRecordDialogSavingTheVideo)
+            }
+            "interface.RecordDialog.recordingPaused" => {
+                Some(Self::InterfaceRecordDialogRecordingPaused)
+            }
+            "interface.RecordDialog.recordingResumed" => {
+                Some(Self::InterfaceRecordDialogRecordingResumed)
+            }
+            "interface.RecordDialog.thisDeviceCannotRecordMp4" => {
+                Some(Self::InterfaceRecordDialogThisDeviceCannotRecordMp4)
+            }
+            "interface.RecordDialog.videoNeedsBoth" => {
+                Some(Self::InterfaceRecordDialogVideoNeedsBoth)
+            }
+            "interface.RecordDialog.nothingWasRecorded" => {
+                Some(Self::InterfaceRecordDialogNothingWasRecorded)
+            }
+            "interface.RecordDialog.videoSaved" => Some(Self::InterfaceRecordDialogVideoSaved),
+            "interface.RecordDialog.videoSavedStopped" => {
+                Some(Self::InterfaceRecordDialogVideoSavedStopped)
+            }
+            "interface.RecordDialog.videoSavedHidden" => {
+                Some(Self::InterfaceRecordDialogVideoSavedHidden)
+            }
+            "interface.RecordDialog.videoSavedSlow" => {
+                Some(Self::InterfaceRecordDialogVideoSavedSlow)
+            }
+            "interface.VideoViewer.video" => Some(Self::InterfaceVideoViewerVideo),
+            "interface.VideoViewer.player" => Some(Self::InterfaceVideoViewerPlayer),
+            "interface.VideoViewer.thisVideoCouldNotBePlayed" => {
+                Some(Self::InterfaceVideoViewerThisVideoCouldNotBePlayed)
+            }
+            "interface.VideoViewer.controls" => Some(Self::InterfaceVideoViewerControls),
+            "interface.VideoViewer.playPause" => Some(Self::InterfaceVideoViewerPlayPause),
+            "interface.VideoViewer.back" => Some(Self::InterfaceVideoViewerBack),
+            "interface.VideoViewer.forward" => Some(Self::InterfaceVideoViewerForward),
+            "interface.VideoViewer.backBig" => Some(Self::InterfaceVideoViewerBackBig),
+            "interface.VideoViewer.forwardBig" => Some(Self::InterfaceVideoViewerForwardBig),
+            "interface.VideoViewer.volumeUp" => Some(Self::InterfaceVideoViewerVolumeUp),
+            "interface.VideoViewer.volumeDown" => Some(Self::InterfaceVideoViewerVolumeDown),
+            "interface.VideoViewer.mute" => Some(Self::InterfaceVideoViewerMute),
+            "interface.VideoViewer.unmute" => Some(Self::InterfaceVideoViewerUnmute),
+            "interface.VideoViewer.start" => Some(Self::InterfaceVideoViewerStart),
+            "interface.VideoViewer.end" => Some(Self::InterfaceVideoViewerEnd),
+            "interface.VideoViewer.playVideo" => Some(Self::InterfaceVideoViewerPlayVideo),
+            "interface.VideoHelp.title" => Some(Self::InterfaceVideoHelpTitle),
+            "interface.VideoHelp.engine" => Some(Self::InterfaceVideoHelpEngine),
+            "interface.VideoHelp.systems" => Some(Self::InterfaceVideoHelpSystems),
+            "interface.VideoHelp.restWorks" => Some(Self::InterfaceVideoHelpRestWorks),
+            "interface.RecordingRecovery.closed" => Some(Self::InterfaceRecordingRecoveryClosed),
+            "interface.RecordingRecovery.closedPaused" => {
+                Some(Self::InterfaceRecordingRecoveryClosedPaused)
+            }
+            "interface.RecordingRecovery.name" => Some(Self::InterfaceRecordingRecoveryName),
+            "interface.RecordingRecovery.askLater" => {
+                Some(Self::InterfaceRecordingRecoveryAskLater)
+            }
+            "interface.RecordingRecovery.delete" => Some(Self::InterfaceRecordingRecoveryDelete),
+            "interface.RecordingRecovery.keep" => Some(Self::InterfaceRecordingRecoveryKeep),
+            "interface.RecordingRecovery.kept" => Some(Self::InterfaceRecordingRecoveryKept),
+            "interface.RecordingRecovery.nothingToKeep" => {
+                Some(Self::InterfaceRecordingRecoveryNothingToKeep)
+            }
+            "interface.RecordingRecovery.deleted" => Some(Self::InterfaceRecordingRecoveryDeleted),
+            "interface.RecordingRecovery.deleteSure" => {
+                Some(Self::InterfaceRecordingRecoveryDeleteSure)
+            }
+            "interface.RecordingRecovery.savedLocked" => {
+                Some(Self::InterfaceRecordingRecoverySavedLocked)
+            }
+            "interface.RecordingRecovery.savedLockedPaused" => {
+                Some(Self::InterfaceRecordingRecoverySavedLockedPaused)
+            }
+            "interface.RecordDialog.videoSavedFailed" => {
+                Some(Self::InterfaceRecordDialogVideoSavedFailed)
+            }
+            "interface.RecordDialog.notEnoughRoom" => {
+                Some(Self::InterfaceRecordDialogNotEnoughRoom)
+            }
+            "interface.RecordDialog.lowOnRoom" => Some(Self::InterfaceRecordDialogLowOnRoom),
+            "interface.RecordDialog.lowOnRoomMinutes" => {
+                Some(Self::InterfaceRecordDialogLowOnRoomMinutes)
+            }
+            "interface.RecordDialog.videoSavedNoRoom" => {
+                Some(Self::InterfaceRecordDialogVideoSavedNoRoom)
+            }
+            "interface.RecordDialog.videoKeptUnfinished" => {
+                Some(Self::InterfaceRecordDialogVideoKeptUnfinished)
+            }
+            "interface.RecordingRecovery.finishedWithRoom" => {
+                Some(Self::InterfaceRecordingRecoveryFinishedWithRoom)
+            }
+            "interface.RecordingRecovery.stillNoRoom" => {
+                Some(Self::InterfaceRecordingRecoveryStillNoRoom)
+            }
+            "security.backup.size" => Some(Self::SecurityBackupSize),
+            "security.backup.sizeWithVideos" => Some(Self::SecurityBackupSizeWithVideos),
+            "security.backup.sizeNoVideos" => Some(Self::SecurityBackupSizeNoVideos),
+            "security.backup.leaveVideosOut" => Some(Self::SecurityBackupLeaveVideosOut),
+            "security.backup.leaveVideosOutHelp" => Some(Self::SecurityBackupLeaveVideosOutHelp),
+            "restore.leftOut" => Some(Self::RestoreLeftOut),
+            "security.backup.sizeCalculating" => Some(Self::SecurityBackupSizeCalculating),
+            "interface.hidden.videoLeftOut" => Some(Self::InterfaceHiddenVideoLeftOut),
+            "portal.deviceLine" => Some(Self::PortalDeviceLine),
+            "portal.deviceLineLinked" => Some(Self::PortalDeviceLineLinked),
+            "interface.received.confirmTitleOne" => Some(Self::InterfaceReceivedConfirmTitleOne),
+            "interface.received.confirmTitleMany" => Some(Self::InterfaceReceivedConfirmTitleMany),
+            "interface.received.confirmBody" => Some(Self::InterfaceReceivedConfirmBody),
+            "interface.received.import" => Some(Self::InterfaceReceivedImport),
+            "interface.history.event.profileExported" => {
+                Some(Self::InterfaceHistoryEventProfileExported)
+            }
+            "interface.history.event.profileHidden" => {
+                Some(Self::InterfaceHistoryEventProfileHidden)
+            }
+            "interface.history.event.profileRestored" => {
+                Some(Self::InterfaceHistoryEventProfileRestored)
+            }
+            "interface.history.event.profileImported" => {
+                Some(Self::InterfaceHistoryEventProfileImported)
+            }
+            "handover.section.title" => Some(Self::HandoverSectionTitle),
+            "handover.section.body" => Some(Self::HandoverSectionBody),
+            "handover.export.button" => Some(Self::HandoverExportButton),
+            "handover.import.button" => Some(Self::HandoverImportButton),
+            "handover.close" => Some(Self::HandoverClose),
+            "handover.export.title" => Some(Self::HandoverExportTitle),
+            "handover.export.about" => Some(Self::HandoverExportAbout),
+            "handover.export.caution" => Some(Self::HandoverExportCaution),
+            "handover.export.person" => Some(Self::HandoverExportPerson),
+            "handover.export.history" => Some(Self::HandoverExportHistory),
+            "handover.export.keyKind.legend" => Some(Self::HandoverExportKeyKindLegend),
+            "handover.export.keyKind.generated" => Some(Self::HandoverExportKeyKindGenerated),
+            "handover.export.keyKind.passphrase" => Some(Self::HandoverExportKeyKindPassphrase),
+            "handover.export.passphrase" => Some(Self::HandoverExportPassphrase),
+            "handover.export.passphraseHint" => Some(Self::HandoverExportPassphraseHint),
+            "handover.export.continue" => Some(Self::HandoverExportContinue),
+            "handover.export.preparing" => Some(Self::HandoverExportPreparing),
+            "handover.export.keyTitle" => Some(Self::HandoverExportKeyTitle),
+            "handover.export.keyBody" => Some(Self::HandoverExportKeyBody),
+            "handover.export.keyLabel" => Some(Self::HandoverExportKeyLabel),
+            "handover.export.keyGroup" => Some(Self::HandoverExportKeyGroup),
+            "handover.export.copy" => Some(Self::HandoverExportCopy),
+            "handover.export.copied" => Some(Self::HandoverExportCopied),
+            "handover.export.copyFailed" => Some(Self::HandoverExportCopyFailed),
+            "handover.export.keySaved" => Some(Self::HandoverExportKeySaved),
+            "handover.export.saveTitle" => Some(Self::HandoverExportSaveTitle),
+            "handover.export.summary" => Some(Self::HandoverExportSummary),
+            "handover.export.apart" => Some(Self::HandoverExportApart),
+            "handover.export.provider" => Some(Self::HandoverExportProvider),
+            "handover.export.chooseWhere" => Some(Self::HandoverExportChooseWhere),
+            "handover.export.saving" => Some(Self::HandoverExportSaving),
+            "handover.export.noLocation" => Some(Self::HandoverExportNoLocation),
+            "handover.export.doneTitle" => Some(Self::HandoverExportDoneTitle),
+            "handover.export.done" => Some(Self::HandoverExportDone),
+            "handover.export.doneApart" => Some(Self::HandoverExportDoneApart),
+            "handover.export.hideOffer" => Some(Self::HandoverExportHideOffer),
+            "handover.export.leftOut" => Some(Self::HandoverExportLeftOut),
+            "handover.export.evidenceLeftOut" => Some(Self::HandoverExportEvidenceLeftOut),
+            "handover.count.documents" => Some(Self::HandoverCountDocuments),
+            "handover.count.hidden" => Some(Self::HandoverCountHidden),
+            "handover.count.folders" => Some(Self::HandoverCountFolders),
+            "handover.count.answers" => Some(Self::HandoverCountAnswers),
+            "handover.count.evidence" => Some(Self::HandoverCountEvidence),
+            "handover.count.size" => Some(Self::HandoverCountSize),
+            "handover.import.title" => Some(Self::HandoverImportTitle),
+            "handover.import.about" => Some(Self::HandoverImportAbout),
+            "handover.import.choose" => Some(Self::HandoverImportChoose),
+            "handover.import.noFile" => Some(Self::HandoverImportNoFile),
+            "handover.import.keyTitle" => Some(Self::HandoverImportKeyTitle),
+            "handover.import.key" => Some(Self::HandoverImportKey),
+            "handover.import.passphrase" => Some(Self::HandoverImportPassphrase),
+            "handover.import.keyHint" => Some(Self::HandoverImportKeyHint),
+            "handover.import.passphraseHint" => Some(Self::HandoverImportPassphraseHint),
+            "handover.import.open" => Some(Self::HandoverImportOpen),
+            "handover.import.opening" => Some(Self::HandoverImportOpening),
+            "handover.import.error.typo" => Some(Self::HandoverImportErrorTypo),
+            "handover.import.error.recovery" => Some(Self::HandoverImportErrorRecovery),
+            "handover.import.error.wrong" => Some(Self::HandoverImportErrorWrong),
+            "handover.import.error.newer" => Some(Self::HandoverImportErrorNewer),
+            "handover.import.error.damaged" => Some(Self::HandoverImportErrorDamaged),
+            "handover.import.previewTitle" => Some(Self::HandoverImportPreviewTitle),
+            "handover.import.says" => Some(Self::HandoverImportSays),
+            "handover.import.birth" => Some(Self::HandoverImportBirth),
+            "handover.import.madeOn" => Some(Self::HandoverImportMadeOn),
+            "handover.import.evidenceNote" => Some(Self::HandoverImportEvidenceNote),
+            "handover.import.duplicate.legend" => Some(Self::HandoverImportDuplicateLegend),
+            "handover.import.duplicate.package" => Some(Self::HandoverImportDuplicatePackage),
+            "handover.import.duplicate.content" => Some(Self::HandoverImportDuplicateContent),
+            "handover.import.duplicate.anyway" => Some(Self::HandoverImportDuplicateAnyway),
+            "handover.import.nameLabel" => Some(Self::HandoverImportNameLabel),
+            "handover.import.add" => Some(Self::HandoverImportAdd),
+            "handover.import.adding" => Some(Self::HandoverImportAdding),
+            "handover.import.doneTitle" => Some(Self::HandoverImportDoneTitle),
+            "handover.import.done" => Some(Self::HandoverImportDone),
+            "handover.import.doneAnswers" => Some(Self::HandoverImportDoneAnswers),
+            "handover.import.doneEvidence" => Some(Self::HandoverImportDoneEvidence),
+            "handover.import.doneDropped" => Some(Self::HandoverImportDoneDropped),
+            "handover.import.receipt" => Some(Self::HandoverImportReceipt),
+            "handover.import.receiptNote" => Some(Self::HandoverImportReceiptNote),
+            "handover.import.nothingNew" => Some(Self::HandoverImportNothingNew),
+            "handover.importedAnswer" => Some(Self::HandoverImportedAnswer),
+            "handover.export.leavingWarning" => Some(Self::HandoverExportLeavingWarning),
+            "handover.export.leave.title" => Some(Self::HandoverExportLeaveTitle),
+            "handover.export.leave.body" => Some(Self::HandoverExportLeaveBody),
+            "handover.export.leave.confirm" => Some(Self::HandoverExportLeaveConfirm),
+            "handover.export.error.weak" => Some(Self::HandoverExportErrorWeak),
+            "handover.unfinished" => Some(Self::HandoverUnfinished),
+            "native.error.49" => Some(Self::NativeError49),
+            "native.error.50" => Some(Self::NativeError50),
+            "hiddenPeople.title" => Some(Self::HiddenPeopleTitle),
+            "hiddenPeople.body" => Some(Self::HiddenPeopleBody),
+            "hiddenPeople.list" => Some(Self::HiddenPeopleList),
+            "hiddenPeople.since" => Some(Self::HiddenPeopleSince),
+            "hiddenPeople.documents" => Some(Self::HiddenPeopleDocuments),
+            "hiddenPeople.restore" => Some(Self::HiddenPeopleRestore),
+            "hiddenPeople.restoreFor" => Some(Self::HiddenPeopleRestoreFor),
+            "hiddenPeople.handOver" => Some(Self::HiddenPeopleHandOver),
+            "hiddenPeople.handOverFor" => Some(Self::HiddenPeopleHandOverFor),
+            "hiddenPeople.hide" => Some(Self::HiddenPeopleHide),
+            "hiddenPeople.hideFor" => Some(Self::HiddenPeopleHideFor),
+            "hiddenPeople.lastPerson" => Some(Self::HiddenPeopleLastPerson),
+            "hiddenPeople.confirm.title" => Some(Self::HiddenPeopleConfirmTitle),
+            "hiddenPeople.confirm.body" => Some(Self::HiddenPeopleConfirmBody),
+            "hiddenPeople.confirm.hide" => Some(Self::HiddenPeopleConfirmHide),
+            "hiddenPeople.hidden" => Some(Self::HiddenPeopleHidden),
+            "hiddenPeople.restored" => Some(Self::HiddenPeopleRestored),
+            "hiddenPeople.arrived.title" => Some(Self::HiddenPeopleArrivedTitle),
+            "hiddenPeople.arrived.body" => Some(Self::HiddenPeopleArrivedBody),
+            "hiddenPeople.arrived.move" => Some(Self::HiddenPeopleArrivedMove),
+            "hiddenPeople.arrived.leave" => Some(Self::HiddenPeopleArrivedLeave),
+            "hiddenPeople.arrived.list" => Some(Self::HiddenPeopleArrivedList),
+            "portal.arrivedForHidden" => Some(Self::PortalArrivedForHidden),
+            "hiddenPeople.damagedToo" => Some(Self::HiddenPeopleDamagedToo),
+            "interface.history.aboutHiddenPeople" => Some(Self::InterfaceHistoryAboutHiddenPeople),
+            "interface.history.how.personHidden" => Some(Self::InterfaceHistoryHowPersonHidden),
+            "portal.arrivedForHiddenNoClinic" => Some(Self::PortalArrivedForHiddenNoClinic),
+            "fileUnder.button" => Some(Self::FileUnderButton),
+            "fileUnder.title" => Some(Self::FileUnderTitle),
+            "fileUnder.fromClinic" => Some(Self::FileUnderFromClinic),
+            "fileUnder.words" => Some(Self::FileUnderWords),
+            "fileUnder.clinicWords" => Some(Self::FileUnderClinicWords),
+            "fileUnder.rule" => Some(Self::FileUnderRule),
+            "fileUnder.person" => Some(Self::FileUnderPerson),
+            "fileUnder.what.both" => Some(Self::FileUnderWhatBoth),
+            "fileUnder.what.name" => Some(Self::FileUnderWhatName),
+            "fileUnder.what.date" => Some(Self::FileUnderWhatDate),
+            "fileUnder.saveDetails" => Some(Self::FileUnderSaveDetails),
+            "fileUnder.confirm" => Some(Self::FileUnderConfirm),
+            "fileUnder.choose" => Some(Self::FileUnderChoose),
+            "fileUnder.differs" => Some(Self::FileUnderDiffers),
+            "fileUnder.saveDetailsOnly" => Some(Self::FileUnderSaveDetailsOnly),
+            "fileUnder.notOnItsOwn" => Some(Self::FileUnderNotOnItsOwn),
+            "handover.import.previousNames" => Some(Self::HandoverImportPreviousNames),
+            "library.fileSaysChecked" => Some(Self::LibraryFileSaysChecked),
+            "handover.nowVerified" => Some(Self::HandoverNowVerified),
+            "notifications.autoSummary" => Some(Self::NotificationsAutoSummary),
+            "background.keepRunningSummary" => Some(Self::BackgroundKeepRunningSummary),
+            "background.startAtLoginSummary" => Some(Self::BackgroundStartAtLoginSummary),
+            "native.notice.test" => Some(Self::NativeNoticeTest),
+            "notifications.testButton" => Some(Self::NotificationsTestButton),
+            "notifications.testSent" => Some(Self::NotificationsTestSent),
+            "notifications.testSentMac" => Some(Self::NotificationsTestSentMac),
+            "notifications.testWait" => Some(Self::NotificationsTestWait),
+            "notifications.testFailed" => Some(Self::NotificationsTestFailed),
+            "notifications.testOff" => Some(Self::NotificationsTestOff),
+            "preferences.moreAutomatic" => Some(Self::PreferencesMoreAutomatic),
+            "preferences.moreBackground" => Some(Self::PreferencesMoreBackground),
+            "native.backupExclusionFailed" => Some(Self::NativeBackupExclusionFailed),
+            "interface.AddVideo.add" => Some(Self::InterfaceAddVideoAdd),
+            "interface.AddVideo.hint" => Some(Self::InterfaceAddVideoHint),
+            "interface.AddVideo.checking" => Some(Self::InterfaceAddVideoChecking),
+            "interface.AddVideo.storing" => Some(Self::InterfaceAddVideoStoring),
+            "interface.AddVideo.progressLabel" => Some(Self::InterfaceAddVideoProgressLabel),
+            "interface.AddVideo.cancel" => Some(Self::InterfaceAddVideoCancel),
+            "interface.AddVideo.cancelling" => Some(Self::InterfaceAddVideoCancelling),
+            "interface.AddVideo.added" => Some(Self::InterfaceAddVideoAdded),
+            "interface.AddVideo.duplicate" => Some(Self::InterfaceAddVideoDuplicate),
+            "interface.AddVideo.cancelled" => Some(Self::InterfaceAddVideoCancelled),
+            "interface.AddVideo.notVideo" => Some(Self::InterfaceAddVideoNotVideo),
+            "interface.AddVideo.videoAlone" => Some(Self::InterfaceAddVideoVideoAlone),
+            "interface.AddVideo.hevc" => Some(Self::InterfaceAddVideoHevc),
+            "interface.AddVideo.videoCodec" => Some(Self::InterfaceAddVideoVideoCodec),
+            "interface.AddVideo.audioCodec" => Some(Self::InterfaceAddVideoAudioCodec),
+            "interface.AddVideo.noVideo" => Some(Self::InterfaceAddVideoNoVideo),
+            "interface.AddVideo.tooManyTracks" => Some(Self::InterfaceAddVideoTooManyTracks),
+            "interface.AddVideo.external" => Some(Self::InterfaceAddVideoExternal),
+            "interface.AddVideo.fragmented" => Some(Self::InterfaceAddVideoFragmented),
+            "interface.AddVideo.tooBig" => Some(Self::InterfaceAddVideoTooBig),
+            "interface.AddVideo.tooLarge" => Some(Self::InterfaceAddVideoTooLarge),
+            "interface.AddVideo.damaged" => Some(Self::InterfaceAddVideoDamaged),
+            "interface.AddVideo.adding" => Some(Self::InterfaceAddVideoAdding),
             _ => None,
         }
     }

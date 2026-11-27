@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check upstream Tauri, the reviewed glib backport and first-party iOS code."""
+"""Confirm Cargo selects upstream Tauri, the reviewed local glib, wry and single-instance plugin, and first-party plugin code."""
 from pathlib import Path
 import json
 import os
@@ -8,10 +8,18 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# First-party plugin crates whose entire source is reviewed in this repository.
+FIRST_PARTY = {
+    "tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml",
+    "tauri-plugin-android-trust": "src-tauri/android-trust/Cargo.toml",
+    "tauri-plugin-ios-pdf": "src-tauri/ios-pdf/Cargo.toml",
+}
+
+
 def validate_metadata(metadata):
     # cargo-audit cannot match advisories for path or git packages, so the only
-    # packages allowed outside crates.io are this crate, the reviewed glib and
-    # the first-party iOS plugin whose entire source is reviewed in this repo.
+    # packages allowed outside crates.io are this crate, the reviewed glib, wry and single-instance
+    # plugin, and the first-party plugins whose whole source is in this repository.
     registry = "registry+https://github.com/rust-lang/crates.io-index"
     root = metadata["resolve"]["root"]
     outside = sorted(
@@ -20,7 +28,9 @@ def validate_metadata(metadata):
     )
     local_manifests = {
         "glib": ROOT / "src-tauri/vendor/glib/Cargo.toml",
-        "tauri-plugin-ios-pdf": ROOT / "src-tauri/ios-pdf/Cargo.toml",
+        "tauri-plugin-single-instance": ROOT / "src-tauri/vendor/tauri-plugin-single-instance/Cargo.toml",
+        "wry": ROOT / "src-tauri/vendor/wry/Cargo.toml",
+        **{name: ROOT / path for name, path in FIRST_PARTY.items()},
     }
     if outside != sorted(local_manifests):
         raise ValueError(f"Unexpected packages outside crates.io: {outside}")
@@ -36,13 +46,14 @@ def validate_metadata(metadata):
         elif package["source"] != registry:
             raise ValueError("Tauri must use the upstream crates.io release for mobile live reload")
 
+
 def main():
     metadata = json.loads(subprocess.check_output([
         os.environ.get("CARGO", "cargo"), "metadata", "--locked", "--format-version", "1",
         "--manifest-path", str(ROOT / "src-tauri/Cargo.toml"),
     ], text=True))
     validate_metadata(metadata)
-    print("All-target graph selects upstream Tauri, reviewed glib and the first-party iOS plugin")
+    print("All-target graph selects upstream Tauri, the reviewed patches and the first-party mobile plugins")
 
 
 if __name__ == "__main__":

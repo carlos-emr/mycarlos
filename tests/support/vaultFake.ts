@@ -33,6 +33,9 @@ export const FAKE_CLINIC = "FAKE Clinic";
 export const FAKE_CLINIC_DOCUMENT = "FAKE Clinic letter.pdf";
 /** The device code of the first link made, or of the link set up. */
 export const FAKE_DEVICE_CODE = "FAKE-DEVICE-1";
+/** A link code for which the fake's `vault_portal_connect` links the device but
+ * answers with an approval error (#136): the request to the clinic failed. */
+export const FAKE_APPROVAL_FAILS_CODE = "FAKE-CODE-APPROVAL-FAILS";
 /** Labels of the vault's recovery key, and of a key being set up. */
 export const FAKE_KEY_LABEL = "FAKE-KEY1";
 /** What the fake device reports for the passphrase speed test (#39): round
@@ -178,8 +181,14 @@ export interface FakeVaultSetup {
   newRecoveryKey?: string;
   /** Adds FAKE Locked.pdf, locked with FAKE_DOCUMENT_PASSWORD. */
   lockedPdf?: boolean;
-  /** FAKE Letter.pdf also holds a clinic reading aid (vault format 10). */
+  /** FAKE Letter.pdf also holds a clinic reading aid (vault format 8). */
   readingAid?: boolean;
+  /** A computer that can keep myCarlos running in the background (the tray icon), or one whose
+   * icon cannot be made. Default: no such mode. */
+  background?: "available" | "noIcon";
+  /** The number of videos the vault holds, as the backup's size answer tells it (#359): above
+   * zero the encrypted backup offers "Leave videos out". The fake holds no video file. */
+  backupVideos?: number;
   /** Clinic linking is built in: with no clinic linked yet, or with one
    * linked and approved, unless `approval` says the request did not end in
    * approval. */
@@ -239,7 +248,24 @@ export interface FakeVaultSetup {
   drawnPages?: { top: number; lines: string[] }[];
   /** vault_page_boxes answers no box, for this reason (#292). */
   boxesAbsent?: string;
+  /** People (by display name) who are hidden when the vault opens (#360). */
+  hiddenPeople?: string[];
+  /** The patient the clinic's first delivery names (#340): the document arrives in Shared
+   * with me carrying these words. */
+  clinicPatient?: {
+    name: string;
+    birthDate: string;
+    linkPerson?: string;
+    linkedToHidden?: boolean;
+    matchingPeople?: string[];
+  };
+  /** Documents (by name) that came in a handover file and stand on what the file says (#360):
+   * they carry `fileSaysCheckedAtMs` until `__fakeVault.verifyCarried` links their clinic. */
+  fileSays?: string[];
 }
+
+/** The id of the n-th extra person (`people` in the setup), counting from 1. */
+export const fakePersonId = (n: number) => fakeUuid(500 + n);
 
 // The refusals the fake makes itself, by message key, in English as the
 // native side sends them (the screens show the messageKey's own text).
@@ -287,6 +313,16 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        /** What the clinic wrote as the patient, on a document in Shared with me (#340). */
+        clinicPatient?: {
+          name: string;
+          birthDate: string;
+          linkPerson?: string;
+          linkedToHidden?: boolean;
+          matchingPeople?: string[];
+        };
+        /** What a handover file says of this document's checking (#360). */
+        fileSaysCheckedAtMs?: number;
         clinicServiceDate?: string;
         readingAid?: {
           deliveryId: string;
@@ -319,6 +355,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           id: string;
           displayName: string;
           createdAtMs: number;
+          /** Set while the whole person is hidden (#360). */
+          hidden?: { atMs: number } | null;
           fullName?: string;
           birthDate?: string;
           previousFullNames?: string[];
@@ -355,6 +393,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         previousSession: string | null;
       };
       type State = {
+        /** The background mode's two choices, both off until chosen. */
+        background: { keepRunning: boolean; startAtLogin: boolean };
         captureEpoch: string;
         captureSequence: number;
         status: string;
@@ -377,6 +417,18 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         >;
         /** The files the next import picker "chooses" (FAKE names). */
         importQueue: string[];
+        /** The video the next video picker "chooses": refused with a reason, or slow
+         * (progress and Cancel can be seen), as asked. */
+        videoQueue: {
+          name: string;
+          refusal: string | null;
+          slow: boolean;
+        } | null;
+        /** Documents that arrived for a hidden person, by person (#360). */
+        arrivedWhileHidden: Record<
+          string,
+          { recordId: string; displayName: string }[]
+        >;
         /** Files shared to myCarlos, waiting (#61). */
         received: { id: string; name: string; sourceLabel: string }[];
         /** The next id for a file shared while the page is open. */
@@ -620,6 +672,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               : {}),
           });
         }
+        for (const record of snapshot.records)
+          if ((setup.fileSays ?? []).includes(record.displayName))
+            record.fileSaysCheckedAtMs = Date.UTC(2026, 10, 14, 12);
+        for (const profile of snapshot.profiles)
+          if ((setup.hiddenPeople ?? []).includes(profile.displayName))
+            profile.hidden = { atMs: Date.UTC(2026, 9, 2, 12) };
         const history: HistoryEntry[] = [
           {
             seq: 1,
@@ -644,6 +702,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           nextPickId: 1000,
           picks: {},
           importQueue: [],
+          videoQueue: null,
+          arrivedWhileHidden: {},
           backupsSaved: 0,
           received: setup.received.map((name, index) => ({
             id: makeUuid(600 + index + 1),
@@ -659,6 +719,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           pendingKey: null,
           documentPasswords,
           checks: 0,
+          background: { keepRunning: false, startAtLogin: false },
           snapshot,
           calls: [],
           unexpected: [],
@@ -690,9 +751,50 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           epoch: state.captureEpoch,
           sequence: ++state.captureSequence,
         };
-        const snapshot = { ...copy(state.snapshot), capture };
+        const whole = copy(state.snapshot);
+        // A hidden person is in no list the library shows, only in Hidden people (#360).
+        const hiddenIds = new Set(
+          whole.profiles.filter((p) => p.hidden).map((p) => p.id),
+        );
+        const snapshot = {
+          ...whole,
+          profiles: whole.profiles
+            .filter((p) => !p.hidden)
+            .map(({ hidden: _hidden, ...rest }) => rest),
+          hiddenPeopleDamaged: whole.records.filter(
+            (r) =>
+              hiddenIds.has(r.profileId) &&
+              !r.available &&
+              r.hidden?.reason !== "damaged",
+          ).length,
+          hiddenProfiles: whole.profiles
+            .filter((p) => p.hidden)
+            .map((p) => ({
+              id: p.id,
+              displayName: p.displayName,
+              hiddenAtMs: p.hidden?.atMs ?? 0,
+              documents: whole.records.filter((r) => r.profileId === p.id)
+                .length,
+            })),
+          folders: whole.folders.filter((f) => !hiddenIds.has(f.profileId)),
+          records: whole.records.filter((r) => !hiddenIds.has(r.profileId)),
+          capture,
+        };
         save();
         return snapshot;
+      };
+
+      // What the fake says a handed-over person's file holds (#360).
+      const HANDOVER_SUMMARY = {
+        documents: 3,
+        hidden: 1,
+        folders: 2,
+        aiAnswers: 1,
+        withClinicEvidence: 1,
+        leftOutDamaged: 0,
+        evidenceLeftOut: 0,
+        historyEntries: 5,
+        plaintextBytes: 123456,
       };
 
       const refuse = (
@@ -869,6 +971,13 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         if (state.status !== "unlocked")
           throw refuse("locked", "native.error.14");
       };
+      // The picked video's import, as the page watches it (not saved: it lasts one call).
+      let videoProgress = {
+        stage: "idle",
+        doneBytes: 0,
+        totalBytes: 0,
+      };
+      let videoCancelled = false;
       const refusePaused = () => {
         refuseLocked();
         if (state.snapshot.recovery !== null)
@@ -1018,12 +1127,42 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { state: "notInstalled" };
           case "ai_models":
           case "ai_model_catalog":
+          case "ai_model_limits":
             return [];
+          // No model in use to check (D218).
+          case "ai_model_check":
+            return "skipped";
           // No add or download running when the row opens (#275).
           case "ai_model_add_active":
             return null;
+          // Nothing measured yet (the speed check, #305).
+          case "ai_model_speed":
+            return null;
           case "vault_status":
             return state.status;
+          // The background mode (tray icon, start at login): the native side is faked, so what is
+          // asserted is what the screen asks and shows.
+          case "background_status":
+            return {
+              supported: setup.background != null,
+              keepRunning: state.background.keepRunning,
+              startAtLogin: state.background.startAtLogin,
+              trayReady: state.background.keepRunning,
+              pausedWhileLocked:
+                setup.background != null && state.background.keepRunning,
+            };
+          case "background_set_keep_running":
+            if (setup.background === "noIcon" && args.enabled)
+              throw new Error("FAKE: the tray icon could not be made");
+            state.background.keepRunning = Boolean(args.enabled);
+            return answer("background_status", {});
+          case "background_set_start_at_login":
+            state.background.startAtLogin = Boolean(args.enabled);
+            return answer("background_status", {});
+          case "background_report_locale":
+            return null;
+          case "tray_waiting_status":
+            return false;
           case "vault_notification_status":
             return {
               supported: false,
@@ -1070,7 +1209,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               imported.push(record.id);
               wrote("imported", { name: file.name, how: "shared" });
             }
-            return { imported, skippedDuplicates, notPdf };
+            return { imported, skippedDuplicates, notPdf, unreadable: [] };
           }
           case "vault_shared_identity": {
             refuseLocked();
@@ -1080,7 +1219,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           }
           case "vault_history": {
             refuseLocked();
-            const entries = copy(state.history);
+            const hiddenNames = new Set(
+              state.snapshot.profiles
+                .filter((p) => p.hidden)
+                .map((p) => p.displayName),
+            );
+            // Entries about a hidden person are counted, not shown (#360).
+            const all = copy(state.history);
+            const entries = all.filter(
+              (e) =>
+                !(
+                  (e.event === "profileHidden" ||
+                    e.event === "profileRestored") &&
+                  hiddenNames.has(e.name ?? "")
+                ),
+            );
             if (!setup.damagedHistory)
               return {
                 entries,
@@ -1088,6 +1241,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 complete: true,
                 checkedUntilMs: null,
                 checkedFromMs: null,
+                aboutHiddenPeople: all.length - entries.length,
               };
             // The start is damaged: only what the pinned end proves shows.
             const later = entries.slice(1);
@@ -1164,6 +1318,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.documentPasswords = {};
             state.picks = {};
             state.importQueue = [];
+            state.videoQueue = null;
             state.received = [];
             state.history = [];
             snapshot.profiles = [];
@@ -1388,6 +1543,20 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             const record = recordById(request.recordId);
             return Boolean(state.photoUrls[record.id]);
           }
+          // Video (#359). The e2e fake holds no recordings and no video
+          // files: nothing is waiting to be finished, and no document starts
+          // as an MP4 does. Answering these keeps the photo flow, which asks
+          // both, from being reported as an unfaked bridge command.
+          case "vault_video_space":
+            refuseLocked();
+            return { freeBytes: 50 * 1024 ** 3, level: "ok", canRecord: true };
+          case "vault_video_pending":
+            refuseLocked();
+            return { recordings: [], unreadable: 0 };
+          case "vault_is_video":
+            refuseLocked();
+            recordById(request.recordId);
+            return false;
           case "vault_view_photo": {
             refuseLocked();
             const record = recordById(request.recordId);
@@ -1405,6 +1574,31 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_unhide_record":
             recordById(request.recordId).hidden = null;
             return;
+          // Hiding a whole person (#360): the last visible person and Shared with me stay.
+          case "vault_hide_profile": {
+            refuseLocked();
+            const person = profileOf(request.profileId);
+            if (person.id === snapshot.sharedProfileId)
+              throw refuse("invalid", "native.error.19");
+            const visible = snapshot.profiles.filter(
+              (p) => p.id !== snapshot.sharedProfileId && !p.hidden,
+            );
+            if (!person.hidden && visible.length <= 1)
+              throw refuse("last_visible_profile", "native.error.50");
+            person.hidden ??= { atMs: Date.now() };
+            wrote("profileHidden", { name: person.displayName });
+            return;
+          }
+          case "vault_restore_profile": {
+            refuseLocked();
+            const person = profileOf(request.profileId);
+            if (!person.hidden) return [];
+            person.hidden = null;
+            wrote("profileRestored", { name: person.displayName });
+            const arrived = state.arrivedWhileHidden[person.id] ?? [];
+            delete state.arrivedWhileHidden[person.id];
+            return arrived;
+          }
           case "vault_portal_link": {
             const links = (snapshot.portalLinks ??= []);
             const made = {
@@ -1416,20 +1610,27 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return copy(made);
           }
           // #136: links this device and asks the clinic to approve it in one
-          // native call. Not modelled yet: an approval request that fails
-          // after the link was made (native answers the new link with
-          // `approvalError` beside it).
+          // native call. The code FAKE_APPROVAL_FAILS_CODE models a request
+          // that fails after the link was made: native answers the new link,
+          // not yet requested, with `approvalError` beside it (the same
+          // string as the exported constant below, which page code cannot see).
           case "vault_portal_connect": {
             const links = (snapshot.portalLinks ??= []);
+            const failed = request.code === "FAKE-CODE-APPROVAL-FAILS";
             const made = {
               ...link(links.length + 1, request.portalBase ?? "", false),
               deviceName: request.deviceName ?? "",
               profileId: request.profileId ?? null,
-              approvalRequested: true,
-              approvalStatus: "pending",
+              approvalRequested: !failed,
+              approvalStatus: failed ? null : "pending",
             };
             links.push(made);
-            return { link: copy(made), approvalError: null };
+            return {
+              link: copy(made),
+              approvalError: failed
+                ? { code: "approval_contact_clinic", message: "FAKE outcome" }
+                : null,
+            };
           }
           case "vault_request_device_approval": {
             const found = snapshot.portalLinks?.find(
@@ -1513,6 +1714,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               importedAtMs: Date.now(),
               available: true,
               verifiedClinicName: setup.clinic,
+              ...(setup.clinicPatient
+                ? { clinicPatient: { ...setup.clinicPatient } }
+                : {}),
               ...(setup.clinicServiceDate !== null
                 ? { clinicServiceDate: setup.clinicServiceDate }
                 : {}),
@@ -1520,6 +1724,25 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { added: 1, refused: 0, receiptsPending: 0, issues: [] };
           // Nothing in the fake documents names a person.
           // --- Security: encrypted backup ---
+          // The size the backup would have, with and without videos (#359):
+          // the fake holds no video.
+          case "vault_backup_size": {
+            refuseLocked();
+            const bytes = snapshot.records.reduce(
+              (sum, record) => sum + record.plaintextSize,
+              4096,
+            );
+            const videos = setup.backupVideos ?? 0;
+            return {
+              totalBytes: bytes + videos * 8_000_000,
+              withoutVideosBytes: bytes,
+              videoBytes: videos * 8_000_000,
+              videoCount: videos,
+            };
+          }
+          case "vault_left_out_records":
+            refuseLocked();
+            return [];
           case "vault_backup_pick":
             refusePaused();
             return makePick("backup");
@@ -1534,6 +1757,80 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               name: `myCarlos backup FAKE ${setup.keyLabel}.mycarlosbackup`,
               bytes: 4096 * state.backupsSaved,
             };
+          // --- Handing a person's records over, and adding one from a file (#360) ---
+          case "vault_profile_export_prepare": {
+            refusePaused();
+            profileOf(request.profileId);
+            return {
+              exportId: makePick("handoverExport"),
+              generatedKey:
+                request.passphrase === undefined
+                  ? "2345-6789-ABCD-EFGH-JKMN-PQRS-TVWX"
+                  : null,
+              summary: HANDOVER_SUMMARY,
+            };
+          }
+          case "vault_profile_export_pick":
+            refusePaused();
+            pick(request.exportId, "handoverExport", false);
+            return makePick("handoverExportPick");
+          case "vault_profile_export_picked":
+            pick(request.pickId, "handoverExportPick", true);
+            refusePaused();
+            return {
+              name: "mycarlos-handover-FAKE.mycarlosprofile",
+              bytes: 123456,
+              summary: HANDOVER_SUMMARY,
+            };
+          case "vault_profile_import_pick":
+            refusePaused();
+            return makePick("handoverImport");
+          case "vault_profile_import_key_kind":
+            pick(request.pickId, "handoverImport", false);
+            return "key";
+          case "vault_profile_import_inspect": {
+            pick(request.pickId, "handoverImport", false);
+            if (request.key === "BAD")
+              throw refuse("package_key_typo", "native.error.19");
+            return {
+              exportedAtMs: Date.UTC(2026, 10, 14),
+              displayName: "FAKE Child",
+              fullName: "FAKE Child Example",
+              birthDate: "2015-04-09",
+              documents: 3,
+              hidden: 1,
+              folders: 2,
+              aiAnswers: 1,
+              withClinicEvidence: 1,
+              historyEntries: 5,
+              plaintextBytes: 123456,
+              alreadyHere: null,
+            };
+          }
+          case "vault_profile_import": {
+            refusePaused();
+            pick(request.pickId, "handoverImport", true);
+            const id = makeUuid(200 + snapshot.profiles.length + 1);
+            snapshot.profiles.push({
+              id,
+              displayName: request.displayName ?? "FAKE Child",
+              createdAtMs: Date.now(),
+            });
+            return {
+              status: "imported",
+              profileId: id,
+              documents: 3,
+              folders: 2,
+              hidden: 1,
+              aiAnswers: 1,
+              aiAnswersDropped: 0,
+              evidenceKept: 1,
+              evidenceDropped: 0,
+              historyEntries: 5,
+              receiptCode: "AB12-CD34",
+              alreadyHere: null,
+            };
+          }
           // --- The unlock screen: restore from a backup ---
           case "vault_restore_pick":
             if (!setup.backup) throw refuse("not_found", "native.error.18");
@@ -1651,6 +1948,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                   folderIds: request.folderIds ?? [],
                 })
               : null;
+          // "+ New": one picker for documents, pictures and videos. What the test queued decides
+          // the answer, as the native routing does by file name: a video alone is a video, a video
+          // with other files is refused, anything else is documents.
+          case "vault_import_any_pick": {
+            refusePaused();
+            const options = {
+              profileId: request.profileId,
+              folderIds: request.folderIds ?? [],
+            };
+            if (state.videoQueue && state.importQueue.length)
+              return { kind: "videoAlone" };
+            if (state.videoQueue)
+              return { kind: "video", pickId: makePick("import", options) };
+            return state.importQueue.length
+              ? { kind: "documents", pickId: makePick("import", options) }
+              : null;
+          }
           case "vault_import_picked": {
             const chosen = pick(request.pickId, "import", true);
             if (
@@ -1682,21 +1996,96 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             }
             return { imported, skippedDuplicates };
           }
+          // --- a picked video (queued with __fakeVault.pickVideo) ---
+          case "vault_import_video_pick":
+            refusePaused();
+            return state.videoQueue
+              ? makePick("import", {
+                  profileId: request.profileId,
+                  folderIds: request.folderIds ?? [],
+                })
+              : null;
+          case "vault_import_video_picked": {
+            const chosen = pick(request.pickId, "import", true);
+            if (
+              chosen.profileId !== request.profileId ||
+              JSON.stringify(chosen.folderIds) !==
+                JSON.stringify(request.folderIds ?? [])
+            )
+              throw refuse("invalid", "native.error.19");
+            refusePaused();
+            const video = state.videoQueue;
+            state.videoQueue = null;
+            if (!video) return { result: "refused", reason: "notVideo" };
+            videoProgress = { stage: "checking", doneBytes: 0, totalBytes: 0 };
+            videoCancelled = false;
+            try {
+              if (video.slow) {
+                // About seven seconds, in steps, so the bar and Cancel can be seen.
+                for (let step = 0; step <= 10; step++) {
+                  // A lock stops the copy natively: it ends as a refusal of the locked vault.
+                  if (state.status === "locked") refuseLocked();
+                  if (videoCancelled) return { result: "cancelled" };
+                  videoProgress =
+                    step < 3
+                      ? { stage: "checking", doneBytes: step, totalBytes: 0 }
+                      : {
+                          stage: "storing",
+                          doneBytes: (step - 3) * 100,
+                          totalBytes: 700,
+                        };
+                  await new Promise((resolve) => setTimeout(resolve, 600));
+                }
+              }
+              if (video.refusal)
+                return { result: "refused", reason: video.refusal };
+              const duplicate = snapshot.records.find(
+                (r) =>
+                  r.profileId === request.profileId &&
+                  r.displayName === video.name,
+              );
+              if (duplicate) return { result: "duplicate" };
+              const record = fakeRecord(
+                video.name,
+                request.profileId ?? setup.ids.profile,
+                request.folderIds ?? [],
+              );
+              snapshot.records.push(record);
+              wrote("imported", { name: video.name, how: "pickedVideo" });
+              return { result: "imported", recordId: record.id };
+            } finally {
+              videoProgress = { stage: "idle", doneBytes: 0, totalBytes: 0 };
+            }
+          }
+          case "vault_video_import_progress":
+            return videoProgress;
+          case "vault_video_import_cancel":
+            videoCancelled = true;
+            return null;
           // --- Recovery mode: hide the documents whose files are missing ---
           case "vault_hide_unavailable_records": {
             refuseLocked();
-            const missing = snapshot.records
-              .filter((r) => !r.available && r.hidden?.reason !== "damaged")
+            const hiddenIds = new Set(
+              snapshot.profiles.filter((p) => p.hidden).map((p) => p.id),
+            );
+            const lost = snapshot.records.filter(
+              (r) => !r.available && r.hidden?.reason !== "damaged",
+            );
+            // What the patient was shown is the people who are shown; the damaged
+            // documents of hidden people are counted, not listed (#360).
+            const missing = lost
+              .filter((r) => !hiddenIds.has(r.profileId))
               .map((r) => r.id);
+            const lostOfHidden = lost.filter((r) => hiddenIds.has(r.profileId));
             const confirmed = [...(request.confirmed ?? [])].sort();
             if (
-              JSON.stringify(confirmed) !== JSON.stringify([...missing].sort())
+              JSON.stringify(confirmed) !==
+                JSON.stringify([...missing].sort()) ||
+              (request.hiddenPeopleDocuments ?? 0) !== lostOfHidden.length
             )
               throw refuse("list_changed", "native.error.38");
-            for (const record of snapshot.records) {
-              if (missing.includes(record.id))
-                record.hidden = { atMs: Date.now(), reason: "damaged" };
-            }
+            for (const record of lost)
+              record.hidden = { atMs: Date.now(), reason: "damaged" };
             snapshot.recovery = null;
             return missing;
           }
@@ -1735,6 +2124,50 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         },
         pickFiles: (names: string[]) => {
           state.importQueue = names;
+          save();
+        },
+        pickVideo: (
+          name: string,
+          how: { refusal?: string; slow?: boolean } = {},
+        ) => {
+          state.videoQueue = {
+            name,
+            refusal: how.refusal ?? null,
+            slow: how.slow ?? false,
+          };
+          save();
+        },
+        // A clinic document that arrived for a person while they were hidden: it is in
+        // Shared with me, and a restore offers it back (#360).
+        // A link of this vault to the clinic now holds the signing key: the documents that stood
+        // on a file's say-so are verified (#360).
+        verifyCarried: (clinic: string) => {
+          for (const record of state.snapshot.records)
+            if (record.fileSaysCheckedAtMs !== undefined) {
+              delete record.fileSaysCheckedAtMs;
+              record.verifiedClinicName = clinic;
+            }
+          save();
+        },
+        arriveWhileHidden: (profileId: string, name: string) => {
+          const shared = sharedProfile();
+          const id = makeUuid(900 + state.snapshot.records.length);
+          state.snapshot.records.push({
+            id,
+            profileId: shared,
+            folderIds: [],
+            displayName: name,
+            sourceLabel: "FAKE clinic",
+            mediaType: "application/pdf",
+            plaintextSize: 100,
+            importedAtMs: Date.now(),
+            available: true,
+            hidden: null,
+          });
+          (state.arrivedWhileHidden[profileId] ??= []).push({
+            recordId: id,
+            displayName: name,
+          });
           save();
         },
         settle: (command: string, outcome: Outcome) => {
@@ -1826,6 +2259,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       newKeyLabel: FAKE_NEW_KEY_LABEL,
       lockedPdf: setup.lockedPdf ?? false,
       readingAid: setup.readingAid ?? false,
+      background: setup.background ?? null,
+      backupVideos: setup.backupVideos ?? 0,
       documentPassword: FAKE_DOCUMENT_PASSWORD,
       lockedOriginal: lockedOriginalName("{name}.pdf"),
       pageText: PAGE_TEXT,
@@ -1837,6 +2272,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
+      hiddenPeople: setup.hiddenPeople ?? [],
+      fileSays: setup.fileSays ?? [],
       received: setup.received ?? [],
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,
@@ -1846,6 +2283,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       boxesAbsent: setup.boxesAbsent ?? null,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
+      clinicPatient: setup.clinicPatient ?? null,
       resetPhrase: translate("en", "native.reset.phrase"),
       speedReport: FAKE_SPEED_REPORT,
       messages: Object.fromEntries(
@@ -1882,7 +2320,7 @@ export async function fakeCalls(
     .map((call) => call.args);
 }
 
-/** The FAKE files the next "Choose files to import" picker chooses. */
+/** The FAKE files the next import picker (the library's "New") chooses. */
 export async function fakePickFiles(page: Page, names: string[]) {
   await page.evaluate(
     (names) =>
@@ -1892,6 +2330,26 @@ export async function fakePickFiles(page: Page, names: string[]) {
         }
       ).pickFiles(names),
     names,
+  );
+}
+
+/** The FAKE video the next video picker (the library's "Add a video") chooses. */
+export async function fakePickVideo(
+  page: Page,
+  name: string,
+  how: { refusal?: string; slow?: boolean } = {},
+) {
+  await page.evaluate(
+    ([name, how]) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          pickVideo: (
+            name: string,
+            how: { refusal?: string; slow?: boolean },
+          ) => void;
+        }
+      ).pickVideo(name, how),
+    [name, how] as const,
   );
 }
 

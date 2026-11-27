@@ -249,6 +249,15 @@ describe("VaultLibrary folders", () => {
     );
     expect(row).not.toHaveHumanTextContent(/\bFolder\b/);
   });
+
+  it("says that pictures lose their place, time and camera details when they are added", () => {
+    renderLibrary();
+    expect(
+      screen.getByText(
+        humanText(/place, time and camera details are removed/i),
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const folder = (id: string, name: string, parentId: string | null) => ({
@@ -563,7 +572,7 @@ describe("VaultLibrary search", () => {
     ]);
     expect(
       within(rows[0]).getByRole("button", {
-        name: humanText("Open FAKE June"),
+        name: humanText("FAKE June, open folder"),
       }),
     ).toHaveHumanAccessibleDescription(
       "1 item In My records / FAKE Lab results / FAKE 2026",
@@ -836,7 +845,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
     // Whose folder it is, for a screen reader.
-    expect(letters).toHaveHumanAccessibleName("FAKE Letters (FAKE Avery) 0");
+    expect(letters).toHaveHumanAccessibleName(
+      "FAKE Letters (FAKE Avery) 0 documents",
+    );
     const avery = within(library).getByRole("button", {
       name: humanText(/^FAKE Avery/),
     });
@@ -1311,7 +1322,7 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     absent();
     expect(
-      screen.getByRole("heading", { name: "Clinic documents" }),
+      screen.getByRole("heading", { name: "Connected clinics" }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
     absent();
@@ -1429,7 +1440,9 @@ describe("Audit history keeps Security's Hidden location", () => {
       openFolder(/^Shared with me/);
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
       expect(
-        screen.getByRole("button", { name: /^Hidden 1 Shared with me/ }),
+        screen.getByRole("button", {
+          name: humanText(/^Hidden 1 document Shared with me/),
+        }),
       ).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
       await screen.findByText("There are no history events.");
@@ -1439,7 +1452,7 @@ describe("Audit history keeps Security's Hidden location", () => {
         }),
       );
       const hidden = screen.getByRole("button", {
-        name: /^Hidden 1 Shared with me/,
+        name: humanText(/^Hidden 1 document Shared with me/),
       });
       if (route === "back")
         expect(
@@ -1904,10 +1917,15 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       const lock = within(
         document.querySelector(".titlebar") as HTMLElement,
       ).getByRole("button");
-      // WCAG 2.5.3: the name is the words on the button, so saying "click"
-      // and what it shows works by voice; the state before them is not read.
+      // WCAG 2.5.3: the button shows exactly the words it is named by, so
+      // saying "click" and what it shows works by voice. The vault's state is
+      // shown beside it in the pill, as text, not as part of the button (#149).
       expect(lock).toHaveHumanAccessibleName(lockNow);
-      expect(lock).toHaveHumanTextContent(
+      expect(lock).toHaveHumanTextContent(lockNow);
+      const pill = document.querySelector(
+        ".titlebar .native-lock-pill",
+      ) as HTMLElement;
+      expect(pill).toHaveHumanTextContent(
         `${translate(locale, "library.lock.unlocked")} · ${lockNow}`,
       );
       const label = translate(locale, "interface.VaultLibrary.sortBy");
@@ -2057,6 +2075,52 @@ describe("the AI helper's notice before the reader's first Summary", () => {
   const notice = () =>
     screen.queryByRole("dialog", { name: humanText("About the AI helper") });
 
+  it("is offered in the reader's Summary before any summary exists, opens by keyboard and gives the focus back (#355)", async () => {
+    const { reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    // The first time in a session the notice comes before the panel: continue past it.
+    const first = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    await waitFor(() =>
+      expect(
+        within(first).getByRole("button", { name: humanText("Continue") }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(
+      within(first).getByRole("button", { name: humanText("Continue") }),
+    );
+    // In the Summary section: its heading, the privacy paragraph and the button, with no
+    // summary shown yet.
+    const panel = await screen.findByRole("region", {
+      name: humanText("Summary in plain words"),
+    });
+    expect(
+      within(panel).getByRole("heading", {
+        name: humanText("About the AI helper"),
+      }),
+    ).toBeInTheDocument();
+    expect(panel).toHaveTextContent("never sends your documents");
+    const about = within(panel).getByRole("button", {
+      name: humanText("About the AI helper"),
+    });
+    about.focus();
+    const user = userEvent.setup();
+    await user.keyboard("{Enter}");
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(notice()).toBeNull());
+    await waitFor(() => expect(about).toHaveFocus());
+    expect(shown).not.toBeInTheDocument();
+  });
+
   it("comes first when a model is there, and nothing reaches the model before it closes", async () => {
     const { native, reader } = await openReader({
       state: "installed",
@@ -2162,20 +2226,21 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       state: "installed",
       model: FAKE_MODEL,
     });
-    // Seen from Security while the model's status could not be read: the
-    // export's text only.
+    // Seen from the AI helper section (#355) while the model's status could
+    // not be read: the export's text only.
     fireEvent.click(
       within(reader).getByRole("button", { name: humanText("Close") }),
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("AI helper") }),
+    );
+    const aboutAi = await screen.findByRole("button", {
+      name: humanText("About the AI helper"),
+    });
+    // The AI helper section has read the status by now: the next read fails.
+    await waitFor(() => expect(native.aiModelStatus).toHaveBeenCalled());
     native.aiModelStatus.mockRejectedValueOnce(new Error("FAKE: no status"));
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Security") }),
-    );
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: humanText("About the AI helper"),
-      }),
-    );
+    fireEvent.click(aboutAi);
     const shareOnly = await screen.findByRole("dialog", {
       name: humanText("About the AI helper"),
     });
@@ -2288,5 +2353,124 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     expect(notice()).toBeNull();
     expect(native.documentText).not.toHaveBeenCalled();
     expect(native.aiSummarize).not.toHaveBeenCalled();
+  });
+});
+
+describe("VaultLibrary folder tools that are not a drag", () => {
+  const keyboardMove = () => {
+    const details = screen.getByText(
+      humanText("Move a folder with the keyboard"),
+    );
+    // The tools sit in a closed disclosure: opened, as the patient would.
+    fireEvent.click(details);
+    const panel = details.closest("details") as HTMLElement;
+    return {
+      folder: within(panel).getByLabelText("Folder") as HTMLSelectElement,
+      destination: within(panel).getByLabelText(
+        "Destination",
+      ) as HTMLSelectElement,
+      move: within(panel).getByRole("button", { name: "Move folder" }),
+    };
+  };
+  const optionNames = (select: HTMLSelectElement) =>
+    [...select.options].map((option) => option.textContent);
+
+  it("moves a folder to the destination chosen in the lists, and says so", async () => {
+    const { bridge, setNotice } = renderLibrary();
+    const { folder, destination, move } = keyboardMove();
+    expect(move).toBeDisabled();
+    fireEvent.change(folder, { target: { value: "letters-2025-june" } });
+    fireEvent.change(destination, { target: { value: "letters" } });
+    expect(move).toBeEnabled();
+    fireEvent.click(move);
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        "letters",
+        "FAKE June Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContain("FAKE June Letters moved."),
+    );
+  });
+
+  it("moves a folder to the top of the person's records when no destination is chosen", async () => {
+    const { bridge, setNotice } = renderLibrary();
+    const { folder, move } = keyboardMove();
+    fireEvent.change(folder, { target: { value: "letters-2025" } });
+    fireEvent.click(move);
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025",
+        null,
+        "FAKE 2025 Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContain("FAKE 2025 Letters moved."),
+    );
+  });
+
+  it("offers no destination inside the chosen folder, and forgets a destination when the folder changes", () => {
+    renderLibrary();
+    const { folder, destination } = keyboardMove();
+    fireEvent.change(folder, { target: { value: "letters" } });
+    // Not itself, and not anything beneath it: only the top of the records is left.
+    expect(optionNames(destination)).toEqual(["My records"]);
+    fireEvent.change(folder, { target: { value: "letters-2025-june" } });
+    expect(optionNames(destination)).toContain("FAKE Letters");
+    expect(optionNames(destination)).not.toContain("FAKE June Letters");
+    fireEvent.change(destination, { target: { value: "letters" } });
+    expect(destination.value).toBe("letters");
+    fireEvent.change(folder, { target: { value: "letters-2025" } });
+    expect(destination.value).toBe("");
+  });
+
+  it("moves a folder to the top of the records by dropping it on the top of the records above the list", async () => {
+    const { bridge, setNotice } = renderLibrary();
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    // The top of the records above the list (the person's own name when there is more than one
+    // person), found as the patient finds it: a button by its name, outside the sidebar.
+    const root = screen
+      .getAllByRole("button", { name: "My records" })
+      .find((button) => !sidebar.contains(button)) as HTMLElement;
+    expect(root).toBeDefined();
+    dragFolder(
+      within(sidebar).getByRole("button", {
+        name: humanText(/^FAKE June Letters/),
+      }),
+      root,
+    );
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        null,
+        "FAKE June Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContainEqual(
+        expect.stringMatching(/^FAKE June Letters moved( to .+)?\.$/),
+      ),
+    );
+  });
+
+  it("renames the open folder from its heading", () => {
+    renderLibrary();
+    openFolder(/^FAKE Letters/);
+    fireEvent.click(screen.getByRole("button", { name: "Rename folder" }));
+    expect(
+      screen.getByRole("dialog", { name: humanText(/Rename/) }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Letters");
   });
 });

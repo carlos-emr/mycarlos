@@ -2,19 +2,29 @@ import { humanValue } from "./test/humanText";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
+const convertFileSrc = vi.hoisted(() =>
+  vi.fn((path: string, scheme: string) => `${scheme}://localhost/${path}`),
+);
 vi.mock("@tauri-apps/api/core", () => ({
   invoke,
+  convertFileSrc,
   Channel: class {
     onmessage: (value: unknown) => void = () => undefined;
   },
 }));
 
 import { setLocaleOverride } from "./i18n";
+import contractText from "../src-tauri/tests/fixtures/command-args.json?raw";
+import {
+  problemsInCall,
+  shapeOfValue,
+  type Contract,
+} from "./test/commandContract";
 import { setDeviceLocale } from "./test/deviceLocale";
 import {
+  NATIVE_READER_ACTIVITY_EVENT,
   boxesWithControlCharacters,
   createVaultBridge,
-  NATIVE_READER_ACTIVITY_EVENT,
   isCancelledError,
   isLockedError,
   isMissingVaultError,
@@ -27,6 +37,17 @@ import {
 } from "./vault";
 
 const PDF_PASSWORD = "  FAKE cafe\u0301 password  ";
+
+// Whatever a test here made the bridge send is held to the native side's argument list (the
+// Rust guard test writes it): a key with no Rust field would be refused there at run time.
+const COMMAND_ARGUMENTS = JSON.parse(contractText) as Contract;
+afterEach(() => {
+  const problems = (invoke.mock.calls as [string, unknown?][]).flatMap(
+    ([command, args]) =>
+      problemsInCall(COMMAND_ARGUMENTS, command, shapeOfValue(args)),
+  );
+  expect(problems).toEqual([]);
+});
 
 describe("native idle deadline bridge", () => {
   beforeEach(() => {
@@ -1132,5 +1153,184 @@ describe("localized native presentation contracts", () => {
     expect(vaultErrorMessage({ code: "toString", message: "Native." })).toBe(
       "Native.",
     );
+  });
+});
+
+describe("the Android native PDF reader bridge (#358)", () => {
+  const labels = {
+    close: "Close",
+    previous: "Previous page",
+    next: "Next page",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    page: "Page {page} of {total}, picture of the letter",
+    pageStatus: "Page {page} of {total}",
+    pageFailed: "Page {page} of {total} cannot be shown.",
+  };
+
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("passes only a record ID and the reader's words, forwards activity and stops on close", async () => {
+    let resolve!: () => void;
+    invoke.mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const listener = vi.fn();
+    window.addEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    try {
+      const opened = createVaultBridge().readAndroidPdf!("FAKE record", labels);
+      const [command, args] = invoke.mock.calls[0];
+      expect(command).toBe("vault_read_android_pdf");
+      // No document bytes, path or password: an ID and words.
+      expect(Object.keys(args.request).sort()).toEqual(["labels", "recordId"]);
+      expect(args.request.labels).toEqual(labels);
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+      resolve();
+      await opened;
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    }
+  });
+
+  it("waits for an earlier reader cancellation before opening the native PDF", async () => {
+    let finish!: () => void;
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    const bridge = createVaultBridge();
+    const cancelled = bridge.cancelView();
+    const opened = bridge.readAndroidPdf!("FAKE record", labels);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish();
+    await Promise.all([cancelled, opened]);
+    expect(invoke).toHaveBeenLastCalledWith(
+      "vault_read_android_pdf",
+      expect.objectContaining({
+        request: { recordId: "FAKE record", labels },
+      }),
+    );
+  });
+
+  it.each(["close", "lock"] as const)(
+    "discards a queued native open after %s",
+    async (reason) => {
+      let finish!: () => void;
+      invoke.mockImplementation((command) =>
+        command === "vault_view_cancel"
+          ? new Promise<void>((resolve) => {
+              finish = resolve;
+            })
+          : Promise.resolve(undefined),
+      );
+      const bridge = createVaultBridge();
+      const cancelled = bridge.cancelView();
+      const opened = bridge.readAndroidPdf!("FAKE record", labels);
+      const refused = expect(opened).rejects.toMatchObject({
+        code: "cancelled",
+      });
+      const closed = reason === "lock" ? bridge.lock() : bridge.cancelView();
+      finish();
+      await Promise.all([cancelled, refused, closed]);
+      expect(
+        invoke.mock.calls.some(
+          ([command]) => command === "vault_read_android_pdf",
+        ),
+      ).toBe(false);
+    },
+  );
+});
+
+describe("video through the native vault (#359)", () => {
+  beforeEach(() => invoke.mockReset());
+
+  it("sends the commands the native side registers, a piece as base64 with its number", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue({ recordingId: "recording-1" });
+    await bridge.videoStart("profile-1", ["folder-1"], "FAKE clip.mp4");
+    invoke.mockResolvedValue({ nextSequence: 4 });
+    // 70,000 bytes: more than one slice of the encoder, every byte different.
+    const piece = Uint8Array.from({ length: 70_000 }, (_, n) => n % 251);
+    await bridge.videoAppend("recording-1", 3, piece);
+    invoke.mockResolvedValue({ freeBytes: 1, level: "ok", canRecord: true });
+    await bridge.videoSpace();
+    invoke.mockResolvedValue(undefined);
+    await bridge.videoPause("recording-1");
+    await bridge.videoResume("recording-1");
+    invoke.mockResolvedValue({ recordId: "video-1" });
+    await bridge.videoStop("recording-1");
+    await bridge.videoRecover("recording-1", true);
+    expect(invoke.mock.calls.map(([name]) => name)).toEqual([
+      "vault_video_start",
+      "vault_video_append",
+      "vault_video_space",
+      "vault_video_pause",
+      "vault_video_resume",
+      "vault_video_stop",
+      "vault_video_recover",
+    ]);
+    expect(invoke.mock.calls[0]![1]).toEqual({
+      request: {
+        profileId: "profile-1",
+        folderIds: ["folder-1"],
+        name: "FAKE clip.mp4",
+      },
+    });
+    const append = invoke.mock.calls[1]![1] as {
+      request: { recordingId: string; sequence: number; data: string };
+    };
+    expect(append.request.recordingId).toBe("recording-1");
+    expect(append.request.sequence).toBe(3);
+    // The text decodes to exactly the bytes sent.
+    const decoded = Uint8Array.from(atob(append.request.data), (c) =>
+      c.charCodeAt(0),
+    );
+    expect(decoded).toEqual(piece);
+    expect(invoke.mock.calls[6]![1]).toEqual({
+      request: { recordingId: "recording-1", keep: true },
+    });
+  });
+
+  it("opens a video for playback by token and gives the address the platform shows", async () => {
+    const bridge = createVaultBridge();
+    const token = "a".repeat(64);
+    invoke.mockResolvedValue({ token, totalBytes: 123 });
+    const opened = await bridge.videoOpen("video-1");
+    expect(invoke).toHaveBeenCalledWith("vault_video_open", {
+      request: { recordId: "video-1" },
+    });
+    expect(opened).toEqual({
+      token,
+      totalBytes: 123,
+      url: `mycarlos-video://localhost/${token}`,
+    });
+    expect(convertFileSrc).toHaveBeenCalledWith(token, "mycarlos-video");
+    invoke.mockResolvedValue(undefined);
+    await bridge.videoClose(token);
+    expect(invoke).toHaveBeenLastCalledWith("vault_video_close", {
+      request: { token },
+    });
+  });
+
+  it("asks whether a document is a video and lists what a lock or a crash left", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(true);
+    expect(await bridge.isVideo("video-1")).toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_video", {
+      request: { recordId: "video-1" },
+    });
+    invoke.mockResolvedValue({ recordings: [], unreadable: 0 });
+    await bridge.videoPending();
+    expect(invoke).toHaveBeenLastCalledWith("vault_video_pending");
   });
 });

@@ -190,7 +190,7 @@ describe("modal keyboard focus", () => {
     const user = userEvent.setup();
     render(<ScriptFocusDialog />);
     const marked = screen.getByText("marked words");
-    // As Show in document does: the marked words take the focus.
+    // As Show me in the document does: the marked words take the focus.
     marked.focus();
     await user.tab();
     // The next stop after them: the radio group's chosen member.

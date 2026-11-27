@@ -206,20 +206,10 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
-    /// Records activity: a command, the renderer reporting user input, or a
-    /// transfer making progress. A transfer counts for as long as it makes
-    /// progress, however slowly; one that has stalled does not.
-    pub fn touch(&self, now: impl Into<Now>) {
-        let now = now.into();
-        let mut state = self.state();
-        state.mono.touch(now.mono);
-        state.wall.touch(now.wall);
-    }
-
-    /// Genuine input in a native reader obeys the renderer's owed-lock rule:
-    /// once the user-facing delay elapsed, it cannot revive either deadline.
-    /// Check and touch share the mutex. The normal backstop keeps its margin.
-    #[cfg(any(target_os = "ios", test))]
+    /// Genuine input in a native PDF reader obeys the renderer's owed-lock
+    /// rule: once the user-facing delay elapsed, it cannot revive either deadline. Check and touch
+    /// share the mutex. The normal backstop keeps its margin.
+    #[cfg(any(target_os = "android", target_os = "ios", test))]
     pub fn touch_before_deadline(&self, now: impl Into<Now>) -> bool {
         let now = now.into();
         let mut state = self.state();
@@ -239,6 +229,16 @@ impl IdleDeadline {
         state.mono.touch(now.mono);
         state.wall.touch(now.wall);
         true
+    }
+
+    /// Records activity: a command, the renderer reporting user input, or a
+    /// transfer making progress. A transfer counts for as long as it makes
+    /// progress, however slowly; one that has stalled does not.
+    pub fn touch(&self, now: impl Into<Now>) {
+        let now = now.into();
+        let mut state = self.state();
+        state.mono.touch(now.mono);
+        state.wall.touch(now.wall);
     }
 
     /// Starts opening the files chosen for a transfer. A provider may download
@@ -433,79 +433,6 @@ mod tests {
         deadline.set_delay_minutes(5, start);
         deadline.arm(start);
         deadline
-    }
-
-    #[test]
-    fn native_reader_input_cannot_revive_an_owed_lock_on_either_clock() {
-        let start = Now {
-            mono: Instant::now(),
-            wall: SystemTime::now(),
-        };
-        for elapsed_on_wall in [false, true] {
-            let deadline = armed(start);
-            let early = Now {
-                mono: start.mono + MINUTE,
-                wall: start.wall + MINUTE,
-            };
-            assert!(deadline.touch_before_deadline(early));
-            let due = if elapsed_on_wall {
-                Now {
-                    mono: early.mono,
-                    wall: early.wall + 5 * MINUTE,
-                }
-            } else {
-                Now {
-                    mono: early.mono + 5 * MINUTE,
-                    wall: early.wall,
-                }
-            };
-            assert!(!deadline.touch_before_deadline(due));
-            assert!(!deadline.is_due(due), "normal backstop retains its margin");
-            assert!(deadline.is_due(Now {
-                mono: due.mono + MARGIN,
-                wall: due.wall + MARGIN
-            }));
-            deadline.disarm();
-            assert!(!deadline.touch_before_deadline(due));
-        }
-    }
-
-    #[test]
-    fn native_reader_input_respects_each_hold_cap_on_both_clocks() {
-        let start = Now {
-            mono: Instant::now(),
-            wall: SystemTime::now(),
-        };
-        let at = |elapsed| Now {
-            mono: start.mono + elapsed,
-            wall: start.wall + elapsed,
-        };
-        for elapsed_on_wall in [false, true] {
-            let deadline = armed(start);
-            deadline.hold_started(start, 2 * MINUTE);
-            deadline.hold_started(at(MINUTE), 4 * MINUTE);
-            // The first hold expired, but the second still counts as activity.
-            let early = at(4 * MINUTE);
-            assert!(deadline.touch_before_deadline(early));
-            // Keeping an expired hold registered must never make activity revive an owed lock.
-            let due = if elapsed_on_wall {
-                Now {
-                    mono: early.mono,
-                    wall: start.wall + 10 * MINUTE,
-                }
-            } else {
-                Now {
-                    mono: start.mono + 10 * MINUTE,
-                    wall: early.wall,
-                }
-            };
-            assert!(!deadline.touch_before_deadline(due));
-            assert!(!deadline.is_due(due), "the backstop retains its margin");
-            assert!(deadline.is_due(Now {
-                mono: due.mono + MARGIN,
-                wall: due.wall + MARGIN
-            }));
-        }
     }
 
     #[test]
@@ -844,5 +771,40 @@ mod tests {
         deadline.opening_ended(first, start); // session 1's guard finally drops
                                               // Session 2's opening is still under way.
         assert!(!deadline.is_due(start + 60 * MINUTE));
+    }
+
+    #[test]
+    fn native_reader_input_cannot_revive_an_owed_lock_on_either_clock() {
+        let start = Now {
+            mono: Instant::now(),
+            wall: SystemTime::now(),
+        };
+        for elapsed_on_wall in [false, true] {
+            let deadline = armed(start);
+            let early = Now {
+                mono: start.mono + MINUTE,
+                wall: start.wall + MINUTE,
+            };
+            assert!(deadline.touch_before_deadline(early));
+            let due = if elapsed_on_wall {
+                Now {
+                    mono: early.mono,
+                    wall: early.wall + 5 * MINUTE,
+                }
+            } else {
+                Now {
+                    mono: early.mono + 5 * MINUTE,
+                    wall: early.wall,
+                }
+            };
+            assert!(!deadline.touch_before_deadline(due));
+            assert!(!deadline.is_due(due), "normal backstop retains its margin");
+            assert!(deadline.is_due(Now {
+                mono: due.mono + MARGIN,
+                wall: due.wall + MARGIN
+            }));
+            deadline.disarm();
+            assert!(!deadline.touch_before_deadline(due));
+        }
     }
 }

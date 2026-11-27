@@ -22,7 +22,7 @@ import {
 // The demo runbook (kept outside the repo), step by step: Preferences → AI
 // helper → Download the default model → Installed →
 // import the three FAKE PDFs → open each → Summary (notice → Continue) → the
-// answer → Show in document; then the runbook's "If it stalls" messages. Every
+// answer → Show me in the document; then the runbook's "If it stalls" messages. Every
 // button and text the runbook names is written here as the runbook writes it,
 // not looked up in the catalogue, so a runbook that no longer matches the app
 // fails. They are soft checks: one run lists every mismatch, and the walk
@@ -132,7 +132,8 @@ async function aiSettings(page: Page) {
     await named(page.locator("body"), "AI helper", "step 3 (sidebar)")
   ).click();
   return page.locator("section.setting-row").filter({
-    has: page.getByRole("heading", { name: /AI helper/ }),
+    // "^": the settings also have an "About the AI helper" row.
+    has: page.getByRole("heading", { name: /^AI helper/ }),
   });
 }
 
@@ -184,16 +185,17 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   ).toBeChecked();
   await named(row, `Remove ${MODEL}`, "step 3");
 
-  // Step 5: Choose files to import → the three, Unverified, Manual import.
+  // Step 5: New (the button that imports files) → the three, Unverified,
+  // Manual import. The button shows "New" and is named by it (WCAG 2.5.3);
+  // "Choose files to import" is its description (#149; the runbook changes
+  // when this merges).
   await page
     .getByRole("button", { name: /My records/ })
     .locator("visible=true")
     .first()
     .click();
   await fakePickFiles(page, DOCUMENTS);
-  await (
-    await named(page.locator("body"), "Choose files to import", "step 5")
-  ).click();
+  await (await named(page.locator("body"), "New", "step 5")).click();
   for (const name of DOCUMENTS)
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 
@@ -295,12 +297,12 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
       /Summary in plain words · Qwen3\.5 4B \(Q4_K_M\) · \S/,
       "step 8 (the line)",
     );
-    const show = panel.getByRole("button", { name: "Show in document" });
+    const show = panel.getByRole("button", { name: "Show me in the document" });
     await expect
-      .soft(show.first(), "runbook, step 8: Show in document")
+      .soft(show.first(), "runbook, step 8: Show me in the document")
       .toBeVisible();
     if (first) await says(panel, "No source found", "step 8");
-    // Show in document → the page, with the quoted words marked.
+    // Show me in the document → the page, with the quoted words marked.
     await show.first().click();
     await expect(reader.locator(".native-reader-text mark")).toHaveText(
       fakePageText(name, 1),

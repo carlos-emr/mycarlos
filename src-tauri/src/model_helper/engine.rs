@@ -2,11 +2,12 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, SentenceCount, Settings, Stats, ANSWER_HASH_START,
-    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, PROGRESS_READING,
-    PROGRESS_WRITING, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    answer_hash, document_budget, explain_prompt, explain_system_prompt, fit_pages,
+    gemma4_conversation, language_name, read_explanation, read_summary, summary_grammar,
+    summary_prompt, summary_system_prompt, thinking_off, without_slot, ChatFormat, Fit, ModelFile,
+    Page, Sentence, SentenceCount, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
+    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, PROGRESS_READING, PROGRESS_WRITING, SLOT,
+    SUMMARY_TOKENS,
 };
 
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -116,6 +117,14 @@ fn context_params(threads: i32, batch_threads: i32) -> LlamaContextParams {
         .with_n_threads_batch(batch_threads)
 }
 
+/// Whether a number as llama.cpp writes out the model file's value fits llama.cpp's `int32_t`
+/// accessors, which turn a larger one negative.
+fn fits_int32(value: Option<&str>) -> bool {
+    value
+        .and_then(|value| value.trim().parse::<i32>().ok())
+        .is_some_and(|value| value >= 0)
+}
+
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
 type Failure = String;
 
@@ -124,6 +133,84 @@ fn failed(what: &str) -> Failure {
 }
 
 impl Engine {
+    /// What llama.cpp found in the file it loaded, and the context it made, for the hello
+    /// (model limits). From llama.cpp's own accessors: nothing here parses the file again. The
+    /// architecture is cut to its plain characters; the parent checks every field's range.
+    pub(super) fn card(&self) -> crate::model_limits::ModelCard {
+        let architecture = self
+            .model
+            .meta_val_str("general.architecture")
+            .unwrap_or_default();
+        crate::model_limits::ModelCard {
+            architecture: crate::model_limits::clean_architecture(&architecture),
+            trained_context: self.trained_context(&architecture),
+            context_made: self.context.as_ref().map_or(0, |context| context.n_ctx()),
+            parameters: self.model.n_params(),
+            // llama-cpp-2 unwraps llama.cpp's int32_t here, which cannot fail: llama.cpp refuses
+            // to load a file of more than 512 blocks (LLAMA_MAX_LAYERS), and its extra
+            // prediction layers are never more than its blocks.
+            layers: self.model.n_layer(),
+            vocabulary: u32::try_from(self.model.n_vocab()).unwrap_or(0),
+            recurrent: self.model.is_recurrent(),
+            hybrid: self.model.is_hybrid(),
+            kv_bytes_per_token: self.kv_bytes_per_token(&architecture),
+            weights_bytes: self.model.size(),
+        }
+    }
+
+    /// What the attention cache takes per token of context, as llama.cpp's own numbers say:
+    /// layers x key/value heads x (key size + value size) x 2 bytes (the f16 cache the helper
+    /// makes). 0 when it cannot say: a recurrent or hybrid model has layers with no cache and
+    /// llama.cpp gives no per-layer count, and a file without the head sizes has none to use. The
+    /// parent reads 0 as "unknown" and asks today's rule, never less.
+    fn kv_bytes_per_token(&self, architecture: &str) -> u32 {
+        if self.model.is_recurrent() || self.model.is_hybrid() {
+            return 0;
+        }
+        let number = |key: &str| {
+            self.model
+                .meta_val_str(&format!("{architecture}.{key}"))
+                .ok()
+                .and_then(|text| text.trim().parse::<u64>().ok())
+                .filter(|value| *value > 0)
+        };
+        let heads = u64::from(self.model.n_head());
+        let kv_heads = u64::from(self.model.n_head_kv());
+        let embd = u64::try_from(self.model.n_embd()).unwrap_or(0);
+        if heads == 0 || kv_heads == 0 {
+            return 0;
+        }
+        // The head sizes the file names, else the usual embedding / heads.
+        let key = number("attention.key_length").unwrap_or(embd / heads);
+        let value = number("attention.value_length").unwrap_or(key);
+        let bytes = u64::from(self.model.n_layer())
+            .saturating_mul(kv_heads)
+            .saturating_mul(key.saturating_add(value))
+            .saturating_mul(2);
+        // Too large to fit is kept at the most a card may say (the parent clamps it again): a
+        // heavy model, not an unknown one.
+        u32::try_from(bytes).unwrap_or(u32::MAX)
+    }
+
+    /// The context the model was trained for, or 0 when the file's number does not fit an
+    /// `int32_t`. llama.cpp hands that number back as one, and llama-cpp-2's `n_ctx_train`
+    /// panics on a negative one: a file claiming 2^31 or more would end the helper before its
+    /// hello. llama.cpp takes the number as it stands in the file's
+    /// `<architecture>.context_length`, so the helper reads that first, through llama.cpp too,
+    /// and asks only when it fits. The parent refuses 0 (TrainedContext), so the card is
+    /// dropped, and the model runs as before.
+    fn trained_context(&self, architecture: &str) -> u32 {
+        let claimed = self
+            .model
+            .meta_val_str(&format!("{architecture}.context_length"))
+            .ok();
+        if fits_int32(claimed.as_deref()) {
+            self.model.n_ctx_train()
+        } else {
+            0
+        }
+    }
+
     /// Loads the model the settings name, with its context. Runs inside the load sandbox.
     pub(super) fn load(settings: &Settings) -> Result<Self, Failure> {
         let mut backend = LlamaBackend::init().map_err(|_| failed("backend"))?;
@@ -235,12 +322,13 @@ impl Engine {
         self.stats
     }
 
-    /// The prompt's tokens: the chat template around `user`, with each [`SLOT`] in it replaced
-    /// by the next of `parts`. The template's own words are read with their control tokens;
-    /// the parts, the document's words, never are. Also gives the instruction prefix's length
-    /// (see [`assemble`]).
+    /// The prompt's tokens: the chat template around `system` (the tool's own system prompt)
+    /// and `user`, with each [`SLOT`] in `user` replaced by the next of `parts`. The template's
+    /// own words are read with their control tokens; the parts, the document's words, never are.
+    /// Also gives the instruction prefix's length (see [`assemble`]).
     fn prompt_tokens(
         &self,
+        system: &str,
         user: &str,
         parts: &[&str],
     ) -> Result<(Vec<LlamaToken>, usize), Failure> {
@@ -250,7 +338,7 @@ impl Engine {
                     LlamaChatMessage::new(role.to_owned(), content.to_owned())
                         .map_err(|_| failed("prompt"))
                 };
-                let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
+                let messages = [message("system", system)?, message("user", user)?];
                 let template = self.template.as_ref().ok_or_else(|| failed("template"))?;
                 let templated = self
                     .model
@@ -260,7 +348,7 @@ impl Engine {
                 thinking_off(template.to_str().unwrap_or_default(), templated)
             }
             // Thinking is already off: Gemma 4's template adds `<|think|>` only to turn it on.
-            ChatFormat::Gemma4 => gemma4_conversation(SYSTEM_PROMPT, user),
+            ChatFormat::Gemma4 => gemma4_conversation(system, user),
         };
         let vocab = self.model.vocab();
         assemble(&templated, parts, |text, start, special| {
@@ -538,8 +626,9 @@ impl Engine {
     ) -> Result<(Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
+        let system = summary_system_prompt();
         let user = summary_prompt(language, max_sentences);
-        let around = self.prompt_tokens(&user, &[""])?.0.len();
+        let around = self.prompt_tokens(&system, &user, &[""])?.0.len();
         let budget = document_budget(around, SUMMARY_TOKENS);
         let pages: Vec<Page> = pages
             .iter()
@@ -555,7 +644,7 @@ impl Engine {
             |text, budget| self.prefix(text, budget),
         )
         .ok_or_else(|| failed("no room"))?;
-        let (tokens, prefix_len) = self.prompt_tokens(&user, &[&fit.text])?;
+        let (tokens, prefix_len) = self.prompt_tokens(&system, &user, &[&fit.text])?;
         let grammar = summary_grammar(max_sentences);
         let (written, capped) = self.generate(
             &tokens,
@@ -576,9 +665,10 @@ impl Engine {
         lang: &str,
     ) -> Result<String, Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
+        let system = explain_system_prompt();
         let user = explain_prompt(language);
         let (term, context) = (without_slot(term), without_slot(context));
-        let (tokens, prefix_len) = self.prompt_tokens(&user, &[&term, &context])?;
+        let (tokens, prefix_len) = self.prompt_tokens(&system, &user, &[&term, &context])?;
         let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None, None)?;
         read_explanation(&written, capped).ok_or_else(|| failed("empty"))
     }
@@ -597,7 +687,10 @@ fn first_best(scores: impl Iterator<Item = (LlamaToken, f32)>) -> Option<(LlamaT
 
 #[cfg(test)]
 mod tests {
-    use super::super::{explain_prompt, gemma4_conversation, summary_prompt, SYSTEM_PROMPT};
+    use super::super::{
+        explain_prompt, explain_system_prompt, gemma4_conversation, summary_prompt,
+        summary_system_prompt,
+    };
     use super::*;
 
     /// Each character a token, marked as the model's control text or a part's plain words.
@@ -608,9 +701,21 @@ mod tests {
     const MARKER: &str = "FAKE-MARKER-Q7 Rowan Testwood 148/88";
 
     #[test]
+    fn a_trained_context_is_asked_for_only_when_it_fits_llama_cpp_s_int32() {
+        for fits in ["0", "4096", "8192", "262144", "2147483647", " 8192 "] {
+            assert!(fits_int32(Some(fits)), "{fits}");
+        }
+        // 2^31 and more come back negative (llama-cpp-2 would panic); no number, or none read.
+        for refused in ["2147483648", "4294967295", "-1", "", "8k", "8192.0", "1e5"] {
+            assert!(!fits_int32(Some(refused)), "{refused}");
+        }
+        assert!(!fits_int32(None));
+    }
+
+    #[test]
     fn the_instruction_prefix_never_holds_a_document_a_term_or_a_sentence() {
-        let summary = gemma4_conversation(SYSTEM_PROMPT, &summary_prompt("English", 6));
-        let explain = gemma4_conversation(SYSTEM_PROMPT, &explain_prompt("Polish"));
+        let summary = gemma4_conversation(&summary_system_prompt(), &summary_prompt("English", 6));
+        let explain = gemma4_conversation(&explain_system_prompt(), &explain_prompt("Polish"));
         for (templated, with_marker, without) in [
             (&summary, vec![MARKER], vec!["FAKE other pages"]),
             (

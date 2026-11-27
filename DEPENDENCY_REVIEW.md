@@ -1,5 +1,67 @@
 # Dependency review — PR #1
 
+## Windows second-launch forwarding (#53, partial)
+
+`tauri-plugin-single-instance` is pinned at `=2.4.0` (Apache-2.0 OR MIT), with a
+reviewed Windows-only local transport delta. Complete upstream archive identity,
+licenses, source revision and the full patch are retained in
+[`src-tauri/vendor`](src-tauri/vendor/README.md). The application dependency is
+Windows-only, without the optional deep-link or semver features. The app registers
+it first, before any vault or webview setup, and forwards through the same bounded
+receive queue as initial arguments. A fixed, payload-free DOM notification refreshes
+an already-focused window without new renderer permissions or CSP changes.
+
+The compatible release accepts Tauri 2.10; the lock retains upstream Tauri 2.11.5.
+The inspected 2.5.x releases require Tauri 2.12, so they are not substituted for
+the existing reviewed runtime. The patch bounds the native message read, preserves
+supported arguments without lossy conversion or delimiter injection, rejects
+legacy acknowledgements, and fails closed during startup or failed handoff.
+Its exact lifecycle and platform limits are described in the vendor record.
+
+Cargo resolves 32 added packages: this plugin and support for its upstream Linux
+D-Bus backend, which remains in the complete upstream manifest even though the
+application uses the plugin only on Windows. They are locked for the all-target
+graph; the Linux backend is not enabled by a Windows-only application dependency.
+Every existing package version, including P-256 0.14 / ECDSA 0.17 and Tauri 2.11.5,
+is preserved. Existing `tracing` and `enumflags2` dependency lists gain the support
+features needed by the added graph. All 32 additions declare MIT, Apache-2.0 OR MIT,
+or MIT OR Apache-2.0, compatible with AGPL-3.0-or-later.
+
+Vendor reconstruction verifies both patches against their checksum-pinned
+archives. The graph check allows only these two local dependency identities;
+the audit helper restores both registry identities in a temporary lockfile so
+upstream advisories remain visible. It does not ignore or suppress any advisory.
+Host codec tests and cross-compilation do not replace real Windows IPC and
+two-process lifecycle acceptance, or the remaining installer/Explorer checks.
+
+On 27 October 2026, the actual pinned `cargo-audit` 0.22.2 scans of the temporary
+registry-restored main lock and the separate glib regression lock both exited zero.
+The main scan reported these twelve nonfatal warnings under the scanner's default
+policy. None was ignored or suppressed; an exit of zero is not advisory clearance.
+
+| Package | Locked version | Warning / advisory |
+|---|---|---|
+| proc-macro-error | 1.0.4 | unmaintained, RUSTSEC-2024-0370 |
+| unic-char-property | 0.9.0 | unmaintained, RUSTSEC-2025-0081 |
+| unic-char-range | 0.9.0 | unmaintained, RUSTSEC-2025-0075 |
+| unic-common | 0.9.0 | unmaintained, RUSTSEC-2025-0080 |
+| unic-ucd-ident | 0.9.0 | unmaintained, RUSTSEC-2025-0100 |
+| unic-ucd-version | 0.9.0 | unmaintained, RUSTSEC-2025-0098 |
+| zbus_names | 4.3.5 | unmaintained, RUSTSEC-2026-0371 |
+| zvariant | 5.15.1 | unmaintained, RUSTSEC-2026-0370 |
+| zvariant_derive | 5.15.1 | unmaintained, RUSTSEC-2026-0372 |
+| glib | 0.18.5 | unsound, RUSTSEC-2024-0429; reviewed source backport below |
+| tokio | 1.53.1 | unsound, RUSTSEC-2026-0386; unchanged baseline, unresolved by this change |
+| inout | 0.2.3 | yanked |
+
+The three D-Bus warnings enter the all-target lock with the new plugin's upstream
+Linux backend; the application does not enable that backend. This explains their
+graph location and is not a dismissal of the advisories. See the primary
+[zbus_names](https://rustsec.org/advisories/RUSTSEC-2026-0371.html),
+[zvariant](https://rustsec.org/advisories/RUSTSEC-2026-0370.html),
+[zvariant_derive](https://rustsec.org/advisories/RUSTSEC-2026-0372.html) and
+[Tokio](https://rustsec.org/advisories/RUSTSEC-2026-0386.html) records.
+
 The [Socket comment on the initial import](https://github.com/carlos-emr/mycarlos/pull/1#issuecomment-5670042450)
 flagged `jsdom@29.0.1`, `data-urls@7.0.0`, and `hyper-util@0.1.20` for possible
 obfuscation. These were package-level warnings with confidence 0.90, not a claim
@@ -241,6 +303,21 @@ executable to sign and sandbox, and a downloaded binary to pin (RUNTIME-PLAN, op
 The lockfile grows from 628 to 644 packages, all MIT, Apache-2.0, BSD-3-Clause or ISC, which
 are compatible with AGPL-3.0-or-later.
 
+## Added for keeping myCarlos running in the background (#206)
+
+**The tray icon.** Tauri's `tray-icon` feature brings `tray-icon` 0.24.2 (MIT OR Apache-2.0)
+and, on Linux only, `libappindicator` and `libappindicator-sys` 0.9.0 (Apache-2.0 OR MIT), which
+load the desktop's AppIndicator library at run time. Menus already came with Tauri (`muda`).
+
+**One myCarlos per user, Windows only: #133's transport, not its own.** This draft adds no dependency
+for it. A second launch (the Start menu, or "Open with") is handed to the running myCarlos by the
+reviewed, vendored and patched `tauri-plugin-single-instance` of #133 (same user, same executable,
+bounded framing; see that draft's `vendor/README.md`), which must merge first. This draft only puts
+its own rule in that callback: a start from the login entry (`--background`) that finds myCarlos
+already running changes nothing on screen, and any other second launch brings the running window
+forward (still locked if it was locked). macOS keeps one copy of an app by itself; Linux is not
+covered. The lockfile follows #133.
+
 ## Native remediation
 
 ### Mobile live reload restored
@@ -286,17 +363,32 @@ older glib line, while Tauri 3 is an alpha. We chose the narrow backport over
 introducing an alpha framework across every platform. Linux remains an evaluation
 pending review and device validation; fixing one defect does not approve release.
 
+### Wry patched for the Apple camera and microphone decision (#359)
+
+The pinned local wry 0.55.1 source differs from the crates.io release in three files under
+`src/wkwebview/class/`. Upstream grants every `getUserMedia` request on macOS and iOS; the patch
+grants only video, alone or with sound, from the main frame of the app's own `tauri://localhost`,
+and denies everything else without a prompt, as the Linux and Windows handlers already do. It is
+not a security fix for a published advisory; it narrows what the page the app serves may do, so a
+page that was somehow loaded cannot turn the microphone on for sound alone. The decision is
+a plain function that the app's tests run on every host. The delegate itself is Apple-only code
+and is not compiled or run on the Linux build host; it needs the macOS and iOS builds and the device
+steps in TESTING.md. WebKit calls the patched method only on macOS 12 and later and iOS 15 and
+later; on older systems (the app's iOS minimum is 14.5) WebKit's own default answers, as before the
+patch. Carrying the patch to a new Wry is described in the
+[native patch notes](src-tauri/vendor/README.md).
+
 ### Provenance, audit, and maintenance
 
 [Native patch notes](src-tauri/vendor/README.md) contain the exact deltas, pinned
 archive checksums/source revisions, development tradeoff, and retirement criteria.
-CI reconstructs the complete glib source snapshot from its checksum-verified release
-plus patch, then checks that Cargo selects the glib backport and upstream Tauri. Licenses are preserved;
+CI reconstructs the complete glib and wry source snapshots from their checksum-verified releases
+plus patches, then checks that Cargo selects the glib backport, the patched wry and upstream Tauri. Licenses are preserved;
 package versions are not changed to impersonate upstream fixed releases.
 
 Local source patches can disappear from registry-only advisory scanning. Our
-audit helper restores the glib upstream identity in a temporary audit lockfile,
-retaining the original glib warning and future advisories. It does not change the
+audit helper restores the glib and wry upstream identities in a temporary audit lockfile,
+retaining the original glib warning and future advisories for both. It does not change the
 real lockfile or ignore an advisory. The source verification and optimized tests
 are the evidence for this specific backport, independent of scanner status.
 
@@ -407,8 +499,13 @@ crypto provider avoids process-global provider installation.
 services and requires a JNI 0.22 integration on Android. Its fixes to Android CRL
 fetching, disabled trust anchors and Windows hostname verification take priority
 over retaining the existing JNI 0.21 line.
-The Android Kotlin verifier component and native initialization must be wired
-and tested before Android linking is claimed to work.
+On Android the Kotlin verifier component (`org.rustls:rustls-platform-verifier`, fetched from the
+crate authors' Maven archive at a named commit, its bytes checked by Gradle dependency verification)
+and the native initialisation are wired by the `tauri-plugin-android-trust` crate, which hands the
+application context to the verifier once. The portal client opens on Android only once that has
+succeeded (`portal_client::available()`), and builds no client before it has; the platform verifier
+panics if asked without it. The emulator test, not a host test, is what proves a handshake there:
+see TESTING.md, "Linking a clinic on Android".
 
 The resolved graph, licenses and feature unification require independent review
 before compiling this feature. No HPKE implementation or delivery-v2 dependency
@@ -464,3 +561,32 @@ compiles them, and `ring` 0.17.14 with them. The Windows notice APIs
 (`Data_Xml_Dom`, `UI_Notifications`, `Win32_System_WinRT`) moved into the
 `windows` dependency's own feature list. Android still does not call the
 platform verifier (see SECURITY_OPERATIONS.md).
+
+## Added for screen-reader tests (28 October 2026)
+
+`@guidepup/virtual-screen-reader` **0.33.0** (MIT), a dev dependency only, pinned
+exactly. Published 20 September 2026, more than two weeks before it was added.
+It reads a rendered component as a screen reader would, in order, with roles,
+states, descriptions and polite/assertive live-region announcements, so the
+component tests in `src/native/screenReader.test.tsx` can check what is heard. It
+runs in the Vitest browser tests (headless Chromium) on the real DOM, and does
+not bring back jsdom.
+
+The lockfile gains three entries, all MIT:
+- `@guidepup/virtual-screen-reader` 0.33.0;
+- its own nested `dom-accessibility-api` 0.7.1 (published 27 November 2025); the
+  copies already in the tree (0.5.x for Testing Library, 0.6.3 under jest-dom)
+  are unchanged;
+- `html-aria` 0.5.3 (published 27 July 2025).
+
+Its other dependencies, `@testing-library/dom` and `@testing-library/user-event`,
+were already in the tree, at the same versions. Because `@testing-library/dom`
+is now a direct dependency of the new package, not only a peer, npm drops the
+`"peer": true` marker from it and its existing dependencies (nine entries after
+the 11 November merge with main, where `@babel/helper-validator-identifier` is
+already a normal entry); their versions and sources did not change.
+npm also re-sorted `package.json`'s dependency lists alphabetically on save,
+which moved the two `@fluent/*` entries; no version changed. Installed with
+`npm install --save-dev --save-exact` under Node 22.14 (the
+project's minimum for its native bundler binding), then checked with `npm ci`.
+Nothing ships in the app.

@@ -110,7 +110,7 @@ interface LargeText {
 }
 
 /**
- * The app's Text size (Settings > Preferences) zooms the whole webview, which a browser shows as page
+ * The app's App zoom (Settings > Preferences) zooms the whole webview, which a browser shows as page
  * zoom: at 200% the page lays out in half the CSS width and height, drawn with twice the pixels. Only
  * desktops have it: a phone scales text by its own settings (nativeZoom.ts), which the reader's default
  * text tests cover.
@@ -256,10 +256,32 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         sourceLabel: "Manual import — unverified",
       },
     ];
+    const fakeModel = {
+      name: "FAKE test model",
+      fileName: "FAKE-test-model.gguf",
+      sizeBytes: 2_500_000_000,
+      sha256: "test-only",
+      licence: "FAKE licence",
+      notices: [] as string[],
+      sourceUrl: "https://example.invalid/FAKE-test-model.gguf",
+      // No capacity in the catalogue (as from a native side that predates it): the
+      // reading line below can then only come from the ai_model_limits answer.
+    };
     Reflect.set(window, "__unexpectedIpc", []);
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
+        // The tray's waiting sentence is asked for at unlock (#230): none here.
+        if (command === "tray_waiting_status") return false;
+        // No background mode in these journeys.
+        if (command === "background_status")
+          return {
+            supported: false,
+            keepRunning: false,
+            startAtLogin: false,
+            trayReady: false,
+            pausedWhileLocked: false,
+          };
         if (command === "vault_notification_status")
           return {
             supported: false,
@@ -286,10 +308,37 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "runtime_info") return { platform: "windows" };
         // Preferences on a computer asks whether an AI model is installed (#72).
         if (command === "ai_model_status") return { state: "notInstalled" };
-        if (command === "ai_model_catalog") return [];
-        if (command === "ai_models") return [];
+        // One FAKE catalogue model, so the AI helper row is on screen and says how much
+        // it reads at a time (model limits): the app asks ai_model_limits for it, and the
+        // 200% text walk below looks at that line too.
+        if (command === "ai_model_catalog") return [fakeModel];
+        if (command === "ai_models")
+          return [
+            {
+              index: 0,
+              model: fakeModel,
+              state: "notDownloaded",
+              addedByYou: false,
+              inUse: false,
+            },
+          ];
+        if (command === "ai_model_limits")
+          return [
+            {
+              index: 0,
+              capacity: { contextTokens: 8192, documentTokens: 6510 },
+              confirmed: false,
+              trainedContext: null,
+              parameters: null,
+              fileBytes: fakeModel.sizeBytes,
+              neededBytes: 0,
+            },
+          ];
+        // No model in use to check (D218).
+        if (command === "ai_model_check") return "skipped";
         // No add or download running when the row opens (#275).
         if (command === "ai_model_add_active") return null;
+        if (command === "ai_model_speed") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };
@@ -297,6 +346,20 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
+        // Video (#359): nothing waiting to be finished, and no document
+        // starts as an MP4 does.
+        if (command === "vault_video_pending")
+          return { recordings: [], unreadable: 0 };
+        if (command === "vault_is_video") return false;
+        // The backup's size, with and without videos (#359): no video here.
+        if (command === "vault_backup_size")
+          return {
+            totalBytes: 4096,
+            withoutVideosBytes: 4096,
+            videoBytes: 0,
+            videoCount: 0,
+          };
+        if (command === "vault_left_out_records") return [];
         // A PDF's details ask whether it is locked with a password (#54).
         if (command === "vault_is_locked_pdf") return false;
         // These FAKE PDFs carry no patient identity hint.
@@ -328,9 +391,10 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
             imported: ["shared-record"],
             skippedDuplicates: [],
             notPdf: [],
+            unreadable: [],
           };
         }
-        // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
+        // The App zoom setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
         // Kept as well as thrown: a screen showing an error notice could still pass axe.
         (Reflect.get(window, "__unexpectedIpc") as string[]).push(command);
@@ -429,11 +493,16 @@ async function walkTheVault(large: LargeText) {
     page.getByRole("heading", { name: "AI helper", level: 1 }),
   ).toBeVisible();
   await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+  // The row says how much the model reads at a time: the answer to ai_model_limits (model limits).
+  // The page number comes wrapped in invisible direction marks (Fluent), so match it as one word.
+  await expect(
+    page.getByText(/Reads about \S+ pages? at a time/),
+  ).toBeVisible();
   await expectNoViolations(page, "AI helper, the model's row", large.cutOff);
   await expectOnlyMockedCommands(page);
 }
 
-test("has no automatically detectable WCAG violations with the app's text size at 200%", async ({
+test("has no automatically detectable WCAG violations with the app's zoom at 200%", async ({
   browser,
 }, testInfo) => {
   await withAppTextSize200(browser, testInfo, walkThePreview);
@@ -445,7 +514,7 @@ test("has no automatically detectable WCAG violations with the reader's default 
   await withReaderText200(page, walkThePreview);
 });
 
-test("has no automatically detectable WCAG violations on the vault screens with the app's text size at 200%", async ({
+test("has no automatically detectable WCAG violations on the vault screens with the app's zoom at 200%", async ({
   browser,
 }, testInfo) => {
   await withAppTextSize200(browser, testInfo, walkTheVault);

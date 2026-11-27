@@ -82,7 +82,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await screenReaderSmoke(page, "library");
 
   // Files arriving: an import's result.
-  await page.getByRole("button", { name: "Choose files to import" }).click();
+  await page.getByRole("button", { name: "New", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
@@ -161,8 +161,8 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
   await expectAnnounced(page, "6 minutes");
   await openSection(page, "Preferences");
   await screenReaderSmoke(page, "Preferences");
-  await page.getByRole("button", { name: "Larger text" }).click();
-  await expectAnnounced(page, "Text size 110%");
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expectAnnounced(page, "App zoom 110%");
   await expectOnlyFakedCommands(page);
 });
 

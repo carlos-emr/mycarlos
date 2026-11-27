@@ -59,11 +59,11 @@ pub(crate) fn prepare(
         return Err(VaultError::PdfMobileTooLarge);
     }
     let mut buffer = crate::LimitedBuffer::new(MAX_BYTES);
-    let exported = store.export(record_id, &mut buffer);
+    let displayed = store.read_for_view(record_id, &mut buffer);
     if buffer.over {
         return Err(VaultError::PdfMobileTooLarge);
     }
-    exported?;
+    displayed?;
     // Merely a type guard: the isolated WebKit view must validate the PDF itself.
     if !buffer.bytes.starts_with(b"%PDF-") {
         return Err(VaultError::NotPdf);

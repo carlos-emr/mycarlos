@@ -125,6 +125,11 @@ impl Gguf {
 /// A one-layer llama-architecture model, 64 wide, with a byte vocabulary: `"`, `a`, every
 /// other byte, then unknown, start and end. Weights are small pseudo-random numbers made here.
 fn tiny_model() -> Vec<u8> {
+    tiny_model_claiming(8_192)
+}
+
+/// The tiny model, its header claiming it was trained for `context` tokens.
+fn tiny_model_claiming(context: u32) -> Vec<u8> {
     const EMBED: u64 = 64;
     const FEED: u64 = 128;
     const HEADS: u32 = 4;
@@ -140,7 +145,7 @@ fn tiny_model() -> Vec<u8> {
     let mut gguf = Gguf::new();
     gguf.text("general.architecture", "llama");
     gguf.text("general.name", "FAKE tiny model");
-    gguf.u32("llama.context_length", 8_192);
+    gguf.u32("llama.context_length", context);
     gguf.u32("llama.embedding_length", EMBED as u32);
     gguf.u32("llama.block_count", 1);
     gguf.u32("llama.feed_forward_length", FEED as u32);
@@ -322,6 +327,52 @@ fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_gramm
 }
 
 #[test]
+fn the_helper_says_what_it_found_in_the_model_file_and_the_app_checks_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let (card, rejected) = runner
+        .card()
+        .expect("the helper describes the model it loaded in its hello");
+    // As the tiny model's own header says, read by llama.cpp in the helper.
+    assert_eq!(card["architecture"], "llama", "{card}");
+    assert_eq!(card["trainedContext"], 8_192, "{card}");
+    assert_eq!(card["contextMade"], 8_192, "{card}");
+    assert_eq!(card["layers"], 1, "{card}");
+    // 256 byte tokens, then unknown, start and end.
+    assert_eq!(card["vocabulary"], 259, "{card}");
+    assert_eq!(card["recurrent"], false, "{card}");
+    assert_eq!(card["hybrid"], false, "{card}");
+    let parameters = card["parameters"].as_u64().unwrap();
+    assert!(parameters > 0 && parameters < 1_000_000, "{card}");
+    // Far smaller than any real model: the app does not keep it, and its limits stay the
+    // catalogue's.
+    assert_eq!(rejected.as_deref(), Some("Parameters"));
+    runner.stop();
+}
+
+#[test]
+fn a_model_file_claiming_more_context_than_llama_cpp_can_say_still_runs_without_its_card() {
+    let dir = tempfile::tempdir().unwrap();
+    // 2^31: llama.cpp hands it back as a negative int32_t, where llama-cpp-2's n_ctx_train
+    // panics. The helper must still greet, and the app drop the card.
+    let model = model_file(dir.path(), &tiny_model_claiming(1 << 31));
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let (card, rejected) = runner
+        .card()
+        .expect("the helper describes the model it loaded in its hello");
+    assert_eq!(card["trainedContext"], 0, "{card}");
+    assert_eq!(card["contextMade"], 8_192, "{card}");
+    assert_eq!(rejected.as_deref(), Some("TrainedContext"));
+    // And the model answers as before.
+    runner.override_threads(Some(1));
+    runner
+        .summarize("en", &[(0, "FAKE: a blood test was done.")])
+        .unwrap();
+    runner.stop();
+}
+
+#[test]
 fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), b"GGUF FAKE but not a model");
@@ -402,6 +453,45 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
         asked.elapsed().as_secs_f64()
     );
     println!("  stats: {}", runner.last_stats());
+    runner.stop();
+}
+
+/// By hand, with a real model (`MYCARLOS_TEST_MODEL`, and `MYCARLOS_TEST_CHAT_FORMAT` as above):
+/// one start, no answer. Prints the card the helper sent (`context made`, the cache size, the
+/// weights) and the helper process's memory (`VmHWM`, the peak resident size; `VmRSS`; `VmPeak`),
+/// for checking the memory formula against a real run (#305). Run it under `model.lock`, pinned to
+/// as many CPUs as the helper has threads.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_loads_and_reports_its_card_and_peak_memory() {
+    let model = std::path::PathBuf::from(
+        std::env::var_os("MYCARLOS_TEST_MODEL").expect("MYCARLOS_TEST_MODEL"),
+    );
+    let format =
+        std::env::var("MYCARLOS_TEST_CHAT_FORMAT").unwrap_or_else(|_| "builtin".to_owned());
+    let started = std::time::Instant::now();
+    let runner = ModelRunner::start_with(executable(), &model, &format)
+        .unwrap_or_else(|error| panic!("{error}"));
+    println!("started in {:.1} s", started.elapsed().as_secs_f64());
+    println!("card: {}", runner.last_card());
+    let me = std::process::id();
+    for entry in std::fs::read_dir("/proc").unwrap().flatten() {
+        let Ok(status) = std::fs::read_to_string(entry.path().join("status")) else {
+            continue;
+        };
+        let field = |name: &str| {
+            status
+                .lines()
+                .find(|line| line.starts_with(name))
+                .map(|line| line.trim().to_owned())
+        };
+        if field("PPid:").is_some_and(|line| line.ends_with(&format!("\t{me}"))) {
+            println!("helper pid {}:", entry.file_name().to_string_lossy());
+            for name in ["Name:", "VmPeak:", "VmHWM:", "VmRSS:", "VmData:"] {
+                println!("  {}", field(name).unwrap_or_default());
+            }
+        }
+    }
     runner.stop();
 }
 

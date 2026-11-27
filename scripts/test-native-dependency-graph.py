@@ -21,6 +21,13 @@ class NativeGraphTests(unittest.TestCase):
              "manifest_path": str(GRAPH.ROOT / "src-tauri/ios-pdf/Cargo.toml")},
             {"id": "tauri", "name": "tauri",
              "source": "registry+https://github.com/rust-lang/crates.io-index"},
+            *({"id": name, "name": name, "source": None,
+               "manifest_path": str(GRAPH.ROOT / path)} for name, path in {
+                "wry": "src-tauri/vendor/wry/Cargo.toml",
+                "tauri-plugin-single-instance": "src-tauri/vendor/tauri-plugin-single-instance/Cargo.toml",
+                "tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml",
+                "tauri-plugin-android-trust": "src-tauri/android-trust/Cargo.toml",
+            }.items()),
         ]}
 
     def test_reviewed_first_party_path_is_accepted(self):

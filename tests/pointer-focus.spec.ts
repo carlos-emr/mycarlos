@@ -187,7 +187,7 @@ test("after typing in Search, pointer actions leave focus on the page (#90)", as
   await expect(search).toBeFocused();
   await page.keyboard.type("Letter");
 
-  const importer = page.getByRole("button", { name: "Choose files to import" });
+  const importer = page.getByRole("button", { name: "New", exact: true });
   await press(importer);
   await expect(
     page.getByText(

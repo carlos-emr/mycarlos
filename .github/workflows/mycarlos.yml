@@ -221,6 +221,58 @@ jobs:
           path: src-tauri/target/debug/bundle
           retention-days: 7
 
+  # The Rust coverage floor (#441). An hour or more (a fresh instrumented build of the whole library
+  # and llama.cpp, then the whole library test suite on one thread), so it runs only on the weekly
+  # schedule and by hand (workflow_dispatch), never on a pull request or on every push to main. It
+  # fails when the lines or the regions covered are below scripts/coverage-rust-floor.json, which is
+  # 80/80 by Ben's decision (24 Nov 2026) and is not raised after new tests unless he asks
+  # (COVERAGE-RUST.md).
+  rust-coverage:
+    name: Rust coverage floor (Linux, library tests)
+    needs: desktop
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Linux webview dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+              libclang-dev; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+      - name: Install the pinned Rust toolchain and its LLVM tools
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --component llvm-tools-preview
+      - name: Test the coverage floor gate
+        run: python3 -m unittest scripts/test_coverage_rust.py
+      - name: Measure Rust coverage and hold the floor
+        run: >-
+          python3 scripts/coverage-rust.py --jobs 2 --timeout-seconds 12600
+          --floor-file scripts/coverage-rust-floor.json
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-rust-coverage
+          path: |
+            coverage/rust/*/report/summary.txt
+            coverage/rust/*/report/coverage.json
+            coverage/rust/*/report/lcov.info
+            coverage/rust/*/run.json
+          if-no-files-found: warn
+          retention-days: 14
+
   windows:
     # This downloadable installer is unsigned synthetic-data evaluation evidence.
     # Publisher signing and patient-release approval remain separate gates.
@@ -523,6 +575,38 @@ jobs:
           --target aarch64-linux-android --target x86_64-linux-android
       - run: npm ci
       - run: npm run tauri android init -- --ci
+      # Maven Central refused downloads with 429 on busy hours (#440, #472, #477): keep what Gradle
+      # fetched, and let it wait and retry. The key needs the generated Gradle files, so these steps
+      # come after `tauri android init`. The cache holds ~/.gradle/caches/modules-2, which is also
+      # where the :buildSrc classpath is kept (kotlin-stdlib, kotlin-gradle-plugin and the plugin
+      # portal's artifacts): the place the 429 stopped those runs.
+      - name: Key for the Gradle cache
+        id: gradle-key
+        run: >-
+          echo "key=gradle-v1-${{ runner.os }}-${{ hashFiles('package-lock.json',
+          'src-tauri/gen/android/**/*.gradle', 'src-tauri/gen/android/**/*.gradle.kts',
+          'src-tauri/gen/android/**/gradle-wrapper.properties',
+          'src-tauri/gen/android/**/*.versions.toml') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore Gradle dependencies and wrapper
+        id: gradle-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}
+          restore-keys: |
+            ${{ steps.gradle-key.outputs.key }}-partial
+            gradle-v1-${{ runner.os }}-
+      - name: Make Gradle wait and retry a refused download
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "systemProp.org.gradle.internal.repository.max.tentatives=8"
+            echo "systemProp.org.gradle.internal.repository.initial.backoff=2000"
+            echo "systemProp.org.gradle.internal.http.connectionTimeout=60000"
+            echo "systemProp.org.gradle.internal.http.socketTimeout=120000"
+          } >> ~/.gradle/gradle.properties
       - name: Disable Android cloud and device-transfer backup
         run: npm run android:secure
       - name: Verify Android backup and device transfer remain disabled
@@ -532,6 +616,26 @@ jobs:
           grep -q '<device-transfer>' src-tauri/gen/android/app/src/main/res/xml/mycarlos_data_extraction_rules.xml
       # One APK for phones (arm64) and for emulators on a PC (x86_64).
       - run: npm run tauri android build -- --debug --apk --target aarch64 x86_64 --ci
+      - name: Save Gradle dependencies (main only, after a good build)
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}
+      # A run that failed part way (a 429 in the middle of the downloads) still keeps what it got,
+      # under a key of its own, so that the next run starts from it; the complete cache is saved
+      # by the next good run, because this key is not the exact one the restore step looks for.
+      - name: Save what Gradle fetched so far (main only, after a failed build)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}-partial
       - name: Compile Android mobile development proxy
         run: |
           export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"

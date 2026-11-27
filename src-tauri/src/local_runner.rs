@@ -391,12 +391,15 @@ pub(crate) enum RunnerStatus {
     /// Answering a request.
     Working { model: ModelInfo },
     /// It could not be started, or stopped answering; the next use starts it
-    /// again.
-    Failed { reason: String },
+    /// again. `reason` is a fixed code (`RunnerError::code`), never the words the process or the
+    /// model used (they can hold a path or a piece of the document), so that nothing that is
+    /// serialised carries them.
+    Failed { reason: &'static str },
 }
 
 /// Why a request or a start gave nothing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum RunnerError {
     /// The device budget refused the start.
     Budget {
@@ -419,13 +422,34 @@ pub(crate) enum RunnerError {
     /// shown on their own and never beside the document's text.
     Model(String),
 }
+redact_debug!(RunnerError);
+
+impl RunnerError {
+    /// A fixed name for the kind of failure, with none of the free text some kinds carry (a start's
+    /// operating-system error can hold a path; the model's words can echo the document).
+    pub(crate) fn code(&self) -> &'static str {
+        match self {
+            Self::Budget { .. } => "budget",
+            Self::Start(_) => "start",
+            Self::NotRunning => "not_running",
+            Self::Cancelled => "cancelled",
+            Self::Timeout => "timeout",
+            Self::Protocol(_) => "protocol",
+            Self::SummaryTooLarge => "summary_too_large",
+            Self::Model(_) => "model",
+        }
+    }
+}
 
 /// One page of a document's text, by its index from 0.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,
 }
+redact_debug!(Page);
 
 /// A summary request: the pages in order, as the reader read them.
 #[derive(Debug, Clone, Serialize)]
@@ -438,11 +462,13 @@ pub(crate) struct SummaryRequest {
 
 /// One sentence of a summary: the words, and the words of the document it
 /// rests on, verbatim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Sentence {
     pub(crate) text: String,
     pub(crate) quote: String,
 }
+redact_debug!(Sentence);
 
 /// The stages of a summary as the reader is told them: the helper reads the prompt, then
 /// writes the sentences; then the app checks the answer (the runner's own stage).
@@ -571,12 +597,28 @@ pub(crate) struct Summary {
     /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) fallbacks: Vec<crate::safety::Fallback>,
+    /// The unsourced absence-shaped sentences left out before the post-steps (`safety::
+    /// is_absence_sentence`), for measuring: `index` is the place the model wrote it, `before` its
+    /// words, `after` empty; never shown.
+    #[allow(dead_code)]
+    pub(crate) dropped: Vec<crate::safety::Fallback>,
     /// How the helper made this answer, when it said (counts and times only): the measured
     /// speed the next estimate starts from (`summary_progress`).
     pub(crate) stats: Option<crate::model_helper::Stats>,
 }
 
 // --- Cancellation -------------------------------------------------------
+
+/// What a load check's stop did ([`Runner::stop_if_current`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CheckStop {
+    /// No model process is left from the check.
+    Stopped,
+    /// A newer claim (an answer asked meanwhile, a lock) has the runner: left to it.
+    Claimed,
+    /// Something held the process for a moment: nothing was done.
+    Held,
+}
 
 /// A request's claim on its runner: current until the vault locks or the
 /// reader asks that runner for something else.
@@ -627,6 +669,12 @@ struct Sidecar {
     generation_threads: Option<u32>,
     /// The model file while the process may still read it (see `RunnerConfig::model_file`).
     model_file: Option<Arc<std::fs::File>>,
+    /// What the helper said it found in the model file (model limits), and why it was not
+    /// kept, when it was not.
+    card: Option<(
+        crate::model_limits::ModelCard,
+        Option<crate::model_limits::CardRejected>,
+    )>,
 }
 
 /// The model process: started as it is, or through the helpers' launcher.
@@ -694,7 +742,24 @@ pub(crate) struct Runner {
     answer_watch: Mutex<Option<(Ticket, AnswerWatch)>>,
     /// Threads to write answers on whatever the load (measuring by hand: `engine_testing`).
     threads_override: Mutex<Option<u32>>,
+    /// The checked cards of the models started in this session, by their SHA-256 (model
+    /// limits): kept after the helper ends, for the settings.
+    cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
+    /// Told each checked card as it is kept, to save it beside the models (#305 PR 2). A save
+    /// that fails changes nothing: the card then lives for this session only.
+    card_saver: Mutex<Option<CardSaver>>,
+    /// The last card a helper sent, kept or not, and why not, its architecture cut to a short
+    /// name: for support and the engine test, never for the settings.
+    last_card: Mutex<
+        Option<(
+            crate::model_limits::ModelCard,
+            Option<crate::model_limits::CardRejected>,
+        )>,
+    >,
 }
+
+/// Saves a checked card (the model's SHA-256 and the card).
+pub(crate) type CardSaver = Box<dyn Fn(&str, &crate::model_limits::ModelCard) + Send + Sync>;
 
 /// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
 /// the answer, and the renderer's (D19).
@@ -704,6 +769,10 @@ pub(crate) type AnswerWatch = Box<dyn FnOnce(Duration) + Send>;
 struct Hello {
     hello: String,
     model: ModelInfo,
+    /// What the helper found in the file it loaded (model limits). Absent from a helper that
+    /// loaded no model (the test stub); kept only when `ModelCard::checked` passes.
+    #[serde(default)]
+    card: Option<crate::model_limits::ModelCard>,
 }
 
 #[derive(Deserialize)]
@@ -729,6 +798,8 @@ struct Answer {
 }
 
 const HELLO: &str = crate::model_helper::CONTRACT;
+/// The most model cards a runner keeps (one per model started in a session).
+const MAX_CARDS: usize = 16;
 /// The pages' separator in a document's joined text (`documentText.ts`'s PAGE_SEPARATOR).
 pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
 /// How often a waiting request looks at its ticket.
@@ -744,7 +815,59 @@ impl Runner {
             last_stats: Mutex::new(None),
             answer_watch: Mutex::new(None),
             threads_override: Mutex::new(None),
+            cards: Mutex::new(Vec::new()),
+            card_saver: Mutex::new(None),
+            last_card: Mutex::new(None),
         }
+    }
+
+    /// The last card a helper sent, and why it was not kept, when it was not.
+    pub(crate) fn last_card(
+        &self,
+    ) -> Option<(
+        crate::model_limits::ModelCard,
+        Option<crate::model_limits::CardRejected>,
+    )> {
+        self.last_card
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Names who saves each card the helper makes (the models store).
+    pub(crate) fn set_card_saver(&self, saver: CardSaver) {
+        *self.card_saver.lock().unwrap_or_else(|e| e.into_inner()) = Some(saver);
+    }
+
+    /// The checked card of the model with this SHA-256, when the helper has run it in this
+    /// session (model limits). Readers go to the models store (`Store::stored_card`), which this
+    /// feeds; kept for the runner's own tests.
+    #[cfg(test)]
+    pub(crate) fn card_for(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
+        let cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
+        cards
+            .iter()
+            .find(|(hash, _)| hash == sha256)
+            .map(|(_, card)| card.clone())
+    }
+
+    /// Keeps a started model's card, in place of an older one for the same file. At most
+    /// [`MAX_CARDS`] are kept: the oldest goes.
+    fn remember_card(&self, sha256: &str, card: crate::model_limits::ModelCard) {
+        if let Some(save) = self
+            .card_saver
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            save(sha256, &card);
+        }
+        let mut cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
+        cards.retain(|(hash, _)| hash != sha256);
+        if cards.len() >= MAX_CARDS {
+            cards.remove(0);
+        }
+        cards.push((sha256.to_owned(), card));
     }
 
     /// Tells `watch` the time limit of the answer asked under `ticket`, as it is asked; never,
@@ -800,6 +923,16 @@ impl Runner {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// The claim in force now, without ending any (as [`Self::start_with`] uses): a load check
+    /// starts under it, so it never cancels an answer, and a newer claim (an answer asked
+    /// meanwhile, a lock) ends the check instead.
+    pub(crate) fn current_ticket(&self) -> Ticket {
+        Ticket {
+            runner: self as *const Self as usize,
+            generation: self.generation.load(Ordering::SeqCst),
+        }
+    }
+
     /// Starts the model process if it is not running, with the config it was made with.
     #[allow(dead_code)] // The tests' way in; the app uses `start_with`.
     pub(crate) fn start(&self, probe: &dyn MemoryProbe) -> Result<ModelInfo, RunnerError> {
@@ -818,14 +951,7 @@ impl Runner {
         probe: &dyn MemoryProbe,
         prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
     ) -> Result<ModelInfo, RunnerError> {
-        self.start_for(
-            Ticket {
-                runner: self as *const Self as usize,
-                generation: self.generation.load(Ordering::SeqCst),
-            },
-            probe,
-            prepare,
-        )
+        self.start_for(self.current_ticket(), probe, prepare)
     }
 
     /// An answer's ticket is reserved at admission, never when its worker resumes.
@@ -852,17 +978,17 @@ impl Runner {
             Ok(config) => config,
             Err(error) => {
                 self.set_status(RunnerStatus::Failed {
-                    reason: format!("{error:?}"),
+                    reason: error.code(),
                 });
                 return Err(error);
             }
         };
         if !config.command.is_absolute() {
-            let reason = "command must be an absolute path".to_owned();
+            let error = RunnerError::Start("command must be an absolute path".to_owned());
             self.set_status(RunnerStatus::Failed {
-                reason: reason.clone(),
+                reason: error.code(),
             });
-            return Err(RunnerError::Start(reason));
+            return Err(error);
         }
         if let Budget::Refused {
             needed_bytes,
@@ -900,6 +1026,21 @@ impl Runner {
             }
             Ok(sidecar) => {
                 let model = sidecar.model.clone();
+                if let Some((card, rejected)) = sidecar.card.clone() {
+                    if rejected.is_none() {
+                        self.remember_card(&model.sha256, card.clone());
+                    }
+                    // Its numbers as sent, its architecture cut as a checked card's is: no
+                    // more of the helper's own text is kept than a short name.
+                    let architecture = crate::model_limits::clean_architecture(&card.architecture);
+                    *self.last_card.lock().unwrap_or_else(|e| e.into_inner()) = Some((
+                        crate::model_limits::ModelCard {
+                            architecture,
+                            ..card
+                        },
+                        rejected,
+                    ));
+                }
                 *slot = Some(sidecar);
                 self.set_status(RunnerStatus::Ready {
                     model: model.clone(),
@@ -908,10 +1049,7 @@ impl Runner {
             }
             Err(error) => {
                 self.set_status(RunnerStatus::Failed {
-                    reason: match &error {
-                        RunnerError::Start(reason) => reason.clone(),
-                        other => format!("{other:?}"),
-                    },
+                    reason: error.code(),
                 });
                 Err(error)
             }
@@ -931,6 +1069,36 @@ impl Runner {
                 other => other,
             },
         });
+    }
+
+    /// Stops the model process, as [`Self::stop`] does, only while `ticket` is still the claim
+    /// in force: after a load check, so that an answer asked meanwhile keeps the model it may
+    /// already be using. `release` is called as soon as that is decided, before the process
+    /// is waited for: the caller's own locks go first, so nothing waits for a model to exit
+    /// while holding them. The process lock is kept until the process has ended, so the next
+    /// start finds its memory free. Never waits for that lock: `Held` when something has it.
+    pub(crate) fn stop_if_current(&self, ticket: Ticket, release: impl FnOnce()) -> CheckStop {
+        let mut slot = match self.sidecar.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                release();
+                return CheckStop::Held;
+            }
+        };
+        if !self.is_current(ticket) {
+            release();
+            return CheckStop::Claimed;
+        }
+        let taken = slot.take();
+        if let Some(running) = &taken {
+            self.set_status(RunnerStatus::Installed {
+                model: running.model.clone(),
+            });
+        }
+        release();
+        drop(taken);
+        CheckStop::Stopped
     }
 
     /// How the last answer was made, when the model said (counts and times only).
@@ -956,9 +1124,28 @@ impl Runner {
         }
     }
 
-    /// Whether a model process is running now.
-    // Used by the tests and the stub's tests only.
-    #[allow(dead_code)]
+    /// A load check's running probe: never waits for the process, and says nothing if a
+    /// newer claim owns it. Check the claim again under the lock and after the process probe.
+    pub(crate) fn is_running_for(&self, ticket: Ticket) -> Option<bool> {
+        if !self.is_current(ticket) {
+            return None;
+        }
+        let mut slot = match self.sidecar.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        if !self.is_current(ticket) {
+            return None;
+        }
+        let running = slot
+            .as_mut()
+            .is_some_and(|running| running.process.running());
+        self.is_current(ticket).then_some(running)
+    }
+
+    /// Whether a model process is running now (ordinary callers may wait for it).
+    #[allow(dead_code)] // Tests and optional engine-testing callers.
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
@@ -1044,18 +1231,47 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
-        let mut sentences: Vec<Sentence> = sentences
-            .into_iter()
-            .take(request.max_sentences)
-            .enumerate()
-            .map(|(index, mut sentence)| {
-                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
-                }
-                sentence
+        let incoming: Vec<Sentence> = sentences.into_iter().take(request.max_sentences).collect();
+        let found: Vec<bool> = incoming
+            .iter()
+            .map(|sentence| {
+                quote_in(&text, &sentence.quote) && !quote_is_heading(&text, &sentence.quote)
             })
             .collect();
+        // A sentence that only says what the document does NOT say ("The document does not give
+        // instructions for taking medicine.") has no true quote, and the model was told to leave
+        // out a sentence it has no quote for. When its quote is not in the pages read either, it
+        // is dropped here (English summaries only, never the last one left, and never a sentence
+        // whose quote IS found): it would otherwise reach the screen as "No source found", and
+        // may be wrong (the letter may list the very thing). The model's answer is not touched.
+        let absent: Vec<bool> = incoming
+            .iter()
+            .zip(&found)
+            .map(|(sentence, &found)| {
+                request.lang == "en" && !found && crate::safety::is_absence_sentence(&sentence.text)
+            })
+            .collect();
+        let drop_absent = absent.iter().any(|&a| a) && absent.iter().any(|&a| !a);
+        let mut dropped = Vec::new();
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
+        let mut sentences: Vec<Sentence> = Vec::new();
+        for (index, ((mut sentence, found), absent)) in
+            incoming.into_iter().zip(found).zip(absent).enumerate()
+        {
+            if drop_absent && absent {
+                dropped.push(crate::safety::Fallback {
+                    check: "absence",
+                    index,
+                    before: Some(sentence.text),
+                    after: String::new(),
+                });
+                continue;
+            }
+            if !found {
+                unlocated_quotes.record(sentences.len(), std::mem::take(&mut sentence.quote));
+            }
+            sentences.push(sentence);
+        }
         // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
         // as the patient's own says who the line is for (`addressee`). English summaries only,
         // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
@@ -1201,6 +1417,7 @@ impl Runner {
             rewrites,
             explained,
             fallbacks,
+            dropped,
             stats,
         })
     }
@@ -1364,7 +1581,7 @@ impl Runner {
             Err(error) => {
                 *slot = None;
                 self.set_status(RunnerStatus::Failed {
-                    reason: format!("{error:?}"),
+                    reason: error.code(),
                 });
             }
         }
@@ -1382,6 +1599,8 @@ impl Drop for Runner {
 /// model when there is one, looking every `CANCEL_POLL` whether it is still `wanted`.
 fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, RunnerError> {
     let mut command = Command::new(&config.command);
+    // No console window on Windows (a sandboxed start goes through the confined launcher, which has its own flag).
+    crate::process_flags::hide_console(&mut command);
     command.args(&config.args);
     let (process, input, output) = start_process(command, config)?;
     let (sender, lines) = mpsc::channel();
@@ -1398,6 +1617,7 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
         answer_limit: config.answer_limit,
         generation_threads: config.generation_threads,
         model_file: config.model_file.clone(),
+        card: None,
     };
     let deadline = Instant::now() + config.start_timeout;
     let hello = loop {
@@ -1446,6 +1666,15 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
         return Err(RunnerError::Start("not the verified model".to_owned()));
     }
     sidecar.model = hello.model;
+    // Kept only in range, and only for a context no larger than the one asked for: the rest is
+    // dropped, and the catalogue's limits stay (model limits, slice 1: nothing is refused yet).
+    sidecar.card =
+        hello.card.map(
+            |card| match card.clone().checked(crate::model_helper::CONTEXT_TOKENS) {
+                Ok(card) => (card, None),
+                Err(rejected) => (card, Some(rejected)),
+            },
+        );
     // The process holds its own copy of the descriptor now, closed once it has loaded.
     #[cfg(unix)]
     {
@@ -1752,6 +1981,89 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
 mod tests {
     use super::*;
 
+    /// A card as a Qwen3.5 4B-like model's helper sends it (model limits). FAKE.
+    fn card_json(context_made: u32) -> serde_json::Value {
+        serde_json::json!({
+            "architecture": "qwen35",
+            "trainedContext": 262_144,
+            "contextMade": context_made,
+            "parameters": 4_330_000_000u64,
+            "layers": 32,
+            "vocabulary": 248_320,
+            "recurrent": false,
+            "hybrid": true
+        })
+    }
+
+    #[test]
+    fn a_hello_may_carry_a_card_and_it_is_kept_only_when_it_checks() {
+        let base = serde_json::json!({
+            "hello": HELLO,
+            "model": { "name": "FAKE model", "sha256": "ab".repeat(32) }
+        });
+        // The stub (no model loaded) sends none.
+        let hello: Hello = serde_json::from_value(base.clone()).unwrap();
+        assert!(hello.card.is_none());
+        let with = |card: serde_json::Value| {
+            let mut line = base.clone();
+            line["card"] = card;
+            serde_json::from_value::<Hello>(line).unwrap().card
+        };
+        let kept = with(card_json(crate::model_helper::CONTEXT_TOKENS))
+            .unwrap()
+            .checked(crate::model_helper::CONTEXT_TOKENS);
+        assert!(kept.is_ok());
+        // A context larger than the one asked for is never trusted.
+        let more = with(card_json(crate::model_helper::CONTEXT_TOKENS + 1))
+            .unwrap()
+            .checked(crate::model_helper::CONTEXT_TOKENS);
+        assert_eq!(more, Err(crate::model_limits::CardRejected::ContextMade));
+        // A card that is not one is no hello at all.
+        let mut odd = base.clone();
+        odd["card"] = serde_json::json!({ "architecture": "qwen35" });
+        assert!(serde_json::from_value::<Hello>(odd).is_err());
+        // A null card reads as none.
+        assert!(with(serde_json::Value::Null).is_none());
+    }
+
+    #[test]
+    fn a_runner_keeps_one_card_per_model_and_the_newest_cards() {
+        let runner = Runner::new(idle_config());
+        let card: crate::model_limits::ModelCard =
+            serde_json::from_value(card_json(8_192)).unwrap();
+        assert!(runner.card_for("a").is_none());
+        runner.remember_card("a", card.clone());
+        let smaller = crate::model_limits::ModelCard {
+            context_made: 4_096,
+            ..card.clone()
+        };
+        runner.remember_card("a", smaller.clone());
+        assert_eq!(runner.card_for("a"), Some(smaller));
+        for index in 0..MAX_CARDS {
+            runner.remember_card(&format!("other {index}"), card.clone());
+        }
+        // The oldest went to make room.
+        assert!(runner.card_for("a").is_none());
+        assert_eq!(runner.card_for("other 0"), Some(card));
+    }
+
+    #[test]
+    fn each_card_a_runner_keeps_is_handed_to_the_saver_and_a_runner_without_one_still_works() {
+        let runner = Runner::new(idle_config());
+        let card: crate::model_limits::ModelCard =
+            serde_json::from_value(card_json(8_192)).unwrap();
+        // No saver: kept for the session, as before.
+        runner.remember_card("a", card.clone());
+        assert_eq!(runner.card_for("a"), Some(card.clone()));
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&saved);
+        runner.set_card_saver(Box::new(move |sha256, card| {
+            sink.lock().unwrap().push((sha256.to_owned(), card.clone()));
+        }));
+        runner.remember_card("b", card.clone());
+        assert_eq!(saved.lock().unwrap().as_slice(), [("b".to_owned(), card)]);
+    }
+
     #[test]
     fn a_summary_is_sized_as_the_call_sized_it_inline_before_the_extraction() {
         // The words around the pages (750), then three bytes a token of the pages, at most the
@@ -1773,6 +2085,30 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn a_load_check_probe_never_waits_for_a_held_runner_or_uses_a_stale_claim() {
+        let runner = Runner::new(idle_config());
+        let claim = runner.current_ticket();
+        let held = runner.sidecar.lock().unwrap();
+        std::thread::scope(|scope| {
+            let (send, receive) = std::sync::mpsc::channel();
+            let probe = &runner;
+            let worker = scope.spawn(move || send.send(probe.is_running_for(claim)).unwrap());
+            let result = receive.recv_timeout(Duration::from_secs(1));
+            // Release before asserting/joining, so a blocking-probe regression fails rather
+            // than leaving the test waiting forever for its worker.
+            drop(held);
+            worker.join().unwrap();
+            assert_eq!(result.unwrap(), None);
+        });
+        let held = runner.sidecar.lock().unwrap();
+        let answer = runner.ticket();
+        assert_eq!(runner.is_running_for(claim), None);
+        drop(held);
+        assert_eq!(runner.is_running_for(claim), None);
+        assert_eq!(runner.is_running_for(answer), Some(false));
     }
 
     struct Fixed(Option<u64>);
@@ -2183,6 +2519,69 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_status_names_the_kind_of_failure_and_carries_none_of_its_words() {
+        let words =
+            "FAKE /home/jamie/Documents/Lab result for Jamie Patient.pdf: permission denied";
+        for (error, code) in [
+            (RunnerError::Start(words.to_owned()), "start"),
+            (RunnerError::Protocol(words.to_owned()), "protocol"),
+            (RunnerError::Model(words.to_owned()), "model"),
+            (
+                RunnerError::Budget {
+                    needed_bytes: 1,
+                    available_bytes: None,
+                },
+                "budget",
+            ),
+            (RunnerError::NotRunning, "not_running"),
+            (RunnerError::Cancelled, "cancelled"),
+            (RunnerError::Timeout, "timeout"),
+            (RunnerError::SummaryTooLarge, "summary_too_large"),
+        ] {
+            assert_eq!(error.code(), code);
+            let said = serde_json::to_string(&RunnerStatus::Failed {
+                reason: error.code(),
+            })
+            .unwrap();
+            assert_eq!(said, format!(r#"{{"state":"failed","reason":"{code}"}}"#));
+        }
+        // Through the runner itself: a start that fails for a reason with words in it.
+        for failing in [
+            RunnerError::Start(words.to_owned()),
+            RunnerError::Protocol(words.to_owned()),
+            RunnerError::Model(words.to_owned()),
+        ] {
+            let runner = Runner::new(idle_config());
+            let failing_for = failing.clone();
+            assert_eq!(
+                runner.start_with(&Fixed(Some(8 * GIB)), move || Err(failing_for)),
+                Err(failing.clone())
+            );
+            let said = serde_json::to_string(&runner.status()).unwrap();
+            assert!(said.contains(r#""state":"failed""#), "{said}");
+            for leaked in [
+                "FAKE",
+                "jamie",
+                "Jamie",
+                "/home",
+                "Lab result",
+                "permission",
+            ] {
+                assert!(!said.contains(leaked), "{leaked} in {said}");
+            }
+        }
+        // And a process that cannot be started at all (the operating system's own words).
+        let runner = Runner::new(idle_config());
+        let error = runner.start(&Fixed(Some(8 * GIB))).unwrap_err();
+        let said = serde_json::to_string(&runner.status()).unwrap();
+        assert_eq!(
+            said,
+            format!(r#"{{"state":"failed","reason":"{}"}}"#, error.code())
+        );
+        assert!(!said.contains("nonexistent") && !said.contains("FAKE-model"));
+    }
+
+    #[test]
     fn a_lock_with_no_runner_installed_has_nothing_to_stop() {
         // Other tests may install one meanwhile; this only proves the call
         // is safe either way.
@@ -2243,6 +2642,41 @@ mod tests {
                 ],
                 max_sentences: 5,
             }
+        }
+
+        #[test]
+        fn a_load_check_stops_the_model_only_while_its_claim_stands() {
+            let runner = Runner::new(config(&[], GIB));
+            let check = runner.current_ticket();
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            // An answer asked since has a newer claim: the model stays for it.
+            let answer = runner.ticket();
+            assert_eq!(runner.stop_if_current(check, || ()), CheckStop::Claimed);
+            assert!(runner.is_running());
+            assert!(runner.is_current(answer));
+            // Taking the claim in force ends none; under it, the model stops.
+            let check = runner.current_ticket();
+            assert!(runner.is_current(answer));
+            // Held for a moment by something else: nothing is done, and the caller's locks
+            // are released all the same.
+            {
+                let _held = runner.sidecar.lock().unwrap();
+                let mut released = false;
+                assert_eq!(
+                    runner.stop_if_current(check, || released = true),
+                    CheckStop::Held
+                );
+                assert!(released);
+            }
+            assert!(runner.is_running());
+            let mut released = false;
+            assert_eq!(
+                runner.stop_if_current(check, || released = true),
+                CheckStop::Stopped
+            );
+            assert!(released);
+            assert!(!runner.is_running());
+            assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
         }
 
         #[test]
@@ -2975,6 +3409,84 @@ mod tests {
                 .iter()
                 .all(|sentence| sentence.quote.is_empty() && !sentence.text.is_empty()));
             assert!(runner.is_running());
+        }
+
+        #[test]
+        fn given_an_absence_sentence_with_a_quote_not_in_the_pages_when_summarized_then_it_is_dropped(
+        ) {
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            let before = plain.summarize(plain.ticket(), &request()).unwrap();
+
+            let runner = Runner::new(config(&["--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+
+            // The same sentences as without the absence sentence, in the same order.
+            let words = |s: &Summary| {
+                s.sentences
+                    .iter()
+                    .map(|x| x.text.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(words(&summary), words(&before));
+            assert_eq!(summary.unlocated, 0);
+            assert_eq!(summary.dropped.len(), 1);
+            let dropped = &summary.dropped[0];
+            assert_eq!(dropped.check, "absence");
+            assert_eq!(dropped.index, before.sentences.len());
+            assert_eq!(
+                dropped.before.as_deref(),
+                Some("The document does not give instructions for taking medicine.")
+            );
+            assert_eq!(dropped.after, "");
+            // The step runs after the model: its own figures (the answer hash among them) come
+            // back as the helper reported them.
+            assert_eq!(summary.stats, before.stats);
+        }
+
+        #[test]
+        fn given_unfound_quotes_and_an_absence_sentence_when_summarized_then_only_the_absence_sentence_goes(
+        ) {
+            let runner = Runner::new(config(&["--unlocated", "--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(summary.dropped.len(), 1);
+            assert_eq!(summary.unlocated, 3);
+            assert_eq!(summary.sentences.len(), 3);
+            assert!(summary.sentences.iter().all(|s| s.quote.is_empty()));
+            assert!(summary
+                .sentences
+                .iter()
+                .all(|s| !s.text.contains("does not give instructions")));
+        }
+
+        #[test]
+        fn given_a_negative_finding_with_an_unfound_quote_when_summarized_then_it_is_kept() {
+            // "does not show any sign of ..." is a real result the model misquoted, not an absence of saying.
+            let runner = Runner::new(config(&["--negative-finding"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert_eq!(summary.unlocated, 1);
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not show any sign") && s.quote.is_empty()));
+        }
+
+        #[test]
+        fn given_an_absence_sentence_in_another_language_when_summarized_then_it_is_kept() {
+            let runner = Runner::new(config(&["--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut french = request();
+            french.lang = "fr".to_owned();
+            let summary = runner.summarize(runner.ticket(), &french).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not give instructions") && s.quote.is_empty()));
         }
 
         #[test]

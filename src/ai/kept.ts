@@ -97,14 +97,25 @@ export function keptSources(
     : undefined;
 }
 
+/** The kept answer for a summary in `lang`, if the vault has one, and whether
+ * it came in a handover file rather than from this computer's model (#360): the
+ * reader says "from an imported file". */
+export async function keptSummaryInfo(
+  kept: KeptAnswers,
+  lang: string,
+): Promise<{ summary: SummaryResult; imported: boolean } | null> {
+  const found = (await kept.list()).find(
+    (info) => info.tool === "summary" && info.lang === lang,
+  );
+  if (!found) return null;
+  const summary = parseKeptSummary(await kept.read(found.id));
+  return summary ? { summary, imported: found.imported === true } : null;
+}
+
 /** The kept answer for a summary in `lang`, if the vault has one. */
 export async function keptSummary(
   kept: KeptAnswers,
   lang: string,
 ): Promise<SummaryResult | null> {
-  const found = (await kept.list()).find(
-    (info) => info.tool === "summary" && info.lang === lang,
-  );
-  if (!found) return null;
-  return parseKeptSummary(await kept.read(found.id));
+  return (await keptSummaryInfo(kept, lang))?.summary ?? null;
 }

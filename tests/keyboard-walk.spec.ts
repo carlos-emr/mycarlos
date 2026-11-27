@@ -36,11 +36,11 @@ test("first setup works from the keyboard alone", async ({ page }) => {
   ).toBeVisible();
   await walk(page, "comfort settings");
 
-  const size = page.getByRole("textbox", { name: "Text size in percent" });
-  await page.getByRole("button", { name: "Larger text" }).focus();
+  const size = page.getByRole("textbox", { name: "App zoom in percent" });
+  await page.getByRole("button", { name: "Zoom in" }).focus();
   await page.keyboard.press("Enter");
   await expect(size).not.toHaveValue("100");
-  await expectAnnounced(page, `Text size ${await size.inputValue()}%`);
+  await expectAnnounced(page, `App zoom ${await size.inputValue()}%`);
 
   await page.getByRole("button", { name: "Longer delay" }).focus();
   await page.keyboard.press("Space");
@@ -132,6 +132,9 @@ test("a vault without a recovery key offers one, and Escape puts it off", async 
 test("the library works from the keyboard alone: open, move and search", async ({
   page,
 }) => {
+  // The longest journey here: with the screen-reader pass's checks at each
+  // stop (#149) it runs close to the default 90 s on a busy machine.
+  test.slow();
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
@@ -207,9 +210,12 @@ test("the library works from the keyboard alone: open, move and search", async (
     })
     .focus();
   await page.keyboard.press("Enter");
+  // Opening a place moves focus to its heading (#121), a moment after the
+  // place is drawn: wait for that before the next key, or the key lands on
+  // the heading instead of the control the test focused.
   await expect(
     page.getByRole("heading", { name: "FAKE Results", level: 1 }),
-  ).toBeVisible();
+  ).toBeFocused();
   await page
     .getByRole("button", {
       name: translate("en", "library.select", { name: "FAKE Bloodwork.pdf" }),
@@ -242,7 +248,7 @@ test("the library works from the keyboard alone: open, move and search", async (
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "My records", level: 1 }),
-  ).toBeVisible();
+  ).toBeFocused();
   await page.getByText("Move a folder with the keyboard").focus();
   await page.keyboard.press("Enter");
   await walk(page, "library, folder move shown");
@@ -292,14 +298,14 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
   await after("unlocking", heading);
 
-  await page.getByRole("button", { name: "Choose files to import" }).focus();
+  await page.getByRole("button", { name: "New", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
   await after(
     "an import",
-    page.getByRole("button", { name: "Choose files to import" }),
+    page.getByRole("button", { name: "New", exact: true }),
   );
 
   await page
@@ -430,6 +436,14 @@ test("the keyboard walk handles native date parts and still detects a trapped da
     <label>Birth date <input type="date"></label>
     <button>After</button>
   `);
+  // A page set up from text has drawn nothing yet: on a busy machine the first screenshot of the
+  // walk was refused ("Unable to capture screenshot"). Wait for two painted frames first.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   expect((await tabRound(page)).problems).toEqual([]);
   await page.locator('input[type="date"]').evaluate((input) => {
     input.addEventListener("keydown", (event) => {

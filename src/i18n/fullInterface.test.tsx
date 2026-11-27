@@ -120,10 +120,13 @@ describe("the installed interface in the selected language", () => {
       target: { value: "FAKE {name} Shared with me" },
     });
     changeLanguage("fr");
-    // Named by its words, with the state shown before them (#121).
-    expect(
-      screen.getByRole("button", { name: "Verrouiller maintenant" }),
-    ).toHaveTextContent("Déverrouillé · Verrouiller maintenant");
+    // Named by its words, which are all it shows; the state is shown before
+    // it in the pill, as text (#121, #149).
+    const lock = screen.getByRole("button", { name: "Verrouiller maintenant" });
+    expect(lock).toHaveTextContent(/^Verrouiller maintenant$/);
+    expect(lock.closest(".native-lock-pill")).toHaveTextContent(
+      "Déverrouillé · Verrouiller maintenant",
+    );
     expect(screen.queryByRole("button", { name: /^Masqués/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Sécurité" })).toBeVisible();
     expect(
@@ -139,9 +142,11 @@ describe("the installed interface in the selected language", () => {
     );
     expect(draft).toHaveValue("FAKE {name} Shared with me");
     changeLanguage("pl");
-    expect(
-      screen.getByRole("button", { name: "Zablokuj teraz" }),
-    ).toHaveTextContent("Odblokowany · Zablokuj teraz");
+    const lockPl = screen.getByRole("button", { name: "Zablokuj teraz" });
+    expect(lockPl).toHaveTextContent(/^Zablokuj teraz$/);
+    expect(lockPl.closest(".native-lock-pill")).toHaveTextContent(
+      "Odblokowany · Zablokuj teraz",
+    );
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(draft).toHaveValue("FAKE {name} Shared with me");
   });
@@ -151,7 +156,10 @@ describe("the installed interface in the selected language", () => {
     const native = bridge();
     render(<VaultApp bridge={native} />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: "New",
+        description: "Choose files to import",
+      }),
     );
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
@@ -169,6 +177,31 @@ describe("the installed interface in the selected language", () => {
     expect(native.pickImportFiles).toHaveBeenCalledTimes(1);
   });
 
+  it("names the import button by the word it shows, and describes what it does, in every language", async () => {
+    setLocaleOverride("en");
+    render(<VaultApp bridge={bridge()} />);
+    const button = await screen.findByRole("button", {
+      name: "New",
+      description: "Choose files to import",
+    });
+    for (const locale of LOCALES) {
+      changeLanguage(locale);
+      const shown = translate(locale, "interface.VaultLibrary.new");
+      // WCAG 2.5.3: the name is the word on the button; what it does is its
+      // description, so voice control finds it by what it shows.
+      expect(button).toHaveTextContent(shown);
+      expect(
+        screen.getByRole("button", {
+          name: shown,
+          description: translate(
+            locale,
+            "interface.VaultApp.chooseFilesToImport",
+          ),
+        }),
+      ).toBe(button);
+    }
+  });
+
   it("finishes a cancelled picker in the current language without reopening it", async () => {
     setLocaleOverride("en");
     const native = bridge();
@@ -181,15 +214,18 @@ describe("the installed interface in the selected language", () => {
     native.importPickedFiles = vi.fn();
     render(<VaultApp bridge={native} />);
     const button = await screen.findByRole("button", {
-      name: "Choose files to import",
+      name: "New",
+      description: "Choose files to import",
     });
     fireEvent.click(button);
     expect(button).toBeDisabled();
 
     changeLanguage("pl");
+    // Working: named by what it shows, still described by what it does.
     expect(
       screen.getByRole("button", {
-        name: translate("pl", "interface.VaultApp.chooseFilesToImport"),
+        name: "Przetwarzanie…",
+        description: translate("pl", "interface.VaultApp.chooseFilesToImport"),
       }),
     ).toBe(button);
     expect(button).toHaveTextContent("Przetwarzanie…");
@@ -237,7 +273,8 @@ describe("the installed interface in the selected language", () => {
     );
     render(<VaultApp bridge={native} />);
     const button = await screen.findByRole("button", {
-      name: "Choose files to import",
+      name: "New",
+      description: "Choose files to import",
     });
     fireEvent.click(button);
     await waitFor(() =>
@@ -290,7 +327,10 @@ describe("the installed interface in the selected language", () => {
     });
     render(<VaultApp bridge={native} />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: "New",
+        description: "Choose files to import",
+      }),
     );
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(

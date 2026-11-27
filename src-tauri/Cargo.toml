@@ -63,25 +63,40 @@ rustls-platform-verifier = "=0.7.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tokio = { version = "1", features = ["time", "macros"] }
-unicode-normalization = "0.1"
+unicode-normalization = "=0.1.25"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 x509-cert = "=0.2.5"
 x25519-dalek = { version = "=2.0.1", default-features = false, features = ["alloc", "static_secrets", "zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
+# Pinned exactly with unicode-normalization: they decide how a vault name is folded, and the registry
+# stores hashes of the folded names (vault_registry.rs `NORMALISATION_VERSION`, golden test). A bump
+# that changes one output must raise that number, not slip in.
+caseless = "=0.2.2"
+subtle = "2"
 
 # Match the WebKitGTK bindings already used by the pinned Tauri/Wry runtime. The PDF helper's
 # sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter it cannot run
 # without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-android-pdf = { path = "android-pdf" }
+tauri-plugin-android-trust = { path = "android-trust" }
+# The same jni the platform verifier is built with (see android-trust/Cargo.toml).
+jni = "=0.22.4"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
 seccompiler = "=0.5.0"
+# The desktop notification service over D-Bus (document_notification_linux.rs). Already in the
+# build through tauri-plugin-single-instance on Linux, with the same default features: no new
+# crate. Pinned like its neighbours.
+zbus = "=5.19.0"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-ios-pdf = { path = "ios-pdf" }
@@ -91,11 +106,14 @@ tauri-plugin-ios-pdf = { path = "ios-pdf" }
 # Win32_System_Diagnostics_Debug and Win32_System_Kernel turn crash reports off in the AI
 # helper's model process (src/model_helper/confine.rs).
 [target.'cfg(windows)'.dependencies]
+# Reviewed Windows transport delta and upstream provenance: vendor/README.md.
+tauri-plugin-single-instance = "=2.4.0"
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = [
     "Data_Xml_Dom",
     "UI_Notifications",
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Security",
     "Win32_Security_Authorization",
     # Credential Manager, for the notice keys' wrap key (#230).
@@ -106,6 +124,8 @@ windows = { version = "=0.61.3", features = [
     "Win32_System_Diagnostics_Debug",
     "Win32_System_JobObjects",
     "Win32_System_Kernel",
+    # The sign-in Run value is written through the registry API, not reg.exe (no console flash).
+    "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_System_WinRT",
@@ -190,6 +210,9 @@ opt-level = 1
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
+tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
+# Wry with its macOS/iOS camera-and-microphone decision narrowed (#359 PR 7).
+wry = { path = "vendor/wry" }
 
 [[test]]
 name = "model_helper"
