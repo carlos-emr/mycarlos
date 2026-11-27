@@ -339,10 +339,8 @@ describe("modelRunsHere", () => {
   });
 });
 
-describe("the model's speed and an empty document", () => {
-  const speedBridge = (
-    aiModelSpeed?: ModelBridge["aiModelSpeed"],
-  ): ModelBridge => ({
+describe("a document with no readable page", () => {
+  const speedBridge = (): ModelBridge => ({
     aiModelStatus: vi
       .fn()
       .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
@@ -354,29 +352,10 @@ describe("the model's speed and an empty document", () => {
     }),
     aiExplain: vi.fn(),
     aiCancel: vi.fn().mockResolvedValue(undefined),
-    ...(aiModelSpeed ? { aiModelSpeed } : {}),
   });
 
-  it("offers no speed check when the native side has none", () => {
-    expect(nativeLocalModel(speedBridge()).speed).toBeUndefined();
-  });
-
-  it("reports 'not measured' when the speed check fails, rather than throwing", async () => {
-    const model = nativeLocalModel(
-      speedBridge(vi.fn().mockRejectedValue(new Error("FAKE failed"))),
-    );
-    await expect(model.speed!()).resolves.toBeNull();
-  });
-
-  it("reports 'not measured' for a speed that is not usable", async () => {
-    const model = nativeLocalModel(speedBridge(vi.fn().mockResolvedValue(-1)));
-    await expect(model.speed!()).resolves.toBeNull();
-  });
-
-  it("does nothing when asked to cancel the not-installed model", () => {
-    expect(notInstalledModel.cancel()).toBeUndefined();
-  });
-
+  // The speed check's branches and the not-installed model's cancel are covered in
+  // localModelSpeed.test.ts (#546).
   it("keeps a summary of a document with no readable page whole and at page 0", async () => {
     const empty = fakeDocumentText([], false);
     const result = await summarizeDocument(

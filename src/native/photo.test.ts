@@ -457,9 +457,12 @@ describe("what the camera dialog remembers and says about other failures", () =>
 
   it("remembers that the camera worked once", () => {
     window.localStorage.removeItem("mycarlos.cameraExplained.v1");
-    expect(cameraExplained()).toBe(false);
-    rememberCameraExplained();
-    expect(cameraExplained()).toBe(true);
-    window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+    try {
+      expect(cameraExplained()).toBe(false);
+      rememberCameraExplained();
+      expect(cameraExplained()).toBe(true);
+    } finally {
+      window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+    }
   });
 });

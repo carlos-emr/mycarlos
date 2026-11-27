@@ -239,11 +239,13 @@ describe("native appearance", () => {
     appearance.set("dark");
     await tick();
     expect(appearance.snapshot().nativeError).toBe("");
+    // The older command's deadline passes first, while it is still pending: the latest choice has
+    // finished, so that is no error.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(appearance.snapshot().nativeError).toBe("");
+    // Then it fails: still not blamed on the latest choice.
     fail(new Error("old command"));
     await tick();
-    expect(appearance.snapshot().nativeError).toBe("");
-    // The older command's deadline passing after the latest choice finished is no error either.
-    await vi.advanceTimersByTimeAsync(3000);
     expect(appearance.snapshot().nativeError).toBe("");
   });
 });
