@@ -104,11 +104,21 @@ export function cameraConstraints(
   return { ...rest, deviceId: { exact: camera } };
 }
 
-/** The sound constraints for a chosen microphone: its exact id, or any. */
+/** The rate the microphone is asked to capture at, in hertz (a wish, not a demand: a device that
+ * cannot do it gives what it can, and the microphone test says so when that is low). */
+export const CAPTURE_SAMPLE_RATE = 48_000;
+
+/** The sound constraints for a chosen microphone: its exact id (or any), and a 48 kHz capture. The
+ * same stream is the preview, the microphone test's clip and the real recording, so all three
+ * capture alike; the browser's own echo cancellation, noise suppression and gain control are left
+ * at their defaults for all three, so the test sounds as a recording will. */
 export function microphoneConstraints(
   microphone: string | null,
-): true | MediaTrackConstraints {
-  return microphone ? { deviceId: { exact: microphone } } : true;
+): MediaTrackConstraints {
+  return {
+    ...(microphone ? { deviceId: { exact: microphone } } : {}),
+    sampleRate: { ideal: CAPTURE_SAMPLE_RATE },
+  };
 }
 
 /** Whether an error from asking for an exact device means that device is not there. */

@@ -34,6 +34,11 @@ import {
   type DeviceLists,
 } from "./mediaDevices";
 import {
+  startMicrophoneTest,
+  type MicrophoneTest,
+  type MicrophoneTestPhase,
+} from "./microphoneTest";
+import {
   MAX_UNSENT_BYTES,
   QUALITIES,
   isNoSpace,
@@ -83,6 +88,9 @@ type Stage =
 // How often the clock on screen is redrawn. It is not a live region: it is read
 // when it is focused, not every second.
 const CLOCK_TICK_MS = 500;
+// A microphone that captures below CD rate sounds thin (a headset in call mode gives 16 kHz or
+// 8 kHz); the microphone test says so, since a recording will sound the same.
+const LOW_CAPTURE_RATE = 44_100;
 const asked = <T,>(question: Promise<T>) => question;
 
 // Recording a video (#359). The camera and the microphone are asked for only
@@ -144,7 +152,13 @@ export function RecordDialog({
   const [devices, setDevices] = useState<DeviceLists>(NO_DEVICES);
   const [using, setUsing] = useState<DeviceChoice>(NO_CHOICE);
   const [fellBack, setFellBack] = useState(false);
-  const [testing, setTesting] = useState(false);
+  // The microphone test: null when off, else what it is doing now. A test that could not run or
+  // play leaves a note until the next one.
+  const [micTest, setMicTest] = useState<MicrophoneTestPhase | null>(null);
+  const [micFailed, setMicFailed] = useState(false);
+  // The rate the microphone really captures at, once a test has started: a low one (a headset in
+  // call mode) is said, because a recording will sound the same.
+  const [micRate, setMicRate] = useState<number | null>(null);
   const [level, setLevel] = useState(0);
   const refocusRef = useRef<"camera" | "microphone" | null>(null);
   const restartedRef = useRef(false);
@@ -160,6 +174,33 @@ export function RecordDialog({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const micTestRef = useRef<MicrophoneTest | null>(null);
+  // Ends the microphone test wherever it is: its clip and address are dropped (microphoneTest.ts).
+  // Called on Stop, on a device switch, when a real recording starts, when the preview goes away
+  // and when the dialog closes, so a test never overlaps a recording or outlives the dialog.
+  const stopMicTest = () => {
+    const test = micTestRef.current;
+    micTestRef.current = null;
+    test?.stop();
+    setMicTest(null);
+  };
+  const runMicTest = () => {
+    const stream = streamRef.current;
+    if (stage !== "ready" || !stream || micTestRef.current) return;
+    setMicFailed(false);
+    const test = startMicrophoneTest(stream, {
+      phase: setMicTest,
+      done: (ok) => {
+        micTestRef.current = null;
+        setMicTest(null);
+        if (!ok) setMicFailed(true);
+      },
+    });
+    if (test) {
+      micTestRef.current = test;
+      setMicRate(test.captureRate ?? null);
+    } else setMicFailed(true);
+  };
   const clock = useRef(new RecordedClock()).current;
   // Each start, and each stop, moves this on, so a camera that answers after
   // the dialog moved on is stopped at once instead of shown.
@@ -471,6 +512,8 @@ export function RecordDialog({
   const record = async () => {
     const stream = streamRef.current;
     if (!stream || stage !== "ready") return;
+    // A test never overlaps the real recording: it ends before the recorder is made.
+    stopMicTest();
     const mimeType = pickMp4Type();
     if (!mimeType) {
       setProblem(
@@ -691,7 +734,9 @@ export function RecordDialog({
       return;
     }
     // Also while starting: the camera that was being asked for is turned off the
-    // moment it answers, and a recording the vault had begun is ended.
+    // moment it answers, and a recording the vault had begun is ended. A microphone test's clip is
+    // dropped with it.
+    stopMicTest();
     stopCamera();
     onClose();
   };
@@ -740,23 +785,33 @@ export function RecordDialog({
     };
   }, [stage]);
 
-  // The microphone test: a level meter on the microphone already open, only while the preview
-  // is up and nothing is being recorded. Nothing is recorded, kept or sent.
+  // The microphone test: the level meter on the microphone already open while the clip is being
+  // taken (the clip itself is microphoneTest.ts: memory only, played back once, then dropped).
   useEffect(() => {
-    if (!testing) return;
+    if (micTest !== "recording") return;
     const stream = streamRef.current;
-    const reader = stage === "ready" && stream ? openLevelReader(stream) : null;
-    if (!reader) {
-      setTesting(false);
-      return;
-    }
+    const reader = stream ? openLevelReader(stream) : null;
+    if (!reader) return;
     const timer = window.setInterval(() => setLevel(reader.read()), 100);
     return () => {
       window.clearInterval(timer);
       reader.close();
       setLevel(0);
     };
-  }, [testing, stage, using]);
+  }, [micTest, using]);
+  // The test is only for the open preview with nothing recorded: it ends with it, and with the
+  // dialog.
+  useEffect(() => {
+    if (stage !== "ready") stopMicTest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stopMicTest only reads refs and setters
+  }, [stage]);
+  useEffect(
+    () => () => {
+      micTestRef.current?.stop();
+      micTestRef.current = null;
+    },
+    [],
+  );
 
   // Switching restarts the preview on the other device (never while recording or starting a
   // recording: a recording keeps the camera and microphone it began with).
@@ -765,7 +820,10 @@ export function RecordDialog({
     const next = { ...using, [kind]: id };
     refocusRef.current = kind;
     restartedRef.current = false;
-    setTesting(false);
+    stopMicTest();
+    // A failure of the old microphone's test, and its capture rate, are not shown beside the new one.
+    setMicFailed(false);
+    setMicRate(null);
     void start(next, kind);
   };
 
@@ -858,21 +916,20 @@ export function RecordDialog({
                   disabled={stage !== "ready"}
                   onChange={switchDevice}
                 />
-                {stage === "ready" && typeof AudioContext !== "undefined" && (
+                {stage === "ready" && typeof MediaRecorder !== "undefined" && (
                   <div className="record-mic-test">
                     <button
                       className="button"
                       type="button"
-                      aria-pressed={testing}
-                      onClick={() => setTesting((on) => !on)}
+                      onClick={micTest ? stopMicTest : runMicTest}
                     >
                       {translateNow(
-                        testing
+                        micTest
                           ? "interface.RecordDialog.stopTestingMicrophone"
                           : "interface.RecordDialog.testMicrophone",
                       )}
                     </button>
-                    {testing && (
+                    {micTest === "recording" && (
                       <meter
                         min={0}
                         max={1}
@@ -882,6 +939,38 @@ export function RecordDialog({
                         )}
                       />
                     )}
+                    {/* What the test is doing, said as it changes. */}
+                    <p className="record-mic-test-state" role="status">
+                      {micTest === "recording"
+                        ? translateNow(
+                            "interface.RecordDialog.microphoneTestRecording",
+                          )
+                        : micTest === "playing"
+                          ? translateNow(
+                              "interface.RecordDialog.microphoneTestPlaying",
+                            )
+                          : ""}
+                    </p>
+                    {micRate !== null && micRate < LOW_CAPTURE_RATE && (
+                      <p className="record-mic-test-note" role="note">
+                        {translateNow(
+                          "interface.RecordDialog.microphoneTestLowRate",
+                          { khz: Math.round(micRate / 100) / 10 },
+                        )}
+                      </p>
+                    )}
+                    {micFailed && (
+                      <p className="camera-failure" role="alert">
+                        {translateNow(
+                          "interface.RecordDialog.microphoneTestFailed",
+                        )}
+                      </p>
+                    )}
+                    <p className="record-mic-test-note">
+                      {translateNow(
+                        "interface.RecordDialog.microphoneTestHeadphones",
+                      )}
+                    </p>
                   </div>
                 )}
               </fieldset>

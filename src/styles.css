@@ -3706,6 +3706,29 @@ p {
   min-width: 8rem;
   height: 1.25rem;
 }
+/* What the test is doing, a failure and the headphones note each take a row of their own, so that
+   a long line in any language wraps inside the dialog (320 px) instead of pushing past it. */
+.record-video-dialog .record-mic-test-state,
+.record-video-dialog .record-mic-test-note,
+.record-video-dialog .record-mic-test .camera-failure {
+  flex: 1 1 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* Empty, the live region stays in the accessibility tree (so that a screen reader announces its
+   text when it arrives) and takes no room. */
+.record-video-dialog .record-mic-test-state:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.record-video-dialog .record-mic-test-note {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
 .record-video-dialog .record-quality {
   margin: 0;
   padding: 0;

@@ -210,7 +210,10 @@ describe("RecordDialog", () => {
     await screen.findByRole("button", { name: "Start recording" });
     // Video and sound together, once; nothing is recorded or started yet.
     expect(getUserMedia).toHaveBeenCalledTimes(1);
-    expect(getUserMedia.mock.calls[0]![0]).toMatchObject({ audio: true });
+    // Sound is asked for at 48 kHz, with no exact device while none was chosen.
+    expect(getUserMedia.mock.calls[0]![0]).toMatchObject({
+      audio: { sampleRate: { ideal: 48000 } },
+    });
     expect(bridge.videoStart).not.toHaveBeenCalled();
     expect(FakeRecorder.all).toHaveLength(0);
     expect(
