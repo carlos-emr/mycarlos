@@ -1448,6 +1448,107 @@ mod tests {
         pdf
     }
 
+    /// Where one page's time goes (#175): a measurement, not a test of behaviour. It is ignored
+    /// by default; run it with
+    /// `cargo test --lib measure_view_page_stages -- --ignored --nocapture`.
+    /// It times the parts of `render` in this process (the helper's own start is not here), on
+    /// synthetic pages, at two widths. A debug build is slower than a release build in absolute
+    /// terms; read the shares, and run it with `--release` for the real figures.
+    #[test]
+    #[ignore = "a measurement: run by hand"]
+    fn measure_view_page_stages() {
+        use hayro::hayro_interpret::InterpreterSettings;
+        use hayro::hayro_syntax::Pdf;
+        use hayro::{PixmapSettings, RenderCache, RenderSettings};
+        use std::time::Instant;
+        // A page of ordinary text, and one with a great deal of it (a dense report).
+        let line = |y: i32, n: usize| {
+            format!(
+                "BT /F1 9 Tf 40 {y} Td (FAKE line {n}: potassium 5.4 mmol/L, sodium 139 mmol/L, FAKE note about follow-up in two weeks.) Tj ET\n"
+            )
+        };
+        let ordinary: String = (0..40).map(|n| line(750 - n * 17, n as usize)).collect();
+        let dense: String = (0..120)
+            .map(|n| line(785 - (n % 88) * 8, n as usize))
+            .collect();
+        let vector: String = (0..3000)
+            .map(|n| {
+                format!(
+                    "{} {} {} rg {} {} 14 6 re f\n",
+                    (n % 10) as f32 / 10.0,
+                    (n % 7) as f32 / 7.0,
+                    (n % 5) as f32 / 5.0,
+                    20 + (n * 7) % 560,
+                    20 + (n * 13) % 750
+                )
+            })
+            .collect();
+        for (name, operators) in [
+            ("ordinary text page", ordinary),
+            ("dense text page", dense),
+            ("vector-heavy page", vector),
+        ] {
+            let pdf = pdf_with_operators(&operators);
+            for width in [800u32, 1600] {
+                let started = Instant::now();
+                let t0 = Instant::now();
+                let document = Pdf::new(pdf.clone()).unwrap();
+                let parse = t0.elapsed();
+                let page = &document.pages()[0];
+                let (page_width, page_height) = page.render_dimensions();
+                let scale = (width as f32 / page_width).min(MAX_SIDE as f32 / page_height);
+                let t1 = Instant::now();
+                let pixmap = hayro::render(
+                    page,
+                    &RenderCache::new(),
+                    &InterpreterSettings::default(),
+                    &RenderSettings::default(),
+                    &PixmapSettings {
+                        x_scale: scale,
+                        y_scale: scale,
+                        bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+                    },
+                );
+                let draw = t1.elapsed();
+                let t2 = Instant::now();
+                let picture = image::RgbaImage::from_raw(
+                    u32::from(pixmap.width()),
+                    u32::from(pixmap.height()),
+                    pixmap.data_as_u8_slice().to_vec(),
+                )
+                .unwrap();
+                let mut png = Vec::new();
+                picture
+                    .write_to(&mut io::Cursor::new(&mut png), image::ImageFormat::Png)
+                    .unwrap();
+                let encode = t2.elapsed();
+                let t3 = Instant::now();
+                let text = page_text(&pdf, 0);
+                let extract = t3.elapsed();
+                let t4 = Instant::now();
+                let _readable = readable_page_text(&pdf, 0, &text);
+                let positioned = t4.elapsed();
+                let whole = render(&pdf, "", 0, width).unwrap();
+                eprintln!(
+                    "MEASURE {name} {width}px png {} KB: parse {:?}, draw {:?}, png {:?}, text {:?}, readable text {:?}; render() whole {:?}",
+                    whole.png.len() / 1024,
+                    parse,
+                    draw,
+                    encode,
+                    extract,
+                    positioned,
+                    started.elapsed()
+                        - parse
+                        - draw
+                        - encode
+                        - extract
+                        - positioned
+                );
+                let _ = png;
+            }
+        }
+    }
+
     #[test]
     fn reader_keeps_glyph_fragments_clinical_values_and_small_baseline_shifts_together() {
         let pdf = pdf_with_operators(

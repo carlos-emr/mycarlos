@@ -3,8 +3,30 @@
 
 use crate::portal_link::{LinkError, LinkRequest, LinkedClinic};
 
-pub const fn available() -> bool {
-    cfg!(not(target_os = "android"))
+/// Whether this build can reach a portal. Everywhere but Android: always. On Android only once the
+/// platform certificate verifier has been given the application context (the android-trust plugin
+/// does it when it loads): until then, and for good if that failed, the connection is closed and
+/// Settings does not offer linking.
+pub fn available() -> bool {
+    connection_possible(cfg!(target_os = "android"), verifier_ready())
+}
+
+/// The rule behind `available`, free of the platform so a unit test can drive both sides of it.
+const fn connection_possible(android: bool, verifier_ready: bool) -> bool {
+    !android || verifier_ready
+}
+
+/// Whether the platform verifier can be asked: always, except on Android, where it needs the JVM
+/// and the application context first (and panics if asked without them).
+fn verifier_ready() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        tauri_plugin_android_trust::verifier_ready()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        true
+    }
 }
 
 pub fn link(
@@ -15,15 +37,6 @@ pub fn link(
     if cancelled() {
         return Err(LinkError::Cancelled);
     }
-    // Android needs the verifier's Kotlin component and initialized JVM context.
-    // Fail closed until that reviewed platform integration exists.
-    #[cfg(target_os = "android")]
-    {
-        let _ = (request, expected_device);
-        return Err(LinkError::Network);
-    }
-
-    #[cfg(not(target_os = "android"))]
     {
         use crate::portal_link::{parse_response, MAX_RESPONSE_BYTES};
 
@@ -93,7 +106,6 @@ pub fn link(
 }
 
 /// The three time limits of a client: connecting, each read of a reply, and the whole exchange.
-#[cfg(not(target_os = "android"))]
 struct Timeouts {
     connect: std::time::Duration,
     read: std::time::Duration,
@@ -101,7 +113,6 @@ struct Timeouts {
 }
 
 /// What a shipped client waits.
-#[cfg(not(target_os = "android"))]
 const RELEASE_TIMEOUTS: Timeouts = Timeouts {
     connect: std::time::Duration::from_secs(10),
     // A body that stops arriving fails here, whatever its size.
@@ -113,7 +124,6 @@ const RELEASE_TIMEOUTS: Timeouts = Timeouts {
 /// redirect, no retry, no proxy, no referrer, no kept-alive connection, and the time limits given.
 /// The shipped `client()` calls it with the platform's verifier and `RELEASE_TIMEOUTS`; the library's
 /// tests call the same function with a test root and short timeouts, so what they run is what ships.
-#[cfg(not(target_os = "android"))]
 fn build_client(
     provider: std::sync::Arc<rustls::crypto::CryptoProvider>,
     verifier: std::sync::Arc<dyn rustls::client::danger::ServerCertVerifier>,
@@ -140,9 +150,14 @@ fn build_client(
         .map_err(|_| LinkError::Network)
 }
 
-#[cfg(all(not(test), not(target_os = "android")))]
+#[cfg(not(test))]
 fn client() -> Result<reqwest::Client, LinkError> {
     use std::sync::Arc;
+    // The platform verifier on Android panics if asked before the JVM and the application context
+    // were given to it: no client is built until they were (fail closed, never a panic on a thread).
+    if !verifier_ready() {
+        return Err(LinkError::Network);
+    }
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = Arc::new(
         rustls_platform_verifier::Verifier::new(provider.clone())
@@ -154,7 +169,7 @@ fn client() -> Result<reqwest::Client, LinkError> {
 /// The same client in the library's tests: built by the `network_tests` module with the same
 /// hardening, with a test root and a short read timeout when a test asks for them. Compiled in tests
 /// only; the release `client()` above has no such path.
-#[cfg(all(test, not(target_os = "android")))]
+#[cfg(test)]
 fn client() -> Result<reqwest::Client, LinkError> {
     network_tests::test_client()
 }
@@ -163,7 +178,6 @@ fn client() -> Result<reqwest::Client, LinkError> {
 /// bytes. Small replies keep 30 s. A package download also gets the time it
 /// takes at a slow but steady rate, so it isn't cut off just for being large,
 /// up to an overall cap. A stalled body still fails at the read timeout.
-#[cfg(not(target_os = "android"))]
 pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
     use std::time::Duration;
     const BASE: Duration = Duration::from_secs(30);
@@ -277,12 +291,6 @@ pub(crate) fn api(
     if cancelled() {
         return Err(LinkError::Cancelled);
     }
-    #[cfg(target_os = "android")]
-    {
-        let _ = (link, method, suffix, body, anchor, max);
-        return Err(LinkError::Unavailable);
-    }
-    #[cfg(not(target_os = "android"))]
     {
         use crate::portal_link::frame;
         use serde::Serialize;
@@ -348,7 +356,6 @@ pub(crate) fn api(
 /// `carlos-patient-portal-waiting-check`, claims `aud iss kid jti iat exp request_hash`, no
 /// recipient), never by the device key, which is in the vault. Only the two waiting routes are
 /// reachable from here.
-#[cfg(not(target_os = "android"))]
 pub(crate) fn waiting_api(
     entry: &crate::notice_key::NoticeKeyEntry,
     method: &str,
@@ -422,12 +429,10 @@ pub(crate) fn waiting_api(
 }
 
 /// A waiting answer is 17 bytes; a refusal's body is a few more.
-#[cfg(not(target_os = "android"))]
 const MAX_WAITING_REPLY: usize = 512;
 
 /// Sends one signed request, with the pinned-TLS client, the size and time limits and the
 /// cancellation every Portal call has.
-#[cfg(not(target_os = "android"))]
 fn send_signed(
     endpoint: tauri::Url,
     method: &str,
@@ -492,7 +497,7 @@ fn send_signed(
     }
 }
 
-#[cfg(all(test, not(target_os = "android")))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -561,7 +566,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, not(target_os = "android")))]
+#[cfg(test)]
 mod timeout_tests {
     use super::request_timeout;
     use std::time::Duration;
@@ -594,7 +599,7 @@ mod timeout_tests {
 /// client sends and how it reads, limits and refuses what comes back. The certificates are
 /// throwaway fixtures (`tests/fixtures/portal-test-pki/README.md`); the test root reaches the client
 /// only through the `cfg(test)` `client()` above, so no shipped build can trust it.
-#[cfg(all(test, not(target_os = "android")))]
+#[cfg(test)]
 mod network_tests {
     use super::*;
     use crate::portal_link::{LinkRequest, MAX_RESPONSE_BYTES};
@@ -1543,7 +1548,7 @@ mod network_tests {
     fn should_make_every_policy_setting_in_the_one_shared_build_client_and_keep_the_seam_in_tests()
     {
         let source = include_str!("portal_client.rs");
-        let marker = "#[cfg(all(test, not(target_os = \"android\")))]\nmod network_tests";
+        let marker = "#[cfg(test)]\nmod network_tests";
         let (production, tests) = source.split_at(source.find(marker).unwrap());
         let item = |text: &str, head: &str, close: &str| -> String {
             let start = text
@@ -1553,11 +1558,7 @@ mod network_tests {
             text[start..end].to_owned()
         };
         let build = item(production, "fn build_client(", "\n}\n");
-        let release = item(
-            production,
-            "#[cfg(all(not(test), not(target_os = \"android\")))]\nfn client()",
-            "\n}\n",
-        );
+        let release = item(production, "#[cfg(not(test))]\nfn client()", "\n}\n");
         let test_client = item(tests, "pub(super) fn test_client()", "\n    }\n");
         // The settings are in build_client, and in neither caller.
         for setting in [
@@ -1639,10 +1640,7 @@ mod network_tests {
             code_lines[uses[0] - 1].trim(),
             "fn client() -> Result<reqwest::Client, LinkError> {"
         );
-        assert_eq!(
-            code_lines[uses[0] - 2].trim(),
-            "#[cfg(all(test, not(target_os = \"android\")))]"
-        );
+        assert_eq!(code_lines[uses[0] - 2].trim(), "#[cfg(test)]");
         // The release client names nothing of tests.
         for forbidden in ["cfg(test)", "env::", "TEST", "RootCertStore"] {
             assert!(
@@ -1650,5 +1648,42 @@ mod network_tests {
                 "the release client has {forbidden}"
             );
         }
+    }
+    // ---- the Android connection opens only where the verifier was given its context ----
+
+    #[test]
+    fn should_open_the_connection_everywhere_but_on_android_where_it_waits_for_the_verifier() {
+        assert!(connection_possible(false, false));
+        assert!(connection_possible(false, true));
+        assert!(!connection_possible(true, false));
+        assert!(connection_possible(true, true));
+        // This (host) build is not Android.
+        assert!(available());
+        assert!(verifier_ready());
+    }
+
+    /// The shipped client is never built before the verifier is ready (on Android the platform
+    /// verifier panics when asked without the JVM context), and Android's readiness is the plugin's
+    /// own flag, which only a successful initialisation sets.
+    #[test]
+    fn should_check_the_verifier_is_ready_before_the_shipped_client_builds_one() {
+        let source = include_str!("portal_client.rs");
+        let production = &source[..source.find("#[cfg(test)]\nmod network_tests").unwrap()];
+        let release_start = production.find("#[cfg(not(test))]\nfn client()").unwrap();
+        let release = &production[release_start..];
+        let ready = release.find("if !verifier_ready()").unwrap();
+        let verifier = release
+            .find("rustls_platform_verifier::Verifier::new")
+            .unwrap();
+        assert!(
+            ready < verifier,
+            "the readiness check comes after the verifier is made"
+        );
+        let body = &production[production.find("fn verifier_ready()").unwrap()..];
+        let body = &body[..body.find("\n}\n").unwrap()];
+        assert!(body.contains("tauri_plugin_android_trust::verifier_ready()"));
+        // Nothing else in this client says an Android build may connect (the model download keeps
+        // its own gate, in model_download.rs).
+        assert_eq!(production.matches("target_os = \"android\"").count(), 3);
     }
 }

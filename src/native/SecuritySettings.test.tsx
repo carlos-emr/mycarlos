@@ -13,7 +13,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackupSize } from "../vault";
 import { page } from "vitest/browser";
-import { setLocaleOverride, translate } from "../i18n";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
 import {
@@ -154,6 +154,51 @@ describe("SecuritySettings profile layout", () => {
     const box = button.getBoundingClientRect();
     expect(box.left).toBeGreaterThanOrEqual(text.right);
     expect(box.top).toBeLessThan(text.bottom);
+  });
+});
+
+describe("The warning on the backup and recovery kit save screens", () => {
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+  });
+
+  it("says before Save a backup that the file is encrypted but shows how many documents it holds and how large each is, and that a cloud-synced folder uploads it", () => {
+    setLocaleOverride("en");
+    const { container } = render(<SecuritySettings {...settingsProps()} />);
+    const row = container.querySelector(".native-backup-settings")!;
+    const warning = within(row as HTMLElement).getByText(
+      "This file is encrypted, but it shows how many documents it holds and how large each one is. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it.",
+    );
+    const save = within(row as HTMLElement).getByRole("button", {
+      name: "Save encrypted backup…",
+    });
+    expect(
+      warning.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("names the same four cloud services, and the kind of file, in every language", () => {
+    for (const locale of LOCALES) {
+      for (const key of [
+        "security.backup.cloudWarning",
+        "recoveryKey.kitCloudWarning",
+      ] as const) {
+        const text = translate(locale, key);
+        for (const service of [
+          "OneDrive",
+          "iCloud Drive",
+          "Dropbox",
+          "Google Drive",
+        ]) {
+          expect(text, `${locale} ${key}`).toContain(service);
+        }
+      }
+      // Two different texts: the backup is encrypted, the kit is not.
+      expect(translate(locale, "security.backup.cloudWarning")).not.toBe(
+        translate(locale, "recoveryKey.kitCloudWarning"),
+      );
+    }
   });
 });
 

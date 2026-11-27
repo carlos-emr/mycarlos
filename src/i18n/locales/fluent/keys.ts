@@ -368,6 +368,7 @@ export const MESSAGE_KEYS = [
   "native.filter.video",
   "native.filter.pictures",
   "native.filter.pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -458,6 +459,7 @@ export const MESSAGE_KEYS = [
   "recoveryKey.hiddenWhileSaving",
   "recoveryKey.instructions",
   "recoveryKey.keyboardHint",
+  "recoveryKey.kitCloudWarning",
   "recoveryKey.kitSaved",
   "recoveryKey.label",
   "recoveryKey.leave.offered",
@@ -528,6 +530,7 @@ export const MESSAGE_KEYS = [
   "security.autoLock.shorter",
   "security.autoLock.title",
   "security.backup.body",
+  "security.backup.cloudWarning",
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
@@ -1083,6 +1086,7 @@ export const MESSAGE_KEYS = [
   "noticesStep.title",
   "noticesStep.intro",
   "noticesStep.later",
+  "noticesStep.laterBackground",
   "noticesStep.done",
   "noticesStep.notNow",
   "ai.settings.subtitle",
@@ -1404,6 +1408,7 @@ export const MESSAGE_KEYS = [
   "interface.AddVideo.duplicate",
   "interface.AddVideo.cancelled",
   "interface.AddVideo.notVideo",
+  "interface.AddVideo.videoAlone",
   "interface.AddVideo.hevc",
   "interface.AddVideo.videoCodec",
   "interface.AddVideo.audioCodec",
@@ -1892,6 +1897,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.filter.video": "native-filter-video",
   "native.filter.pictures": "native-filter-pictures",
   "native.filter.pdfAndPictures": "native-filter-pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos": "native-filter-pdfPicturesAndVideos",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -1982,6 +1988,7 @@ const FLUENT_IDS_BY_KEY = {
   "recoveryKey.hiddenWhileSaving": "recoveryKey-hiddenWhileSaving",
   "recoveryKey.instructions": "recoveryKey-instructions",
   "recoveryKey.keyboardHint": "recoveryKey-keyboardHint",
+  "recoveryKey.kitCloudWarning": "recoveryKey-kitCloudWarning",
   "recoveryKey.kitSaved": "recoveryKey-kitSaved",
   "recoveryKey.label": "recoveryKey-label",
   "recoveryKey.leave.offered": "recoveryKey-leave-offered",
@@ -2052,6 +2059,7 @@ const FLUENT_IDS_BY_KEY = {
   "security.autoLock.shorter": "security-autoLock-shorter",
   "security.autoLock.title": "security-autoLock-title",
   "security.backup.body": "security-backup-body",
+  "security.backup.cloudWarning": "security-backup-cloudWarning",
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
@@ -2727,6 +2735,7 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.title": "noticesStep-title",
   "noticesStep.intro": "noticesStep-intro",
   "noticesStep.later": "noticesStep-later",
+  "noticesStep.laterBackground": "noticesStep-laterBackground",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "ai.settings.subtitle": "ai-settings-subtitle",
@@ -3098,6 +3107,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AddVideo.duplicate": "interface-AddVideo-duplicate",
   "interface.AddVideo.cancelled": "interface-AddVideo-cancelled",
   "interface.AddVideo.notVideo": "interface-AddVideo-notVideo",
+  "interface.AddVideo.videoAlone": "interface-AddVideo-videoAlone",
   "interface.AddVideo.hevc": "interface-AddVideo-hevc",
   "interface.AddVideo.videoCodec": "interface-AddVideo-videoCodec",
   "interface.AddVideo.audioCodec": "interface-AddVideo-audioCodec",
@@ -3542,6 +3552,7 @@ export interface MessageArgsByKey {
   "native.filter.video": undefined;
   "native.filter.pictures": undefined;
   "native.filter.pdfAndPictures": undefined;
+  "native.filter.pdfPicturesAndVideos": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;
@@ -3639,6 +3650,7 @@ export interface MessageArgsByKey {
   "recoveryKey.hiddenWhileSaving": undefined;
   "recoveryKey.instructions": undefined;
   "recoveryKey.keyboardHint": undefined;
+  "recoveryKey.kitCloudWarning": undefined;
   "recoveryKey.kitSaved": undefined;
   "recoveryKey.label": { label: FluentArgument };
   "recoveryKey.leave.offered": undefined;
@@ -3709,6 +3721,7 @@ export interface MessageArgsByKey {
   "security.autoLock.shorter": undefined;
   "security.autoLock.title": undefined;
   "security.backup.body": undefined;
+  "security.backup.cloudWarning": undefined;
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
@@ -4317,6 +4330,11 @@ export interface MessageArgsByKey {
     preferences: FluentArgument;
     settings: FluentArgument;
   };
+  "noticesStep.laterBackground": {
+    background: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
   "ai.settings.subtitle": undefined;
@@ -4648,6 +4666,7 @@ export interface MessageArgsByKey {
   "interface.AddVideo.duplicate": undefined;
   "interface.AddVideo.cancelled": undefined;
   "interface.AddVideo.notVideo": undefined;
+  "interface.AddVideo.videoAlone": undefined;
   "interface.AddVideo.hevc": undefined;
   "interface.AddVideo.videoCodec": undefined;
   "interface.AddVideo.audioCodec": undefined;
