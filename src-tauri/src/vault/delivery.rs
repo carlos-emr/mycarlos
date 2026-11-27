@@ -341,6 +341,41 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
         .then(|| clinic.clinic_name.clone())
 }
 
+/// The clinic a document came from, for the library's search, filter and status line.
+pub(super) struct ClinicView {
+    /// The clinic's id and name as the LINK of this vault that checked the document has them.
+    pub id: String,
+    pub name: String,
+    /// The key that signed the document is marked Revoked in that link's key list. Nothing in the
+    /// app sets a key Revoked yet (the key refresh is not built); the stored status is read as it is.
+    pub key_revoked: bool,
+}
+
+/// The status the link's own key list gives the key with this id, `None` when the list does not
+/// hold it. Only the signing key's own entry counts: a replacement edge (key refresh, not built
+/// yet) never deactivates a predecessor or a successor, and each key is revoked on its own.
+pub(super) fn key_status(clinic: &crate::portal_link::LinkedClinic, kid: &str) -> Option<KeyStatus> {
+    clinic
+        .clinic_keys
+        .iter()
+        .find(|k| k.kid == kid)
+        .map(|k| k.status)
+}
+
+/// What the library says of a document's clinic, whether or not it is Verified now. `None` when
+/// no link of this vault backs it (so a handover file's own claim is never a clinic here).
+pub(super) fn clinic_view(record: &StoredRecord, links: &[StoredLink]) -> Option<ClinicView> {
+    let Some(c) = record.delivery.as_ref() else {
+        return super::carried::clinic_view(record, links);
+    };
+    let clinic = links.iter().find(|l| l.id == c.link_id)?.clinic.as_ref()?;
+    Some(ClinicView {
+        id: clinic.clinic_id.clone(),
+        name: clinic.clinic_name.clone(),
+        key_revoked: key_status(clinic, &c.manifest.kid) == Some(KeyStatus::Revoked),
+    })
+}
+
 /// How far one clinic code request has got in this run of the app (clinic
 /// code v1). Never the code itself.
 #[derive(Clone, Copy, Default)]
@@ -8955,6 +8990,170 @@ mod approval_recovery_tests {
         let mut linked = manifest.clone();
         linked.portal_links.push(link.clone());
         assert!(structure_ok(&linked));
+    }
+
+    fn snapshot_record(store: &VaultStore, record_id: Uuid) -> VaultRecord {
+        let snapshot = store.snapshot().unwrap();
+        snapshot
+            .records
+            .into_iter()
+            .find(|r| r.id == record_id)
+            .unwrap()
+    }
+
+    /// Sets the stored status of one key of the (only) link, as a key refresh would one day.
+    fn set_signing_key_status(store: &VaultStore, record_id: Uuid, status: KeyStatus) {
+        let mut guard = store.session();
+        let manifest = &mut guard.as_mut().unwrap().manifest;
+        let kid = manifest
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .unwrap()
+            .delivery
+            .as_ref()
+            .unwrap()
+            .manifest
+            .kid
+            .clone();
+        for key in &mut manifest.portal_links[0].clinic.as_mut().unwrap().clinic_keys {
+            if key.kid == kid {
+                key.status = status;
+            }
+        }
+    }
+
+    #[test]
+    fn a_delivered_record_names_its_clinic_and_says_when_its_signing_key_is_revoked() {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let clinic = link.clinic.clone().unwrap();
+        // The name and id are the LINK's, whether or not the document is Verified.
+        let record = snapshot_record(&store, record_id);
+        assert_eq!(record.clinic_id.as_deref(), Some(clinic.clinic_id.as_str()));
+        assert_eq!(
+            record.clinic_name.as_deref(),
+            Some(clinic.clinic_name.as_str())
+        );
+        assert_eq!(
+            record.verified_clinic_name.as_deref(),
+            Some(clinic.clinic_name.as_str())
+        );
+        assert_eq!(record.signature_key_revoked, None);
+
+        // Nothing in the app marks a key Revoked yet (the key refresh is not built), so the stored
+        // status is set directly: the document loses Verified, says why, and is still the clinic's.
+        set_signing_key_status(&store, record_id, KeyStatus::Revoked);
+        let record = snapshot_record(&store, record_id);
+        assert_eq!(record.verified_clinic_name, None);
+        assert_eq!(record.signature_key_revoked, Some(true));
+        assert_eq!(
+            record.clinic_name.as_deref(),
+            Some(clinic.clinic_name.as_str())
+        );
+
+        // Only the signing key's own entry counts: another key revoked changes nothing.
+        set_signing_key_status(&store, record_id, KeyStatus::Active);
+        store.session().as_mut().unwrap().manifest.portal_links[0]
+            .clinic
+            .as_mut()
+            .unwrap()
+            .clinic_keys
+            .push(crate::portal_link::ClinicKey {
+                kid: "FAKE-other-key".into(),
+                spki: String::new(),
+                status: KeyStatus::Revoked,
+            });
+        let record = snapshot_record(&store, record_id);
+        assert_eq!(
+            record.verified_clinic_name.as_deref(),
+            Some(clinic.clinic_name.as_str())
+        );
+        assert_eq!(record.signature_key_revoked, None);
+
+        // A signing key the list does not hold is not Verified, and not "revoked" either.
+        store.session().as_mut().unwrap().manifest.portal_links[0]
+            .clinic
+            .as_mut()
+            .unwrap()
+            .clinic_keys
+            .retain(|k| k.kid == "FAKE-other-key");
+        let record = snapshot_record(&store, record_id);
+        assert_eq!(record.verified_clinic_name, None);
+        assert_eq!(record.signature_key_revoked, None);
+        assert_eq!(
+            record.clinic_name.as_deref(),
+            Some(clinic.clinic_name.as_str())
+        );
+    }
+
+    /// Ben's rule (#88): a document verified on arrival stays "Verified · From <clinic>" after the
+    /// clinic is unlinked, unless the clinic revoked its signing key. There is no machinery for
+    /// that because the case cannot arise: a link with a filed document cannot be removed, and
+    /// Verified is read from that link's key list. This pins both. Any change that allows such a
+    /// removal (or a "Stop checking" that drops the key list) must keep Verified for documents
+    /// verified at arrival (THREAT_MODEL, DEL-08).
+    #[test]
+    fn a_link_with_a_filed_document_cannot_be_removed_so_the_document_stays_verified() {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let clinic_name = link.clinic.as_ref().unwrap().clinic_name.clone();
+        let session = store.portal_link_ticket();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        let snapshot = store.snapshot().unwrap();
+        assert!(snapshot.portal_links.iter().any(|l| l.id == link.id));
+        let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+        assert_eq!(
+            record.verified_clinic_name.as_deref(),
+            Some(clinic_name.as_str())
+        );
+        assert_eq!(record.clinic_name.as_deref(), Some(clinic_name.as_str()));
+        assert_eq!(record.signature_key_revoked, None);
+    }
+
+    #[test]
+    fn a_carried_record_is_revoked_when_any_link_to_its_clinic_lists_the_key_revoked() {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let manifest = carried_manifest(&store, &link, record_id);
+        let record = manifest.records.iter().find(|r| r.id == record_id).unwrap();
+        let view = |links: &[StoredLink]| {
+            clinic_view(record, links).map(|v| (v.id, v.name, v.key_revoked))
+        };
+        let clinic = link.clinic.clone().unwrap();
+        let mut revoked = link.clone();
+        revoked.id = Uuid::new_v4();
+        for key in &mut revoked.clinic.as_mut().unwrap().clinic_keys {
+            key.status = KeyStatus::Revoked;
+        }
+        // One link that holds the key Active: Verified and named.
+        assert_eq!(
+            view(std::slice::from_ref(&link)),
+            Some((clinic.clinic_id.clone(), clinic.clinic_name.clone(), false))
+        );
+        assert!(verified_clinic(record, std::slice::from_ref(&link)).is_some());
+        // One that holds it Revoked: named, revoked, not Verified.
+        assert_eq!(
+            view(std::slice::from_ref(&revoked)),
+            Some((clinic.clinic_id.clone(), clinic.clinic_name.clone(), true))
+        );
+        assert_eq!(verified_clinic(record, std::slice::from_ref(&revoked)), None);
+        // Two links to the same clinic that disagree: revoked wins, in either order.
+        for links in [
+            vec![link.clone(), revoked.clone()],
+            vec![revoked.clone(), link.clone()],
+        ] {
+            assert_eq!(view(&links).map(|v| v.2), Some(true));
+            assert_eq!(verified_clinic(record, &links), None);
+        }
+        // No link to that clinic, another clinic, or a link that holds no such key: no clinic here.
+        assert_eq!(view(&[]), None);
+        let mut other = link.clone();
+        other.clinic.as_mut().unwrap().clinic_id = "FAKE-other-clinic".into();
+        assert_eq!(view(std::slice::from_ref(&other)), None);
+        let mut without_key = link.clone();
+        without_key.clinic.as_mut().unwrap().clinic_keys.clear();
+        assert_eq!(view(std::slice::from_ref(&without_key)), None);
     }
 
     #[test]

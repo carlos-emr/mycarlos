@@ -42,6 +42,14 @@ const CLAIMS = record("claims", "FAKE forwarded letter.pdf", {
   sourceLabel: "FAKE Clinic · Verified",
 });
 
+/** The clinic revoked the key that signed it (#88): not Verified, and it says so; the clinic is
+ * still named. A revoked key is not proof that the document is false, so the words do not say so. */
+const REVOKED = record("revoked", "FAKE revoked letter.pdf", {
+  clinicId: "clinic-1",
+  clinicName: LONG_CLINIC,
+  signatureKeyRevoked: true,
+});
+
 const snapshot: VaultSnapshot = {
   profiles: [{ id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 }],
   // A folder, so that the last column holds a Rename as well as Details.
@@ -54,7 +62,7 @@ const snapshot: VaultSnapshot = {
       createdAtMs: 1,
     },
   ],
-  records: [VERIFIED, MANUAL, CLAIMS],
+  records: [VERIFIED, MANUAL, CLAIMS, REVOKED],
   recovery: null,
   recoveryKeySetAtMs: 1,
   // Main's snapshots carry their native capture (epoch and sequence).
@@ -120,6 +128,11 @@ const expected = (locale: Locale) => {
       tr("library.source.manualImport"),
     ],
     [CLAIMS, tr("library.status.unverified"), CLAIMS.sourceLabel],
+    [
+      REVOKED,
+      tr("library.status.keyRevoked"),
+      tr("library.source.clinic", { clinic: LONG_CLINIC }),
+    ],
   ] as const;
 };
 
@@ -232,6 +245,31 @@ describe("a document's status before its source (#135)", () => {
     expect(screen.queryByText(MANUAL_IMPORT_LABEL)).not.toBeInTheDocument();
     expect(
       within(row("en", CLAIMS)).queryByText("Verified", { exact: true }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the clinic revoked the signing key instead of Verified, and still names the clinic (#88)", () => {
+    renderLibrary();
+    const revoked = row("en", REVOKED);
+    expect(
+      within(revoked).getByText("Signature key revoked by the clinic", {
+        exact: true,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(revoked).queryByText("Verified", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(revoked).queryByText("Unverified", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(revoked).getByText(`From ${LONG_CLINIC}`),
+    ).toBeInTheDocument();
+    // Verified wins when the check passes, whatever else is set.
+    expect(
+      within(row("en", VERIFIED)).queryByText(
+        "Signature key revoked by the clinic",
+      ),
     ).not.toBeInTheDocument();
   });
 

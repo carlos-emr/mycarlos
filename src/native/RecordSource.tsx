@@ -21,7 +21,11 @@ export function RecordSource({
 }: {
   record: Pick<
     VaultRecord,
-    "verifiedClinicName" | "sourceLabel" | "fileSaysCheckedAtMs"
+    | "verifiedClinicName"
+    | "sourceLabel"
+    | "fileSaysCheckedAtMs"
+    | "signatureKeyRevoked"
+    | "clinicName"
   >;
   className?: string;
 }) {
@@ -40,17 +44,28 @@ export function RecordSource({
         })
       : "";
   const clinic = record.verifiedClinicName;
+  // The clinic revoked the key that signed it (#88): not Verified, and it says why. The source
+  // line stays as an unverified document's, and the words do not call the document false.
+  const keyRevoked = !clinic && record.signatureKeyRevoked === true;
   const source = clinic
     ? t("library.source.clinic", { clinic })
-    : record.sourceLabel === MANUAL_IMPORT_LABEL
-      ? t("library.source.manualImport")
-      : record.sourceLabel;
+    : keyRevoked && record.clinicName
+      ? t("library.source.clinic", { clinic: record.clinicName })
+      : record.sourceLabel === MANUAL_IMPORT_LABEL
+        ? t("library.source.manualImport")
+        : record.sourceLabel;
   return (
     <span
       className={`record-source ${clinic ? "verified" : "unverified"} ${className}`.trim()}
     >
       <span className="record-status">
-        {t(clinic ? "library.status.verified" : "library.status.unverified")}
+        {t(
+          clinic
+            ? "library.status.verified"
+            : keyRevoked
+              ? "library.status.keyRevoked"
+              : "library.status.unverified",
+        )}
       </span>{" "}
       <span className="record-source-name">{source}</span>
       {claim && (

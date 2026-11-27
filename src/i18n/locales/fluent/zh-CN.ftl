@@ -604,6 +604,10 @@ library-noMatch-title = 找不到符合的记录
 
 library-rename = 重命名
 
+library-filter-allClinics = 所有诊所
+
+library-filter-clinicLabel = 诊所
+
 library-search-cleared = 已清除搜索。此位置的文件夹：{ $folders }。文档：{ $documents }。
 
 library-search-results = 搜索结果。文件夹：{ $folders }。文档：{ $documents }。
@@ -1660,6 +1664,8 @@ portal-unlockRefused = { $count } 份诊所文档无法验证，因此未添加�
 library-source-clinic = 来自 { $clinic }
 
 library-source-manualImport = 手动导入
+
+library-status-keyRevoked = 诊所已吊销签名密钥
 
 library-status-unverified = 未验证
 

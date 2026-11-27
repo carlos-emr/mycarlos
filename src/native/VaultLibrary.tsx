@@ -82,6 +82,7 @@ import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
   NAME_INPUT_MAX_LENGTH,
+  clinicsOf,
   nameTooLong,
   searchKey,
 } from "./recordPresentation";
@@ -290,6 +291,8 @@ export function VaultLibrary({
   const announcedSearchRef = useRef(searchRequest);
   const [view, setView] = useState<NativeView>("list");
   const [sort, setSort] = useState<NativeSort>("newest");
+  // The clinic filter (#88): the id of one clinic, or "" for all.
+  const [clinicFilterId, setClinicFilterId] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [moveFolderId, setMoveFolderId] = useState("");
   // Where the selected documents in Shared with me go: "<person>|<folder>".
@@ -677,14 +680,26 @@ export function VaultLibrary({
       searchScope,
     ],
   );
+  // The clinics the documents in view came from, one entry per clinic id (#88). Two clinics with
+  // the same name are told apart by a number, in id order.
+  const clinicChoices = useMemo(() => clinicsOf(records), [records]);
+  // A clinic that has no document any more is no filter: the list is shown whole.
+  const activeClinicId = clinicChoices.some(
+    (choice) => choice.id === clinicFilterId,
+  )
+    ? clinicFilterId
+    : "";
   // One entry per document, however many folders it is filed in.
   const visibleRecords = useMemo(() => {
     const matching = records.filter((record) => {
+      if (activeClinicId && record.clinicId !== activeClinicId) return false;
       if (normalizedQuery)
         return (
           (!searchScope ||
             record.folderIds.some((id) => searchScope.has(id))) &&
-          searchKey(record.displayName).includes(normalizedQuery)
+          (searchKey(record.displayName).includes(normalizedQuery) ||
+            (record.clinicName !== undefined &&
+              searchKey(record.clinicName).includes(normalizedQuery)))
         );
       return currentFolderId
         ? record.folderIds.includes(currentFolderId)
@@ -695,7 +710,14 @@ export function VaultLibrary({
         ? left.displayName.localeCompare(right.displayName)
         : right.importedAtMs - left.importedAtMs,
     );
-  }, [currentFolderId, normalizedQuery, records, searchScope, sort]);
+  }, [
+    activeClinicId,
+    currentFolderId,
+    normalizedQuery,
+    records,
+    searchScope,
+    sort,
+  ]);
   const selectedRecords = records.filter((record) =>
     selectedIds.includes(record.id),
   );
@@ -1020,6 +1042,7 @@ export function VaultLibrary({
   // inert for every dialog, and the banner as well (#121).
   const renaming = Boolean(renameTarget);
   const sortLabelId = useId();
+  const clinicLabelId = useId();
   const libraryRef = useRef<HTMLDivElement | null>(null);
   // Library actions put focus back only after keyboard use. The recovery key
   // setup asks for it however it was closed, as its opener may be gone.
@@ -2791,6 +2814,29 @@ export function VaultLibrary({
                         ))}
                       </span>
                     </div>
+                    {clinicChoices.length > 0 && (
+                      <div className="native-clinic-filter">
+                        <span className="native-sort-label" id={clinicLabelId}>
+                          {translateNow("library.filter.clinicLabel")}
+                        </span>
+                        <select
+                          aria-labelledby={clinicLabelId}
+                          value={activeClinicId}
+                          onChange={(event) =>
+                            setClinicFilterId(event.target.value)
+                          }
+                        >
+                          <option value="">
+                            {translateNow("library.filter.allClinics")}
+                          </option>
+                          {clinicChoices.map((choice) => (
+                            <option value={choice.id} key={choice.id}>
+                              {choice.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <span
                       className="segment native-view-segment"
                       aria-label={translateNow(

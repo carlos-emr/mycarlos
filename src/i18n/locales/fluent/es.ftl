@@ -699,6 +699,10 @@ library-noMatch-title = Ningún documento coincide
 
 library-rename = Cambiar nombre
 
+library-filter-allClinics = Todas las clínicas
+
+library-filter-clinicLabel = Clínica
+
 library-search-cleared = Búsqueda borrada. Carpetas en esta ubicación: { $folders }. Documentos: { $documents }.
 
 library-search-results = Resultados de la búsqueda. Carpetas: { $folders }. Documentos: { $documents }.
@@ -1844,6 +1848,8 @@ portal-unlockRefused =
 library-source-clinic = De { $clinic }
 
 library-source-manualImport = Importación manual
+
+library-status-keyRevoked = Clave de firma revocada por la clínica
 
 library-status-unverified = No verificado
 

@@ -369,6 +369,93 @@ const openFolder = (name: RegExp) =>
     ).getByRole("button", { name: humanText(name) }),
   );
 
+describe("search and filter by the clinic a document came from (#88)", () => {
+  const withClinic = (
+    id: string,
+    name: string,
+    clinicId: string | undefined,
+    clinicName: string | undefined,
+  ) => ({
+    ...record(id, name, []),
+    ...(clinicId ? { clinicId, clinicName } : {}),
+  });
+  const clinics: VaultSnapshot = {
+    ...snapshot,
+    folders: [],
+    records: [
+      withClinic(
+        "a1",
+        "FAKE Blood test.pdf",
+        "clinic-a",
+        "FAKE Riverside Clinic",
+      ),
+      withClinic("b1", "FAKE Referral.pdf", "clinic-b", "FAKE Lakeside Clinic"),
+      withClinic("n1", "FAKE Scan.pdf", undefined, undefined),
+      withClinic("a2", "FAKE Letter.pdf", "clinic-a", "FAKE Riverside Clinic"),
+    ],
+  };
+  const names = () => shownDocuments().map(([name]) => name);
+  const clinicSelect = () =>
+    screen.getByRole("combobox", { name: humanText("Clinic") });
+
+  it("finds a document by its clinic's name as well as its own name", () => {
+    renderLibrary(clinics);
+    search("Search everything in FAKE Avery", "riverside");
+    expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
+    // The document's own name still matches, and a clinic name matches in any case.
+    search("Search everything in FAKE Avery", "SCAN");
+    expect(names()).toEqual(["FAKE Scan.pdf"]);
+    search("Search everything in FAKE Avery", "lakeside");
+    expect(names()).toEqual(["FAKE Referral.pdf"]);
+    search("Search everything in FAKE Avery", "no such clinic");
+    expect(names()).toEqual([]);
+  });
+
+  it("narrows the list to one clinic and goes back to all", () => {
+    renderLibrary(clinics);
+    const select = clinicSelect();
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["All clinics", "FAKE Lakeside Clinic", "FAKE Riverside Clinic"]);
+    expect(names()).toHaveLength(4);
+    fireEvent.change(select, { target: { value: "clinic-a" } });
+    expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
+    // The filter and the search both apply.
+    search("Search everything in FAKE Avery", "blood");
+    expect(names()).toEqual(["FAKE Blood test.pdf"]);
+    search("Search everything in FAKE Avery", "");
+    fireEvent.change(clinicSelect(), { target: { value: "" } });
+    expect(names()).toHaveLength(4);
+  });
+
+  it("offers no clinic filter when no document has a clinic", () => {
+    renderLibrary({ ...clinics, records: [clinics.records[2]] });
+    expect(
+      screen.queryByRole("combobox", { name: humanText("Clinic") }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("tells two clinics with the same name apart, keyed on the id", () => {
+    renderLibrary({
+      ...clinics,
+      records: [
+        withClinic("x1", "FAKE One.pdf", "clinic-1", "FAKE Same Name"),
+        withClinic("x2", "FAKE Two.pdf", "clinic-2", "FAKE Same Name"),
+      ],
+    });
+    const options = within(clinicSelect()).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "All clinics",
+      "FAKE Same Name (1)",
+      "FAKE Same Name (2)",
+    ]);
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-2" } });
+    expect(names()).toEqual(["FAKE Two.pdf"]);
+  });
+});
+
 describe("VaultLibrary search", () => {
   const separateScopes: VaultSnapshot = {
     ...filed,

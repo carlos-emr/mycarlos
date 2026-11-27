@@ -189,6 +189,10 @@ pub(super) fn valid_carried(record: &StoredRecord) -> bool {
 pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Option<String> {
     let carried = record.carried.as_ref()?;
     let kid = &carried.delivery.manifest.kid;
+    // A link of the same clinic that lists the key as Revoked outweighs one that lists it Active.
+    if clinic_view(record, links).is_some_and(|view| view.key_revoked) {
+        return None;
+    }
     links.iter().find_map(|link| {
         let clinic = link.clinic.as_ref()?;
         (clinic.clinic_id == carried.clinic.clinic_id
@@ -198,6 +202,40 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
                 .any(|k| &k.kid == kid && k.status == KeyStatus::Active))
         .then(|| clinic.clinic_name.clone())
     })
+}
+
+/// The clinic of a carried record as the library shows it: the links of this vault to the same
+/// clinic (by id) that hold the signing key. Conservative when they disagree: if ANY of them lists
+/// the key as Revoked, it is revoked; it is Verified only when some link lists it Active and none
+/// lists it Revoked. A link that does not hold the key says nothing.
+pub(super) fn clinic_view(
+    record: &StoredRecord,
+    links: &[StoredLink],
+) -> Option<super::delivery::ClinicView> {
+    let carried = record.carried.as_ref()?;
+    let kid = &carried.delivery.manifest.kid;
+    let mut active = None;
+    for link in links {
+        let Some(clinic) = link.clinic.as_ref() else {
+            continue;
+        };
+        if clinic.clinic_id != carried.clinic.clinic_id {
+            continue;
+        }
+        let view = |key_revoked| super::delivery::ClinicView {
+            id: clinic.clinic_id.clone(),
+            name: clinic.clinic_name.clone(),
+            key_revoked,
+        };
+        match super::delivery::key_status(clinic, kid) {
+            Some(KeyStatus::Revoked) => return Some(view(true)),
+            Some(KeyStatus::Active) => {
+                active.get_or_insert_with(|| view(false));
+            }
+            None => {}
+        }
+    }
+    active
 }
 
 /// The clinic evidence of a filed delivery, as a handover carries it: the public and signed

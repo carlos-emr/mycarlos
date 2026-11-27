@@ -304,6 +304,8 @@ export const MESSAGE_KEYS = [
   "library.noMatch.help",
   "library.noMatch.title",
   "library.rename",
+  "library.filter.allClinics",
+  "library.filter.clinicLabel",
   "library.search.cleared",
   "library.search.results",
   "library.select",
@@ -813,6 +815,7 @@ export const MESSAGE_KEYS = [
   "portal.unlockRefused",
   "library.source.clinic",
   "library.source.manualImport",
+  "library.status.keyRevoked",
   "library.status.unverified",
   "library.status.verified",
   "portal.approvedByCode",
@@ -1828,6 +1831,8 @@ const FLUENT_IDS_BY_KEY = {
   "library.noMatch.help": "library-noMatch-help",
   "library.noMatch.title": "library-noMatch-title",
   "library.rename": "library-rename",
+  "library.filter.allClinics": "library-filter-allClinics",
+  "library.filter.clinicLabel": "library-filter-clinicLabel",
   "library.search.cleared": "library-search-cleared",
   "library.search.results": "library-search-results",
   "library.select": "library-select",
@@ -2368,6 +2373,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.unlockRefused": "portal-unlockRefused",
   "library.source.clinic": "library-source-clinic",
   "library.source.manualImport": "library-source-manualImport",
+  "library.status.keyRevoked": "library-status-keyRevoked",
   "library.status.unverified": "library-status-unverified",
   "library.status.verified": "library-status-verified",
   "portal.approvedByCode": "portal-approvedByCode",
@@ -3472,6 +3478,8 @@ export interface MessageArgsByKey {
   "library.noMatch.help": undefined;
   "library.noMatch.title": undefined;
   "library.rename": undefined;
+  "library.filter.allClinics": undefined;
+  "library.filter.clinicLabel": undefined;
   "library.search.cleared": {
     documents: FluentArgument;
     folders: FluentArgument;
@@ -4017,6 +4025,7 @@ export interface MessageArgsByKey {
   "portal.unlockRefused": { count: FluentArgument };
   "library.source.clinic": { clinic: FluentArgument };
   "library.source.manualImport": undefined;
+  "library.status.keyRevoked": undefined;
   "library.status.unverified": undefined;
   "library.status.verified": undefined;
   "portal.approvedByCode": undefined;

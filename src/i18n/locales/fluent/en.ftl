@@ -680,6 +680,10 @@ library-noMatch-title = No matching records
 
 library-rename = Rename
 
+library-filter-allClinics = All clinics
+
+library-filter-clinicLabel = Clinic
+
 library-search-cleared = Search cleared. Folders in this location: { $folders }. Documents: { $documents }.
 
 library-search-results = Search results. Folders: { $folders }. Documents: { $documents }.
@@ -1808,6 +1812,8 @@ portal-unlockRefused =
 library-source-clinic = From { $clinic }
 
 library-source-manualImport = Manual import
+
+library-status-keyRevoked = Signature key revoked by the clinic
 
 library-status-unverified = Unverified
 

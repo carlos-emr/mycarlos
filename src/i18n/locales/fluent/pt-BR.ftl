@@ -699,6 +699,10 @@ library-noMatch-title = Nenhum documento corresponde
 
 library-rename = Renomear
 
+library-filter-allClinics = Todas as clínicas
+
+library-filter-clinicLabel = Clínica
+
 library-search-cleared = Busca limpa. Pastas neste local: { $folders }. Documentos: { $documents }.
 
 library-search-results = Resultados da busca. Pastas: { $folders }. Documentos: { $documents }.
@@ -1844,6 +1848,8 @@ portal-unlockRefused =
 library-source-clinic = De { $clinic }
 
 library-source-manualImport = Importação manual
+
+library-status-keyRevoked = Chave de assinatura revogada pela clínica
 
 library-status-unverified = Não verificado
 

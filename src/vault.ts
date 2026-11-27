@@ -160,6 +160,13 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** The clinic this document came from, by the id and name of the link of this vault that checked
+   * it (#88). Present whether or not the document is Verified now; absent for a manual import. */
+  clinicId?: string;
+  clinicName?: string;
+  /** True when the clinic has revoked the key that signed this document. It then is not shown as
+   * Verified. A revoked key is not proof that the document is false. */
+  signatureKeyRevoked?: boolean;
   /** What the clinic wrote as the patient, on a clinic document waiting in Shared with me, so
    * that the patient sees why it did not file itself (#340). Never a hidden person's. */
   clinicPatient?: ClinicPatient;
