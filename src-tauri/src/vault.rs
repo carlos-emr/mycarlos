@@ -37,6 +37,10 @@ use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
 mod carried;
+// The storage is in every build (the manifest field is part of the format); what reads and writes
+// it is compiled for tests and the `cloud-ai` feature only, so the rest is unused otherwise.
+#[allow(dead_code)]
+mod cloud_keys;
 mod delivery;
 // Notice keys (#230): enrolled and wiped by the commands and the tray (tray_notices.rs).
 mod notice_keys;
@@ -91,6 +95,11 @@ mod picked_video;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
+use cloud_keys::StoredCloudKey;
+// The API the commands of a later change use; unused until then.
+#[cfg(any(feature = "cloud-ai", test))]
+#[allow(unused_imports)]
+pub use cloud_keys::{CloudKeyError, CloudKeyInfo};
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details;
@@ -114,8 +123,8 @@ const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 /// the handover file it came from and carry the excerpt of its old history, and a record can
 /// carry the clinic evidence of a delivery whose link did not come along. Its number is taken
 /// at merge, with no gap (VAULT_FORMAT.md, "Format numbers are taken at merge"); the cloud
-/// AI key draft (#389) also holds 14 provisionally, so whichever merges second renumbers. A
-/// renumber changes this line, the section in VAULT_FORMAT.md and the gates that name it.
+/// AI key (#389) took 17, after link removal's 16. A renumber changes this line, the section
+/// in VAULT_FORMAT.md and the gates that name it.
 const MANIFEST_FORMAT_PROFILE_HANDOVER: u32 = 14;
 /// Format 15 (provisional, #360 PR 7) lets a whole person be hidden: `hidden` on a profile.
 /// It has a number of its own, after the handover's 14, because a build that does not honour
@@ -130,8 +139,15 @@ const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES
 /// Format 16 (removing a clinic link, #160) adds the `portalLinkRemoved` history event. No
 /// manifest field changed; an older build refuses the vault because it cannot read the event.
 /// The number is taken at merge, after the profile handover's 14 and hiding a person's 15.
+// Only the upgrade tests name 16 now that the current format is 17.
+#[cfg(test)]
 const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 16;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_LINK_REMOVAL;
+/// Format 17 (#72, the patient's own cloud AI key) adds `cloudAiKeys`. Its number was taken at
+/// merge, with no gap (VAULT_FORMAT.md, "Format numbers are taken at merge"): after link removal's
+/// 16 (#160), with #418's 18 after it. A renumber changes this line, the format's section in
+/// VAULT_FORMAT.md and the tests that name 16 and 17.
+const MANIFEST_FORMAT_CLOUD_KEYS: u32 = 17;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_CLOUD_KEYS;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
 /// And at most this many across every imported profile of a vault, so that handing over many
@@ -860,6 +876,10 @@ struct Manifest {
     /// the link, so that the link a check is working from stays as saved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     refused_deliveries: Vec<RefusedDelivery>,
+    /// The patient's own API keys for a cloud AI provider (#72), encrypted with the rest of the
+    /// manifest and so in every backup. Format 17. Never given to the page (cloud_keys.rs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    cloud_ai_keys: Vec<StoredCloudKey>,
 }
 
 impl Manifest {
@@ -1884,6 +1904,7 @@ impl VaultStore {
                 waiting_aids: Vec::new(),
                 remote_notices: Default::default(),
                 refused_deliveries: Vec::new(),
+                cloud_ai_keys: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -6241,6 +6262,21 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     // Remembered refusals (#143): format 12, for a saved link, one per
     // delivery, and a bounded number per link.
     if manifest.format_version < MANIFEST_FORMAT_REFUSED && !manifest.refused_deliveries.is_empty()
+    {
+        return Err(VaultError::Corrupt);
+    }
+    // The patient's own cloud AI keys (#72): format 17, a bounded number, each well formed, no
+    // key twice.
+    if manifest.format_version < MANIFEST_FORMAT_CLOUD_KEYS && !manifest.cloud_ai_keys.is_empty() {
+        return Err(VaultError::Corrupt);
+    }
+    if manifest.cloud_ai_keys.len() > cloud_keys::MAX_CLOUD_KEYS
+        || manifest.cloud_ai_keys.iter().any(|key| !key.valid())
+        || manifest.cloud_ai_keys.iter().enumerate().any(|(at, key)| {
+            manifest.cloud_ai_keys[..at]
+                .iter()
+                .any(|before| before.same_as(key))
+        })
     {
         return Err(VaultError::Corrupt);
     }
@@ -11781,6 +11817,7 @@ mod tests {
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
             refused_deliveries: Vec::new(),
+            cloud_ai_keys: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -17513,6 +17550,7 @@ mod tests {
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
             refused_deliveries: Vec::new(),
+            cloud_ai_keys: Vec::new(),
         }
     }
 
@@ -19414,6 +19452,8 @@ mod tests {
             MANIFEST_FORMAT_PROFILE_HANDOVER,
             // Hiding a person, format 15: the last before link removal (16, #160).
             MANIFEST_FORMAT_HIDDEN_PROFILES,
+            // Link removal, format 16: the last before the patient's own cloud AI key (17).
+            MANIFEST_FORMAT_LINK_REMOVAL,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

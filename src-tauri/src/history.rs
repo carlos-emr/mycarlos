@@ -105,6 +105,11 @@ pub enum HistoryEvent {
     /// A person was made from a handover file (#360). The file's id is on the
     /// profile, not here.
     ProfileImported,
+    /// The patient's own cloud AI key was added (#72): `how` is the provider. Never the key.
+    CloudKeyAdded,
+    /// A cloud AI key was removed from the vault; `how` is the provider. Older backups still
+    /// hold it.
+    CloudKeyRemoved,
 }
 
 /// A folder as it was named at the time of the event.

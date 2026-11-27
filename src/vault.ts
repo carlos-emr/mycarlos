@@ -622,7 +622,9 @@ export interface AuditHistoryEntry {
     | "profileExported"
     | "profileHidden"
     | "profileRestored"
-    | "profileImported";
+    | "profileImported"
+    | "cloudKeyAdded"
+    | "cloudKeyRemoved";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
