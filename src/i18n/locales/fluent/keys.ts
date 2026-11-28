@@ -1171,6 +1171,11 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone",
   "interface.RecordDialog.microphoneLevel",
+  "interface.RecordDialog.microphoneTestRecording",
+  "interface.RecordDialog.microphoneTestPlaying",
+  "interface.RecordDialog.microphoneTestFailed",
+  "interface.RecordDialog.microphoneTestLowRate",
+  "interface.RecordDialog.microphoneTestHeadphones",
   "interface.RecordDialog.standard",
   "interface.RecordDialog.high",
   "interface.RecordDialog.aboutStandardPerHour",
@@ -2843,6 +2848,16 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-stopTestingMicrophone",
   "interface.RecordDialog.microphoneLevel":
     "interface-RecordDialog-microphoneLevel",
+  "interface.RecordDialog.microphoneTestRecording":
+    "interface-RecordDialog-microphoneTestRecording",
+  "interface.RecordDialog.microphoneTestPlaying":
+    "interface-RecordDialog-microphoneTestPlaying",
+  "interface.RecordDialog.microphoneTestFailed":
+    "interface-RecordDialog-microphoneTestFailed",
+  "interface.RecordDialog.microphoneTestLowRate":
+    "interface-RecordDialog-microphoneTestLowRate",
+  "interface.RecordDialog.microphoneTestHeadphones":
+    "interface-RecordDialog-microphoneTestHeadphones",
   "interface.RecordDialog.standard": "interface-RecordDialog-standard",
   "interface.RecordDialog.high": "interface-RecordDialog-high",
   "interface.RecordDialog.aboutStandardPerHour":
@@ -4438,6 +4453,11 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.testMicrophone": undefined;
   "interface.RecordDialog.stopTestingMicrophone": undefined;
   "interface.RecordDialog.microphoneLevel": undefined;
+  "interface.RecordDialog.microphoneTestRecording": undefined;
+  "interface.RecordDialog.microphoneTestPlaying": undefined;
+  "interface.RecordDialog.microphoneTestFailed": undefined;
+  "interface.RecordDialog.microphoneTestLowRate": { khz: FluentArgument };
+  "interface.RecordDialog.microphoneTestHeadphones": undefined;
   "interface.RecordDialog.standard": undefined;
   "interface.RecordDialog.high": undefined;
   "interface.RecordDialog.aboutStandardPerHour": undefined;

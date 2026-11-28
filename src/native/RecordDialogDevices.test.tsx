@@ -24,9 +24,21 @@ const KEY = "mycarlos.videoDevices.v1";
 // A FAKE recorder: it records nothing.
 class FakeRecorder extends EventTarget {
   static isTypeSupported = (type: string) => type.startsWith("video/mp4");
+  static made: FakeRecorder[] = [];
   state = "inactive";
-  constructor(readonly stream: MediaStream) {
+  mimeType = "audio/webm";
+  constructor(
+    readonly stream: MediaStream,
+    readonly options?: MediaRecorderOptions,
+  ) {
     super();
+    FakeRecorder.made.push(this);
+  }
+  /** A piece of what the microphone picked up (a test clip is made of these). */
+  give(text: string) {
+    this.dispatchEvent(
+      Object.assign(new Event("dataavailable"), { data: new Blob([text]) }),
+    );
   }
   start() {
     this.state = "recording";
@@ -231,7 +243,8 @@ describe("choosing the camera and the microphone", () => {
     // The system's default is used until a device is chosen: no exact device in the request.
     const first = getUserMedia.mock.calls[0]![0];
     expect(exact(first.video)).toBeUndefined();
-    expect(first.audio).toBe(true);
+    expect(exact(first.audio)).toBeUndefined();
+    expect(first.audio).toEqual({ sampleRate: { ideal: 48000 } });
     expect(cameraList().value).toBe("cam-a");
     expect(microphoneList().value).toBe("mic-a");
     expect(cameraList()).toBeEnabled();
@@ -387,7 +400,7 @@ describe("choosing the camera and the microphone", () => {
     expect(cameraList().value).toBe("cam-a");
   });
 
-  it("puts the microphone test back as it was after a switch, whether the new microphone opened or not", async () => {
+  it("stops the clip when switching microphones, including a failed switch, and keeps it on a camera switch", async () => {
     // The real audio context, with an analyser that reports a loud signal (the fake devices of this
     // file also make their tone with it, so it must stay a real one).
     const Real = AudioContext;
@@ -404,16 +417,13 @@ describe("choosing the camera and the microphone", () => {
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
     await screen.findByRole("meter", { name: "Microphone level" });
-    // A switch that works: the test is on again afterwards.
+    // Switching microphones discards the clip.
     fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
     await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
-    expect(
-      await screen.findByRole("meter", { name: "Microphone level" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Stop testing" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    // A switch that fails: the test is on again too, on the microphone still in use.
+    expect(screen.queryByRole("meter")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+    await screen.findByRole("meter");
+    // A failed microphone switch also discards the old clip.
     getUserMedia.mockImplementationOnce(async () => {
       throw Object.assign(new Error("FAKE microphone is busy"), {
         name: "NotReadableError",
@@ -426,9 +436,9 @@ describe("choosing the camera and the microphone", () => {
       ),
     );
     expect(microphoneList().value).toBe("mic-b");
-    expect(
-      await screen.findByRole("meter", { name: "Microphone level" }),
-    ).toBeVisible();
+    expect(screen.queryByRole("meter")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+    await screen.findByRole("meter");
     // A camera switch never turns the test off.
     fireEvent.change(cameraList(), { target: { value: "cam-b" } });
     await waitFor(() => expect(cameraList().value).toBe("cam-b"));
@@ -473,7 +483,7 @@ describe("choosing the camera and the microphone", () => {
     expect(screen.queryByRole("meter")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Test microphone" }),
-    ).toHaveAttribute("aria-pressed", "false");
+    ).toBeEnabled();
   });
 
   it("ignores a second choice while the first is still opening", async () => {
@@ -655,7 +665,7 @@ describe("choosing the camera and the microphone", () => {
     await ready();
     const last = getUserMedia.mock.calls.at(-1)![0];
     expect(exact(last.video)).toBeUndefined();
-    expect(last.audio).toBe(true);
+    expect(last.audio).toEqual({ sampleRate: { ideal: 48000 } });
     expect(cameraList().value).toBe("cam-a");
     expect(microphoneList().value).toBe("mic-a");
   });
@@ -849,9 +859,7 @@ describe("choosing the camera and the microphone", () => {
         timeout: 4000,
       },
     );
-    expect(
-      screen.getByRole("button", { name: "Stop testing" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Stop testing" })).toBeVisible();
     // Half of full scale (192 against a centre of 128).
     expect(Number((meter as HTMLMeterElement).value)).toBeCloseTo(0.5, 1);
     expect(resumed).toHaveBeenCalled();
@@ -866,6 +874,276 @@ describe("choosing the camera and the microphone", () => {
     await screen.findByRole("button", { name: "Pause recording" });
     expect(screen.queryByRole("meter")).toBeNull();
     expect(screen.queryByRole("button", { name: /microphone$/ })).toBeNull();
+  });
+
+  describe("hearing the microphone back", () => {
+    // Leave the fake devices' Web Audio graph intact. Supply decoded samples for the
+    // fake recorder and let each test decide exactly when playback ends.
+    const sources: AudioBufferSourceNode[] = [];
+    beforeEach(() => {
+      FakeRecorder.made = [];
+      sources.length = 0;
+      const makeSource = AudioContext.prototype.createBufferSource;
+      vi.spyOn(AudioContext.prototype, "resume").mockResolvedValue();
+      vi.spyOn(AudioContext.prototype, "state", "get").mockReturnValue(
+        "running",
+      );
+      vi.spyOn(AudioContext.prototype, "decodeAudioData").mockResolvedValue(
+        new AudioBuffer({ length: 16, sampleRate: 48_000 }),
+      );
+      vi.spyOn(AudioContext.prototype, "createBufferSource").mockImplementation(
+        function (this: AudioContext) {
+          const source = makeSource.call(this);
+          vi.spyOn(source, "start").mockImplementation(() => {});
+          vi.spyOn(source, "stop").mockImplementation(() => {});
+          vi.spyOn(source, "disconnect");
+          sources.push(source);
+          return source;
+        },
+      );
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** The recorder the test made: the only one with no picture in its stream. */
+    const clipRecorder = () =>
+      FakeRecorder.made.find(
+        (recorder) => recorder.stream.getVideoTracks().length === 0,
+      )!;
+    const startTest = () =>
+      fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+
+    it("records from the chosen microphone, plays it back once and drops it, with the state said", async () => {
+      const bridge = fakeBridge();
+      render(
+        <RecordDialog
+          platform="windows"
+          bridge={bridge}
+          profileId="profile-1"
+          folderIds={[]}
+          holdLock={() => () => undefined}
+          notice=""
+          onSaved={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+      await ready();
+      // The note to use headphones is there before anything starts.
+      expect(screen.getByText(/headphones/i)).toBeVisible();
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+      await screen.findByRole("button", { name: "Test microphone" });
+      startTest();
+      // Recording: the state is said and Stop is offered, from the microphone chosen in the list.
+      expect(await screen.findByText("Recording…")).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Stop testing" }),
+      ).toBeVisible();
+      const recorder = clipRecorder();
+      expect(recorder.stream.getAudioTracks()).toHaveLength(1);
+      expect(recorder.stream.getAudioTracks()[0].getSettings().deviceId).toBe(
+        "mic-b",
+      );
+      // About three seconds later the clip is played back once.
+      recorder.give("what the microphone picked up");
+      recorder.stop();
+      expect(await screen.findByText("Playing back…")).toBeVisible();
+      expect(sources).toHaveLength(1);
+      expect(sources[0].start).toHaveBeenCalledTimes(1);
+      expect(sources[0].buffer).not.toBeNull();
+      // When it ends the state clears, the buffer is released, and the button is back.
+      act(() => {
+        sources[0].dispatchEvent(new Event("ended"));
+      });
+      await screen.findByRole("button", { name: "Test microphone" });
+      expect(screen.queryByText("Playing back…")).toBeNull();
+      expect(sources[0].buffer).toBeNull();
+      // Nothing went to the vault: no recording was begun, and nothing was appended.
+      expect(bridge.videoStart).not.toHaveBeenCalled();
+      expect(bridge.videoAppend).not.toHaveBeenCalled();
+    });
+
+    it("asks for 48 kHz or more from the microphone and a bitrate of 128 kbps or more for the clip, on the stream the recording uses", async () => {
+      open();
+      await ready();
+      // The one stream is the preview, the clip's source and the real recording's: sound is asked
+      // for at 48 kHz in the one getUserMedia call.
+      const audio = getUserMedia.mock.calls[0]![0].audio as {
+        sampleRate?: { ideal?: number };
+      };
+      expect(audio.sampleRate?.ideal).toBeGreaterThanOrEqual(48_000);
+      startTest();
+      await screen.findByText("Recording…");
+      const clip = clipRecorder();
+      expect(clip.options?.audioBitsPerSecond).toBeGreaterThanOrEqual(128_000);
+      // The same microphone track the real recording would use, not a copy or a second capture.
+      const preview = streams[0].getAudioTracks()[0];
+      expect(clip.stream.getAudioTracks()[0]).toBe(preview);
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it("says so when the microphone captures at a low rate, and not when it does not", async () => {
+      open();
+      await ready();
+      const track = streams[0].getAudioTracks()[0];
+      Object.assign(track, {
+        getSettings: () => ({ deviceId: "mic-a", sampleRate: 16_000 }),
+      });
+      startTest();
+      await screen.findByText("Recording…");
+      expect(
+        screen.getByText(humanText(/records at 16 kHz.*sounds thin/)),
+      ).toBeVisible();
+      // Another microphone: the note is not shown beside it.
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      await waitFor(() =>
+        expect(screen.queryByText(humanText(/sounds thin/))).toBeNull(),
+      );
+    });
+
+    it("can be stopped while recording, and is not left running when the device is switched", async () => {
+      open();
+      await ready();
+      startTest();
+      await screen.findByText("Recording…");
+      const recorder = clipRecorder();
+      fireEvent.click(screen.getByRole("button", { name: "Stop testing" }));
+      expect(recorder.state).toBe("inactive");
+      expect(screen.queryByText("Recording…")).toBeNull();
+      expect(sources).toHaveLength(0);
+      // Switching the microphone mid-test ends it too.
+      startTest();
+      await screen.findByText("Recording…");
+      const second = FakeRecorder.made.at(-1)!;
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      await waitFor(() => expect(second.state).toBe("inactive"));
+      expect(screen.queryByText("Recording…")).toBeNull();
+    });
+
+    // Switch or start a recording after playback has acquired its buffer.
+    const playBack = async () => {
+      startTest();
+      await screen.findByText("Recording…");
+      const recorder = clipRecorder();
+      recorder.give("heard");
+      recorder.stop();
+      await screen.findByText("Playing back…");
+      expect(sources).toHaveLength(1);
+      expect(sources[0].buffer).not.toBeNull();
+    };
+
+    it("drops the playback buffer when the microphone is switched during playback, and shows no old failure", async () => {
+      open();
+      await ready();
+      await playBack();
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      await waitFor(() => expect(sources[0].buffer).toBeNull());
+      expect(sources[0].disconnect).toHaveBeenCalledOnce();
+      expect(screen.queryByText("Playing back…")).toBeNull();
+      expect(
+        screen.queryByText("The microphone test did not work on this device."),
+      ).toBeNull();
+    });
+
+    it("drops the playback buffer when a real recording starts during playback", async () => {
+      open();
+      await ready();
+      await playBack();
+      fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+      await screen.findByRole("button", { name: "Pause recording" });
+      expect(sources[0].buffer).toBeNull();
+      expect(sources[0].disconnect).toHaveBeenCalledOnce();
+      expect(screen.queryByText("Playing back…")).toBeNull();
+    });
+
+    it("clears a failure of the old microphone's test when the microphone is switched", async () => {
+      open();
+      await ready();
+      startTest();
+      await screen.findByText("Recording…");
+      // Nothing was picked up: the test says it did not work.
+      clipRecorder().stop();
+      await screen.findByText(
+        "The microphone test did not work on this device.",
+      );
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      await waitFor(() =>
+        expect(
+          screen.queryByText(
+            "The microphone test did not work on this device.",
+          ),
+        ).toBeNull(),
+      );
+    });
+
+    it("cannot run while a real recording is in progress, and a recording ends a test that is running", async () => {
+      open();
+      await ready();
+      startTest();
+      await screen.findByText("Recording…");
+      const recorder = clipRecorder();
+      fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+      await screen.findByRole("button", { name: "Pause recording" });
+      // The test ended before the real recorder began, and there is no way to start another.
+      expect(recorder.state).toBe("inactive");
+      expect(
+        screen.queryByRole("button", { name: "Test microphone" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Stop testing" })).toBeNull();
+      expect(screen.queryByText("Recording…")).toBeNull();
+      expect(screen.queryByText(/headphones/i)).toBeNull();
+    });
+
+    it("drops the playback buffer when the dialog closes during playback", async () => {
+      const onClose = vi.fn();
+      render(
+        <RecordDialog
+          platform="windows"
+          bridge={fakeBridge()}
+          profileId="profile-1"
+          folderIds={[]}
+          holdLock={() => () => undefined}
+          notice=""
+          onSaved={vi.fn()}
+          onClose={onClose}
+        />,
+      );
+      await ready();
+      startTest();
+      await screen.findByText("Recording…");
+      const recorder = clipRecorder();
+      recorder.give("heard");
+      recorder.stop();
+      await screen.findByText("Playing back…");
+      expect(sources[0].buffer).not.toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(onClose).toHaveBeenCalled();
+      expect(sources[0].buffer).toBeNull();
+      expect(sources[0].disconnect).toHaveBeenCalledOnce();
+    });
+
+    it("says so, with nothing kept, when nothing could be recorded", async () => {
+      open();
+      await ready();
+      startTest();
+      await screen.findByText("Recording…");
+      // The recorder ends without a single piece.
+      clipRecorder().stop();
+      expect(
+        await screen.findByText(
+          "The microphone test did not work on this device.",
+        ),
+      ).toBeVisible();
+      expect(sources).toHaveLength(0);
+      expect(screen.queryByText("Recording…")).toBeNull();
+      // Trying again clears the note.
+      startTest();
+      await screen.findByText("Recording…");
+      expect(
+        screen.queryByText("The microphone test did not work on this device."),
+      ).toBeNull();
+    });
   });
 
   it("has no accessibility violations and speaks the patient's language", async () => {

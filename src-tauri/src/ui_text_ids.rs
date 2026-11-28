@@ -533,6 +533,11 @@ pub enum MessageId {
     InterfaceRecordDialogLowOnRoomMinutes,
     InterfaceRecordDialogMicrophone,
     InterfaceRecordDialogMicrophoneLevel,
+    InterfaceRecordDialogMicrophoneTestFailed,
+    InterfaceRecordDialogMicrophoneTestHeadphones,
+    InterfaceRecordDialogMicrophoneTestLowRate,
+    InterfaceRecordDialogMicrophoneTestPlaying,
+    InterfaceRecordDialogMicrophoneTestRecording,
     InterfaceRecordDialogNotEnoughRoom,
     InterfaceRecordDialogNothingWasRecorded,
     InterfaceRecordDialogPauseRecording,
@@ -1963,6 +1968,11 @@ impl MessageId {
         Self::InterfaceRecordDialogLowOnRoomMinutes,
         Self::InterfaceRecordDialogMicrophone,
         Self::InterfaceRecordDialogMicrophoneLevel,
+        Self::InterfaceRecordDialogMicrophoneTestFailed,
+        Self::InterfaceRecordDialogMicrophoneTestHeadphones,
+        Self::InterfaceRecordDialogMicrophoneTestLowRate,
+        Self::InterfaceRecordDialogMicrophoneTestPlaying,
+        Self::InterfaceRecordDialogMicrophoneTestRecording,
         Self::InterfaceRecordDialogNotEnoughRoom,
         Self::InterfaceRecordDialogNothingWasRecorded,
         Self::InterfaceRecordDialogPauseRecording,
@@ -3561,6 +3571,21 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogMicrophone => "interface-RecordDialog-microphone",
             Self::InterfaceRecordDialogMicrophoneLevel => "interface-RecordDialog-microphoneLevel",
+            Self::InterfaceRecordDialogMicrophoneTestFailed => {
+                "interface-RecordDialog-microphoneTestFailed"
+            }
+            Self::InterfaceRecordDialogMicrophoneTestHeadphones => {
+                "interface-RecordDialog-microphoneTestHeadphones"
+            }
+            Self::InterfaceRecordDialogMicrophoneTestLowRate => {
+                "interface-RecordDialog-microphoneTestLowRate"
+            }
+            Self::InterfaceRecordDialogMicrophoneTestPlaying => {
+                "interface-RecordDialog-microphoneTestPlaying"
+            }
+            Self::InterfaceRecordDialogMicrophoneTestRecording => {
+                "interface-RecordDialog-microphoneTestRecording"
+            }
             Self::InterfaceRecordDialogNotEnoughRoom => "interface-RecordDialog-notEnoughRoom",
             Self::InterfaceRecordDialogNothingWasRecorded => {
                 "interface-RecordDialog-nothingWasRecorded"
@@ -6324,6 +6349,21 @@ impl MessageId {
             }
             "interface.RecordDialog.microphoneLevel" => {
                 Some(Self::InterfaceRecordDialogMicrophoneLevel)
+            }
+            "interface.RecordDialog.microphoneTestRecording" => {
+                Some(Self::InterfaceRecordDialogMicrophoneTestRecording)
+            }
+            "interface.RecordDialog.microphoneTestPlaying" => {
+                Some(Self::InterfaceRecordDialogMicrophoneTestPlaying)
+            }
+            "interface.RecordDialog.microphoneTestFailed" => {
+                Some(Self::InterfaceRecordDialogMicrophoneTestFailed)
+            }
+            "interface.RecordDialog.microphoneTestLowRate" => {
+                Some(Self::InterfaceRecordDialogMicrophoneTestLowRate)
+            }
+            "interface.RecordDialog.microphoneTestHeadphones" => {
+                Some(Self::InterfaceRecordDialogMicrophoneTestHeadphones)
             }
             "interface.RecordDialog.standard" => Some(Self::InterfaceRecordDialogStandard),
             "interface.RecordDialog.high" => Some(Self::InterfaceRecordDialogHigh),
