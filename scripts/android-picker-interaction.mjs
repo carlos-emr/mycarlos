@@ -23,18 +23,28 @@ export async function tapDownloadsRoot(device, selector) {
   }
 }
 
-export async function launchFromHome(device) {
-  // Use the launcher entry point already proven by the initial smoke check.
-  const result = await device.shell(
-    `monkey -p ${appPackage} -c android.intent.category.LAUNCHER 1`,
-  );
-  assert.match(result.toString(), /^Events injected: 1\s*$/m);
+export async function launchFromHome(device, component) {
+  assert.match(component, /^[\w.]+\/[\w.$]+$/);
+  assert.equal(component.split("/")[0], appPackage);
+  // MAIN/LAUNCHER with NEW_TASK and RESET_TASK_IF_NEEDED, like the home icon.
+  const result = (
+    await device.shell(
+      `am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000 -n '${component}'`,
+    )
+  ).toString();
+  assert.match(result, /^Status: ok\s*$/m);
+  return result.trim();
 }
 
-export function foregroundPackage(dump) {
+export function foregroundActivity(dump) {
   const output = dump.toString();
   const activity =
     output.match(/^\s*topResumedActivity=(.*)$/m) ??
     output.match(/^\s*mResumedActivity[:=]\s*(.*)$/m);
-  return activity?.[1].match(/^ActivityRecord\{.*\bu\d+ ([\w.]+)\//)?.[1] ?? "";
+  const match = activity?.[1].match(
+    /^ActivityRecord\{([a-f\d]+) u\d+ (([\w.]+)\/[\w.$]+) t(\d+)\b/,
+  );
+  if (!match) return null;
+  const [, record, component, packageName, task] = match;
+  return { record, component, packageName, task };
 }

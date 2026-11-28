@@ -7,7 +7,7 @@ import {
   emulatorSerial,
 } from "./android-emulator-preflight.mjs";
 import {
-  foregroundPackage,
+  foregroundActivity,
   launchFromHome,
   tapDownloadsRoot,
 } from "./android-picker-interaction.mjs";
@@ -122,25 +122,40 @@ try {
       await details
         .getByRole("button", { name: "Close document details", exact: true })
         .click();
+    const foreground = async () =>
+      foregroundActivity(await device.shell("dumpsys activity activities"));
+    let original;
+    await expect
+      .poll(async () => (original = await foreground())?.packageName)
+      .toBe(app);
     await button("New").click();
     await device.wait(native({ desc: "Show roots" }));
     await device.input.press("Home");
-    const foreground = async () =>
-      foregroundPackage(await device.shell("dumpsys activity activities"));
-    await expect.poll(foreground, { timeout: 20_000 }).toMatch(/launcher/i);
-    await launchFromHome(device);
+    await expect
+      .poll(async () => (await foreground())?.packageName ?? "", {
+        timeout: 20_000,
+      })
+      .toMatch(/launcher/i);
+    console.log(await launchFromHome(device, original.component));
     let resumed;
     await expect
-      .poll(async () => (resumed = await foreground()), { timeout: 20_000 })
+      .poll(async () => (resumed = await foreground())?.packageName ?? "", {
+        timeout: 20_000,
+      })
       .toMatch(/^(?:ca\.carlos\.mycarlos|[\w.]+\.documentsui)$/);
     // Returning to DocumentsUI is still a pending pick. Back from there would
     // exercise foreground cancellation, a different lifecycle from returning
     // to the app after Home. Record the observed branch in the artifact.
-    if (resumed !== app) {
+    if (resumed.packageName !== app) {
       console.log(
         "PENDING Home restored the system picker; return to the app after background settlement still needs device evidence",
       );
     } else {
+      assert.deepEqual(
+        resumed,
+        original,
+        "Home must return to the existing app activity and task",
+      );
       await expect(lockHeading).toBeVisible({ timeout: 30_000 });
       assert.equal(await vaultStatus(), "locked");
       await expect(row).toHaveCount(0);

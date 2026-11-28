@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  foregroundPackage,
+  foregroundActivity,
   launchFromHome,
   tapDownloadsRoot,
 } from "./android-picker-interaction.mjs";
@@ -46,29 +46,54 @@ test("reports a persistently stale native selector after four attempts", async (
   assert.equal(tap.mock.callCount(), 4);
 });
 
-test("asks the existing Android launcher route to deliver one app event", async () => {
-  const shell = test.mock.fn(async () => Buffer.from("Events injected: 1\n"));
-  await launchFromHome({ shell });
+const main = "ca.carlos.mycarlos/.MainActivity";
+
+test("uses the resolved app activity with the Home launcher flags and retains the receipt", async () => {
+  const output =
+    "Warning: Activity not started, its current task has been brought to the front\nStatus: ok\n";
+  const shell = test.mock.fn(async () => Buffer.from(output));
+  assert.equal(await launchFromHome({ shell }, main), output.trim());
   assert.deepEqual(shell.mock.calls[0].arguments, [
-    "monkey -p ca.carlos.mycarlos -c android.intent.category.LAUNCHER 1",
+    `am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000 -n '${main}'`,
   ]);
 });
 
-test("refuses a launcher command that injected no event", async () => {
+test("reports an unsuccessful Android launch without polling for return", async () => {
   const shell = async () =>
-    Buffer.from("** No activities found to run, monkey aborted.");
-  await assert.rejects(launchFromHome({ shell }), /No activities found to run/);
+    Buffer.from("Error: Activity class does not exist.\n");
+  await assert.rejects(
+    launchFromHome({ shell }, main),
+    /Activity class does not exist/,
+  );
 });
 
-test("reads the top-resumed activity ahead of a stale resumed activity", () => {
+test("rejects a foreign activity before contacting Android", async () => {
+  const shell = test.mock.fn();
+  await assert.rejects(
+    launchFromHome({ shell }, "com.android.launcher3/.Launcher"),
+  );
+  assert.equal(shell.mock.callCount(), 0);
+});
+
+test("reads the exact top-resumed activity and task ahead of a stale resumed activity", () => {
   const previous =
     " mResumedActivity: ActivityRecord{ee u0 ca.carlos.mycarlos/.MainActivity t8}";
   const home =
     " topResumedActivity=ActivityRecord{ab u0 com.android.launcher3/.QuickstepLauncher t7}";
+  assert.deepEqual(foregroundActivity(Buffer.from(`${previous}\n${home}`)), {
+    component: "com.android.launcher3/.QuickstepLauncher",
+    packageName: "com.android.launcher3",
+    record: "ab",
+    task: "7",
+  });
+  assert.deepEqual(foregroundActivity(previous), {
+    component: main,
+    packageName: "ca.carlos.mycarlos",
+    record: "ee",
+    task: "8",
+  });
   assert.equal(
-    foregroundPackage(Buffer.from(`${previous}\n${home}`)),
-    "com.android.launcher3",
+    foregroundActivity(`${previous}\ntopResumedActivity=null`),
+    null,
   );
-  assert.equal(foregroundPackage(previous), "ca.carlos.mycarlos");
-  assert.equal(foregroundPackage(`${previous}\ntopResumedActivity=null`), "");
 });
