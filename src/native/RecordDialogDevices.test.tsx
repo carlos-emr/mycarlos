@@ -885,6 +885,9 @@ describe("choosing the camera and the microphone", () => {
       sources.length = 0;
       const makeSource = AudioContext.prototype.createBufferSource;
       vi.spyOn(AudioContext.prototype, "resume").mockResolvedValue();
+      vi.spyOn(AudioContext.prototype, "state", "get").mockReturnValue(
+        "running",
+      );
       vi.spyOn(AudioContext.prototype, "decodeAudioData").mockResolvedValue(
         new AudioBuffer({ length: 16, sampleRate: 48_000 }),
       );

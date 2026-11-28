@@ -116,8 +116,6 @@ export function startMicrophoneTest(
     if (!finished && data && data.size > 0) pieces.push(data);
   });
   recorder.addEventListener("error", () => finish(false));
-  // Request playback while the microphone-test click still has user activation.
-  let ready: Promise<void>;
   recorder.addEventListener("stop", async () => {
     window.clearTimeout(timer);
     if (finished) return;
@@ -126,14 +124,17 @@ export function startMicrophoneTest(
       return;
     }
     try {
-      await ready;
-      if (finished) return;
       const clip = new Blob(pieces);
       pieces.length = 0;
       const bytes = await clip.arrayBuffer();
       if (finished) return;
       const decoded = await context.decodeAudioData(bytes);
       if (finished) return;
+      // A device can leave resume() pending when it denies playback.
+      if (context.state !== "running") {
+        finish(false);
+        return;
+      }
       // Play once at the device's normal gain, directly to its output.
       source = context.createBufferSource();
       source.buffer = decoded;
@@ -147,7 +148,8 @@ export function startMicrophoneTest(
   });
 
   try {
-    ready = context.resume().catch(() => finish(false));
+    // Request playback while the microphone-test click still has user activation.
+    void context.resume().catch(() => finish(false));
     recorder.start();
   } catch {
     finished = true;

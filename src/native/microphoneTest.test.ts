@@ -48,6 +48,7 @@ const playback = {
   stop: vi.fn(),
 };
 class FakeContext {
+  state = "running";
   destination = {};
   resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
@@ -226,6 +227,22 @@ describe("the microphone test", () => {
     expect(playback.disconnect).toHaveBeenCalledOnce();
     expect(context.close).toHaveBeenCalledOnce();
     expect(events.phases).toEqual(["recording"]);
+  });
+
+  it("ends a captured test if the device leaves playback suspended", async () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        state = "suspended";
+        resume = vi.fn(() => new Promise<void>(() => {}));
+      },
+    );
+    const { recorder } = begin();
+    recorder.give("heard");
+    recorder.stop();
+    await vi.waitFor(() => expect(events.done).toEqual([false]));
+    expect(context.createBufferSource).not.toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalledOnce();
   });
 
   it("stops the recorder when the device refuses to resume audio", async () => {
