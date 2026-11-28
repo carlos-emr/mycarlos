@@ -12616,7 +12616,7 @@ mod tests {
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
-            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            ("StoreHandle", "app.manage(store)"),
             (
                 "Arc<AttemptThrottle>",
                 "app.manage(Arc::new(AttemptThrottle::new(",
