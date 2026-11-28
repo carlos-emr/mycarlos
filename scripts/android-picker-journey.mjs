@@ -6,7 +6,11 @@ import {
   appPackage as app,
   emulatorSerial,
 } from "./android-emulator-preflight.mjs";
-import { tapDownloadsRoot } from "./android-picker-interaction.mjs";
+import {
+  foregroundPackage,
+  launchFromHome,
+  tapDownloadsRoot,
+} from "./android-picker-interaction.mjs";
 
 const documentsUi = /.*\.documentsui/;
 const serial = emulatorSerial();
@@ -122,20 +126,17 @@ try {
     await device.wait(native({ desc: "Show roots" }));
     await device.input.press("Home");
     const foreground = async () =>
-      (await device.shell("dumpsys activity activities"))
-        .toString()
-        .split("\n")
-        .find((line) => /(?:mResumedActivity|topResumedActivity)/.test(line)) ??
-      "";
-    await expect.poll(foreground).toMatch(/launcher/i);
-    await device.shell(
-      `am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p ${app}`,
-    );
-    await expect.poll(foreground).toMatch(/ca\.carlos\.mycarlos|\.documentsui/);
+      foregroundPackage(await device.shell("dumpsys activity activities"));
+    await expect.poll(foreground, { timeout: 20_000 }).toMatch(/launcher/i);
+    await launchFromHome(device);
+    let resumed;
+    await expect
+      .poll(async () => (resumed = await foreground()), { timeout: 20_000 })
+      .toMatch(/^(?:ca\.carlos\.mycarlos|[\w.]+\.documentsui)$/);
     // Returning to DocumentsUI is still a pending pick. Back from there would
     // exercise foreground cancellation, a different lifecycle from returning
     // to the app after Home. Record the observed branch in the artifact.
-    if (/\.documentsui/.test(await foreground())) {
+    if (resumed !== app) {
       console.log(
         "PENDING Home restored the system picker; return to the app after background settlement still needs device evidence",
       );
