@@ -1255,6 +1255,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.profileHidden",
   "interface.history.event.profileRestored",
   "interface.history.event.profileImported",
+  "interface.history.event.folderHidden",
+  "interface.history.event.folderRestored",
   "handover.section.title",
   "handover.section.body",
   "handover.export.button",
@@ -2963,6 +2965,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-profileRestored",
   "interface.history.event.profileImported":
     "interface-history-event-profileImported",
+  "interface.history.event.folderHidden":
+    "interface-history-event-folderHidden",
+  "interface.history.event.folderRestored":
+    "interface-history-event-folderRestored",
   "handover.section.title": "handover-section-title",
   "handover.section.body": "handover-section-body",
   "handover.export.button": "handover-export-button",
@@ -4525,6 +4531,8 @@ export interface MessageArgsByKey {
   "interface.history.event.profileHidden": undefined;
   "interface.history.event.profileRestored": undefined;
   "interface.history.event.profileImported": undefined;
+  "interface.history.event.folderHidden": undefined;
+  "interface.history.event.folderRestored": undefined;
   "handover.section.title": undefined;
   "handover.section.body": undefined;
   "handover.export.button": undefined;

@@ -1736,6 +1736,10 @@ interface-history-event-profileRestored = Perfil de paciente restaurado
 
 interface-history-event-profileImported = Perfil de paciente añadido desde un archivo de traspaso
 
+interface-history-event-folderHidden = Carpeta oculta
+
+interface-history-event-folderRestored = Carpeta restaurada
+
 interface-history-event-readingAidFiled = Ayuda de lectura guardada
 
 interface-history-event-recoveryKeySet = Clave de recuperación configurada
@@ -2912,8 +2916,8 @@ hiddenPeople-damagedToo =
 
 interface-history-aboutHiddenPeople =
     { $count ->
-        [one] No se muestra { $count } entrada sobre una persona oculta. Se conserva y se muestra de nuevo cuando se restaura a la persona.
-       *[other] No se muestran { $count } entradas sobre personas ocultas. Se conservan y se muestran de nuevo cuando se restaura a las personas.
+        [one] No se muestra { $count } entrada sobre algo oculto (una persona o una carpeta). Se conserva y se muestra de nuevo cuando se restaura.
+       *[other] No se muestran { $count } entradas sobre personas o carpetas ocultas. Se conservan y se muestran de nuevo cuando se restauran.
     }
 
 interface-history-how-personHidden = Archivado en Compartido conmigo mientras la persona estaba oculta

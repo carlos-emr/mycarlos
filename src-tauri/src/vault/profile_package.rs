@@ -213,6 +213,14 @@ pub(crate) struct PackageFolder {
     pub parent_id: Option<Uuid>,
     pub name: String,
     pub created_at_ms: u64,
+    /// When the patient hid this folder (#574, Ben's decision: an export keeps a hidden folder's
+    /// documents, carried hidden, as a hidden document carries `hidden_at_ms`). Only the folder
+    /// that was hidden carries it; the folders below it are hidden by it on arrival, as here. An
+    /// import restores the folder hidden. Absent for a visible folder, so a package with no hidden
+    /// folder is byte for byte what it was; an older build refuses one that has it (the struct
+    /// denies unknown fields) rather than reading the folder as visible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_at_ms: Option<u64>,
 }
 
 /// One encrypted object in the package: its id (also its entry name) and its

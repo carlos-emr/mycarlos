@@ -750,6 +750,10 @@ struct HideUnavailableRequest {
     /// How many damaged documents of hidden people the patient was told of (#360).
     #[serde(default)]
     hidden_people_documents: usize,
+    /// How many damaged documents inside a hidden folder (of a person who is shown) the patient
+    /// was told of (#574): a separate figure from the hidden people's.
+    #[serde(default)]
+    hidden_folder_documents: usize,
 }
 
 #[derive(Deserialize)]
@@ -2056,6 +2060,12 @@ struct RecordIdRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProfileIdRequest {
     profile_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FolderIdRequest {
+    folder_id: Uuid,
 }
 
 /// An AI answer to keep with a document (#72): its document and the id `ai_summarize` /
@@ -4984,6 +4994,8 @@ struct ProfileExportSummary {
     ai_answers: usize,
     with_clinic_evidence: usize,
     left_out_damaged: usize,
+    /// Of the folders, those the patient hid, which arrive hidden with their documents (#574).
+    hidden_folders: usize,
     evidence_left_out: usize,
     history_entries: usize,
     plaintext_bytes: u64,
@@ -4998,6 +5010,7 @@ impl From<&vault::ExportReport> for ProfileExportSummary {
             ai_answers: report.ai_answers,
             with_clinic_evidence: report.with_clinic_evidence,
             left_out_damaged: report.left_out_damaged,
+            hidden_folders: report.hidden_folders,
             evidence_left_out: report.evidence_left_out,
             history_entries: report.history_entries,
             plaintext_bytes: report.plaintext_bytes,
@@ -7557,6 +7570,7 @@ async fn vault_hide_unavailable_records(
         store.hide_unavailable_records_covering(
             &request.confirmed,
             request.hidden_people_documents,
+            request.hidden_folder_documents,
             now_ms(),
         )
     })
@@ -8199,6 +8213,41 @@ async fn vault_restore_profile(
     .await
 }
 
+/// Hides a whole folder as one thing (#574): one flag, one history entry, nothing deleted. The
+/// folder and its descendants leave the library. A document that loses its last visible placement
+/// leaves with them, and the AI helper forgets its pending work.
+#[tauri::command]
+async fn vault_hide_folder(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: FolderIdRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let picks = Arc::clone(picks.inner());
+    run_blocking(store.arc(), move |store| {
+        // Forgotten only once the folder is hidden: a refused hide changes nothing.
+        let ids = store.hide_folder(request.folder_id, now_ms())?;
+        for record_id in ids {
+            picks.forget_texts_for(record_id);
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// Brings a hidden folder back (#574): exactly what was visible before is visible again.
+#[tauri::command]
+async fn vault_restore_folder(
+    store: State<'_, StoreHandle>,
+    request: FolderIdRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.restore_folder(request.folder_id)
+    })
+    .await
+}
+
 /// What a vault set aside (#71) keeps, said wherever one is set aside.
 #[cfg(test)]
 const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
@@ -8782,6 +8831,8 @@ pub fn run() {
             vault_unhide_record,
             vault_hide_profile,
             vault_restore_profile,
+            vault_hide_folder,
+            vault_restore_folder,
             vault_ai_result_save,
             vault_ai_results,
             vault_ai_result_read,
@@ -10795,6 +10846,13 @@ mod tests {
         let none: HideUnavailableRequest =
             serde_json::from_str(&format!(r#"{{"confirmed":["{id}"]}}"#)).unwrap();
         assert_eq!(none.hidden_people_documents, 0);
+        assert_eq!(none.hidden_folder_documents, 0);
+        // The count of a hidden folder's damaged documents is its own key (#574).
+        let folder: HideUnavailableRequest = serde_json::from_str(&format!(
+            r#"{{"confirmed":["{id}"],"hiddenFolderDocuments":2}}"#
+        ))
+        .unwrap();
+        assert_eq!(folder.hidden_folder_documents, 2);
         // A key the struct does not know is refused, not ignored: the old snake_case spelling (or
         // any other slip) fails loudly instead of leaving a field at its default.
         assert!(serde_json::from_str::<HideUnavailableRequest>(
@@ -12487,12 +12545,16 @@ mod tests {
             "vault_add_vault",
             "vault_find_other_vaults",
             "vault_name_found_vaults",
+            // Hiding a folder (#574 PR B): the Rust core and its commands; the screen that calls
+            // them (and the grant) is PR C.
+            "vault_hide_folder",
+            "vault_restore_folder",
         ];
         for &command in WITHHELD {
             let grant = format!("allow-{}", command.replace('_', "-"));
             assert!(
                 !permissions.contains(&grant.as_str()),
-                "{grant} is withheld until its screen exists (#357 PR 5)"
+                "{grant} is withheld until its screen exists (#357 PR 5, #574 PR C)"
             );
             assert!(library.contains(&format!("fn {command}(")));
             assert!(build_script.contains(&format!("\"{command}\"")));

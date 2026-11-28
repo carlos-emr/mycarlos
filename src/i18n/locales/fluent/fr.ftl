@@ -1736,6 +1736,10 @@ interface-history-event-profileRestored = Profil patient restauré
 
 interface-history-event-profileImported = Profil patient ajouté depuis un fichier de transfert
 
+interface-history-event-folderHidden = Dossier masqué
+
+interface-history-event-folderRestored = Dossier rétabli
+
 interface-history-event-readingAidFiled = Aide à la lecture enregistrée
 
 interface-history-event-recoveryKeySet = Clé de récupération configurée
@@ -2912,8 +2916,8 @@ hiddenPeople-damagedToo =
 
 interface-history-aboutHiddenPeople =
     { $count ->
-        [one] { $count } entrée concernant une personne masquée n'est pas affichée. Elle est conservée et réaffichée quand la personne est rétablie.
-       *[other] { $count } entrées concernant des personnes masquées ne sont pas affichées. Elles sont conservées et réaffichées quand les personnes sont rétablies.
+        [one] { $count } entrée concernant un élément masqué (une personne ou un dossier) n'est pas affichée. Elle est conservée et réaffichée quand il est rétabli.
+       *[other] { $count } entrées concernant des personnes ou des dossiers masqués ne sont pas affichées. Elles sont conservées et réaffichées quand ils sont rétablis.
     }
 
 interface-history-how-personHidden = Classé dans Partagés avec moi pendant que la personne était masquée

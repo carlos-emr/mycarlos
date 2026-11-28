@@ -450,6 +450,15 @@
       },
       "raw": false
     },
+    "vault_hide_folder": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "FolderIdRequest"
+        }
+      },
+      "raw": false
+    },
     "vault_hide_profile": {
       "arguments": {
         "request": {
@@ -840,6 +849,15 @@
         "request": {
           "optional": false,
           "struct": "RestoreRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_restore_folder": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "FolderIdRequest"
         }
       },
       "raw": false
@@ -1371,6 +1389,17 @@
       },
       "open": false
     },
+    "FolderIdRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
     "FolderRequest": {
       "ambiguous": false,
       "denyUnknown": true,
@@ -1396,6 +1425,10 @@
       "fields": {
         "confirmed": {
           "optional": false,
+          "struct": null
+        },
+        "hiddenFolderDocuments": {
+          "optional": true,
           "struct": null
         },
         "hiddenPeopleDocuments": {

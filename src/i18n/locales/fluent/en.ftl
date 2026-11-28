@@ -1703,6 +1703,10 @@ interface-history-event-profileRestored = Patient profile restored
 
 interface-history-event-profileImported = Patient profile added from a handover file
 
+interface-history-event-folderHidden = Folder hidden
+
+interface-history-event-folderRestored = Folder restored
+
 interface-history-event-readingAidFiled = Reading aid saved
 
 interface-history-event-recoveryKeySet = Recovery key set up
@@ -2877,8 +2881,8 @@ hiddenPeople-damagedToo =
 
 interface-history-aboutHiddenPeople =
     { $count ->
-        [one] { $count } entry about a hidden person is not shown. It is kept, and shown again when the person is restored.
-       *[other] { $count } entries about hidden people are not shown. They are kept, and shown again when the people are restored.
+        [one] { $count } entry about something hidden (a person or a folder) is not shown. It is kept, and shown again when it is restored.
+       *[other] { $count } entries about hidden people or folders are not shown. They are kept, and shown again when they are restored.
     }
 
 interface-history-how-personHidden = Filed in Shared with me while the person was hidden

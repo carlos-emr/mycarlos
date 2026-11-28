@@ -59,6 +59,9 @@ export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   profileHidden: "interface.history.event.profileHidden",
   profileRestored: "interface.history.event.profileRestored",
   profileImported: "interface.history.event.profileImported",
+  // #574: a folder hidden and restored.
+  folderHidden: "interface.history.event.folderHidden",
+  folderRestored: "interface.history.event.folderRestored",
 };
 
 /** The title of an entry's event; never the formatting-failure text, even for an

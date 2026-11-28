@@ -736,8 +736,10 @@ pub enum MessageId {
     InterfaceHistoryEventDeviceApprovalStatusChanged,
     InterfaceHistoryEventDeviceApprovalVerified,
     InterfaceHistoryEventFolderCreated,
+    InterfaceHistoryEventFolderHidden,
     InterfaceHistoryEventFolderMoved,
     InterfaceHistoryEventFolderRenamed,
+    InterfaceHistoryEventFolderRestored,
     InterfaceHistoryEventHidden,
     InterfaceHistoryEventHistoryStarted,
     InterfaceHistoryEventImported,
@@ -2166,8 +2168,10 @@ impl MessageId {
         Self::InterfaceHistoryEventDeviceApprovalStatusChanged,
         Self::InterfaceHistoryEventDeviceApprovalVerified,
         Self::InterfaceHistoryEventFolderCreated,
+        Self::InterfaceHistoryEventFolderHidden,
         Self::InterfaceHistoryEventFolderMoved,
         Self::InterfaceHistoryEventFolderRenamed,
+        Self::InterfaceHistoryEventFolderRestored,
         Self::InterfaceHistoryEventHidden,
         Self::InterfaceHistoryEventHistoryStarted,
         Self::InterfaceHistoryEventImported,
@@ -3934,8 +3938,10 @@ impl MessageId {
                 "interface-history-event-deviceApprovalVerified"
             }
             Self::InterfaceHistoryEventFolderCreated => "interface-history-event-folderCreated",
+            Self::InterfaceHistoryEventFolderHidden => "interface-history-event-folderHidden",
             Self::InterfaceHistoryEventFolderMoved => "interface-history-event-folderMoved",
             Self::InterfaceHistoryEventFolderRenamed => "interface-history-event-folderRenamed",
+            Self::InterfaceHistoryEventFolderRestored => "interface-history-event-folderRestored",
             Self::InterfaceHistoryEventHidden => "interface-history-event-hidden",
             Self::InterfaceHistoryEventHistoryStarted => "interface-history-event-historyStarted",
             Self::InterfaceHistoryEventImported => "interface-history-event-imported",
@@ -6480,6 +6486,10 @@ impl MessageId {
             }
             "interface.history.event.profileImported" => {
                 Some(Self::InterfaceHistoryEventProfileImported)
+            }
+            "interface.history.event.folderHidden" => Some(Self::InterfaceHistoryEventFolderHidden),
+            "interface.history.event.folderRestored" => {
+                Some(Self::InterfaceHistoryEventFolderRestored)
             }
             "handover.section.title" => Some(Self::HandoverSectionTitle),
             "handover.section.body" => Some(Self::HandoverSectionBody),

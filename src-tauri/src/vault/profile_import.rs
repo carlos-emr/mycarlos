@@ -708,6 +708,13 @@ fn plan_import(
             parent_id: folder.parent_id.map(|parent| folder_map[&parent]),
             name: folder_name,
             created_at_ms: folder.created_at_ms.min(now_ms),
+            // A folder the patient hid arrives hidden, with its documents and the folders below it
+            // (#574): the flag is the patient's own, time capped at now like the folder's, and
+            // only ever the patient's reason. The imported PERSON still arrives visible.
+            hidden: folder.hidden_at_ms.map(|at_ms| Hidden {
+                at_ms: at_ms.min(now_ms),
+                reason: HiddenReason::Patient,
+            }),
         });
     }
     let records = package
@@ -1737,6 +1744,7 @@ mod tests {
                 parent_id: None,
                 name: "F".repeat(200),
                 created_at_ms: u64::MAX / 2,
+                hidden_at_ms: None,
             }],
         );
         let bytes = crafted(manifest, &[vec![7_u8; 10]], &key);
@@ -1775,6 +1783,7 @@ mod tests {
                 parent_id: parent,
                 name: format!("FAKE Level {level}"),
                 created_at_ms: 1,
+                hidden_at_ms: None,
             });
             parent = Some(id);
         }

@@ -103,12 +103,14 @@ fn fixture(sizes: &[usize]) -> Fixture {
                     parent_id: None,
                     name: "FAKE Letters".to_owned(),
                     created_at_ms: 1,
+                    hidden_at_ms: None,
                 },
                 PackageFolder {
                     id: inner,
                     parent_id: Some(outer),
                     name: "FAKE Results".to_owned(),
                     created_at_ms: 2,
+                    hidden_at_ms: None,
                 },
             ],
             records,
@@ -887,6 +889,7 @@ fn counts_past_the_limits_are_refused() {
                     parent_id: None,
                     name: format!("FAKE {n}"),
                     created_at_ms: 0,
+                    hidden_at_ms: None,
                 })
                 .collect();
             m.records.clear();
@@ -913,6 +916,7 @@ fn folders_nested_too_deep_are_refused_and_the_deepest_allowed_is_not() {
                 parent_id: parent,
                 name: format!("FAKE {n}"),
                 created_at_ms: 0,
+                hidden_at_ms: None,
             });
             parent = Some(id);
         }

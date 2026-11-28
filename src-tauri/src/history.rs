@@ -105,6 +105,14 @@ pub enum HistoryEvent {
     /// A person was made from a handover file (#360). The file's id is on the
     /// profile, not here.
     ProfileImported,
+    /// A whole folder was hidden (#574): one entry, whatever it holds. It carries the folder's id,
+    /// its person and the name the history keeps for folders (inside the encrypted vault; the
+    /// Security screen leaves the entry out while the folder is hidden and says only how many it
+    /// left out). An older build cannot read this event, so the vault format that adds it refuses
+    /// the vault as newer.
+    FolderHidden,
+    /// A hidden folder was restored (#574).
+    FolderRestored,
 }
 
 /// A folder as it was named at the time of the event.

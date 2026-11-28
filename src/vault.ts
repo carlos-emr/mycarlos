@@ -221,6 +221,20 @@ export interface HiddenProfile {
   documents: number;
 }
 
+/** A hidden folder as Security's Hidden folders list shows it (#574): the topmost hidden folder of
+ * a person who is shown, with how much it holds. */
+export interface HiddenFolder {
+  id: string;
+  /** The person the folder belongs to. */
+  profileId: string;
+  name: string;
+  hiddenAtMs: number;
+  /** Every document filed in it or in any folder below it, those hidden one by one included. */
+  documents: number;
+  /** The folders below it, those hidden on their own included. */
+  subfolders: number;
+}
+
 /** A document that arrived for a person while they were hidden and waits in Shared with
  * me (#360). */
 export interface ArrivedWhileHidden {
@@ -238,6 +252,11 @@ export interface VaultSnapshot {
    * is read-only until they are dealt with, so the confirmation to hide the damaged
    * documents says so. */
   hiddenPeopleDamaged?: number;
+  /** The hidden folders of the people shown (#574); absent in a fake that has none. */
+  hiddenFolders?: HiddenFolder[];
+  /** Documents inside a hidden folder whose file is missing (#574): counted, never named, and a
+   * separate figure from the hidden people's. */
+  hiddenFoldersDamaged?: number;
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
@@ -366,6 +385,9 @@ export interface ProfileExportSummary {
   withClinicEvidence: number;
   /** Hidden as damaged: their file cannot be read, so they are not in it. */
   leftOutDamaged: number;
+  /** Of the folders, those the patient hid: they arrive hidden, with their documents (#574).
+   * Absent in a fake that has none. */
+  hiddenFolders?: number;
   /** Clinic evidence that would not stand up alone: the document goes without it. */
   evidenceLeftOut: number;
   historyEntries: number;
@@ -622,7 +644,9 @@ export interface AuditHistoryEntry {
     | "profileExported"
     | "profileHidden"
     | "profileRestored"
-    | "profileImported";
+    | "profileImported"
+    | "folderHidden"
+    | "folderRestored";
   name: string | null;
   oldName: string | null;
   from: string[] | null;

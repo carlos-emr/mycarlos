@@ -1771,6 +1771,10 @@ interface-history-event-profileRestored = Przywrócono profil pacjenta
 
 interface-history-event-profileImported = Dodano profil pacjenta z pliku przekazania
 
+interface-history-event-folderHidden = Folder ukryty
+
+interface-history-event-folderRestored = Folder przywrócony
+
 interface-history-event-readingAidFiled = Zapisano pomoc w czytaniu
 
 interface-history-event-recoveryKeySet = Ustawiono klucz odzyskiwania
@@ -3003,9 +3007,9 @@ hiddenPeople-damagedToo =
 
 interface-history-aboutHiddenPeople =
     { $count ->
-        [one] { $count } wpis o ukrytej osobie nie jest pokazany. Jest zachowany i pojawi się ponownie po przywróceniu osoby.
-        [few] { $count } wpisy o ukrytych osobach nie są pokazane. Są zachowane i pojawią się ponownie po przywróceniu osób.
-       *[other] Niepokazane wpisy o ukrytych osobach: { $count }. Są zachowane i pojawią się ponownie po przywróceniu osób.
+        [one] { $count } wpis o ukrytym elemencie (osobie lub folderze) nie jest pokazany. Jest zachowany i pojawi się ponownie po przywróceniu.
+        [few] { $count } wpisy o ukrytych osobach lub folderach nie są pokazane. Są zachowane i pojawią się ponownie po przywróceniu.
+       *[other] Niepokazane wpisy o ukrytych osobach lub folderach: { $count }. Są zachowane i pojawią się ponownie po przywróceniu.
     }
 
 interface-history-how-personHidden = Zapisany w Udostępnione mi, gdy osoba była ukryta

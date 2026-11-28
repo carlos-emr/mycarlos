@@ -87,6 +87,7 @@ fn push_folder(manifest: &mut Manifest, profile_id: Uuid, parent_id: Option<Uuid
         parent_id,
         name: "FAKE Folder".to_owned(),
         created_at_ms: 1,
+        hidden: None,
     });
     id
 }
@@ -374,13 +375,21 @@ const ENTRY_POINTS: &[(&str, Reach)] = &[
     ("read_ai_result", Reach::Asks("record_in_reach")),
     ("recording_start", Reach::Asks("validate_folder_ids")),
     ("added_with_camera", Reach::Asks("record_in_reach")),
+    // Hiding a folder (#574 PR B): the folder must be in reach to be hidden; a hidden one is
+    // restored only when its person and every folder above it are in reach.
+    ("hide_folder", Reach::Asks("folder_in_reach")),
+    ("restore_folder", Reach::Asks("folder_parent_in_reach")),
 ];
 
 /// Functions that take such an id and are not entry points: the helpers themselves.
 const NOT_ENTRY_POINTS: &[&str] = &[
-    // The single-folder helper and its shared ancestry walk.
+    // The reach helpers and their ancestry/subtree walks. `records_hidden_by_folder` compares
+    // visible placements for a folder that `hide_folder` has already checked.
     "folder_in_reach",
     "walk_in_reach",
+    "folder_parent_in_reach",
+    "folder_subtree",
+    "records_hidden_by_folder",
     // `ChunkReader::open` (playback.rs): a constructor handed a record that `playback_open` has
     // already found in reach; it looks nothing up.
     "open",
