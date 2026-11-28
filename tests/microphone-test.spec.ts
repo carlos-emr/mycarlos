@@ -272,7 +272,9 @@ test("Stop ends the test at once, and closing the dialog while it plays drops th
     { samples: expect.any(Number), state: "running" },
   ]);
   expect((await playback(page)).sources[0].samples).toBeGreaterThan(0);
-  await dialog.getByRole("button", { name: en("common.cancel") }).click();
+  await dialog
+    .getByRole("button", { name: en("photo.close"), exact: true })
+    .click();
   await expect(dialog).toHaveCount(0);
   await expect
     .poll(() => playback(page))
