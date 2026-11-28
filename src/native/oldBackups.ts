@@ -20,9 +20,11 @@ export const OLD_BACKUPS_KEEP =
 
 /** Where the steps for older backups are: a new backup to save first, then
  * every other one to delete, keeping the one named here (the file written,
- * where the platform says it). Kept in webview storage, so that a lock or
- * closing myCarlos does not lose the steps; it holds only a file name the
- * patient chose or saw. */
+ * where the platform says it). The steps are kept in webview storage, so that a
+ * lock or closing myCarlos does not lose them, **without the file's name**: a
+ * file name can carry a person's name, and on iOS the webview's storage is
+ * backed up (#422). The name lives in memory for this session only; after myCarlos
+ * is closed the steps name the file by when it was saved and its size. */
 export type OldBackupsGuide =
   | { step: "save" }
   | {
@@ -54,19 +56,31 @@ export function readOldBackupsGuide(): OldBackupsGuide | null {
     step === "delete" &&
     (typeof keep === "string" || keep === null) &&
     typeof savedAtMs === "number"
-  )
-    return {
+  ) {
+    const guide: OldBackupsGuide = {
       step,
-      keep,
+      // Never the stored name: an older build may have kept one, which is dropped here and from the
+      // storage, so the steps name the file by when it was saved and its size.
+      keep: null,
       savedAtMs,
       bytes: typeof bytes === "number" ? bytes : null,
     };
+    if (typeof keep === "string") rememberOldBackupsGuide(guide);
+    return guide;
+  }
   return null;
 }
 
 export function rememberOldBackupsGuide(guide: OldBackupsGuide | null): void {
   try {
-    if (guide) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(guide));
+    // The file's name stays out of the stored steps (see `OldBackupsGuide`).
+    if (guide)
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(
+          guide.step === "delete" ? { ...guide, keep: null } : guide,
+        ),
+      );
     else window.localStorage.removeItem(STORAGE_KEY);
   } catch {
     // Without webview storage the steps last as long as this screen.
