@@ -234,7 +234,6 @@ describe("the Record video dialog's layout", () => {
     expect(
       within(aside).getByRole("button", {
         name: "Test microphone",
-        exact: true,
       }),
     ).toBeVisible();
     expect(aside.querySelector(".record-quality")).not.toBeNull();
