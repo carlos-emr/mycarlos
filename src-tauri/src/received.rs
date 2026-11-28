@@ -269,14 +269,19 @@ pub(crate) fn without_names_unless_unlocked(
 }
 redact_debug!(ReceivedSummary);
 
-/// Files received and not yet imported or discarded, in arrival order. Memory only: a file
-/// received while the vault is locked is lost if the app closes first (the sealed inbox is
-/// a later step of #49).
+/// OS receipts, including shares accepted before setup can determine which vault owns the inbox.
 #[derive(Default)]
 pub(crate) struct ReceivedFiles {
     waiting: Mutex<Waiting>,
     notice: Mutex<ReceiveNotice>,
-    sealer: Mutex<Option<Arc<dyn Sealer>>>,
+    receipts: Mutex<Receipts>,
+}
+
+#[derive(Default)]
+struct Receipts {
+    sealer: Option<Arc<dyn Sealer>>,
+    /// Keep each share together until setup can seal it or offer it from memory.
+    before_setup: Vec<Vec<ReceivedSource>>,
 }
 
 /// What a sealer did with a share: how each file ended.
@@ -327,25 +332,37 @@ impl ReceivedFiles {
     /// were accepted. What was dropped or refused is kept for the page's next notice.
     pub(crate) fn receive(&self, offered: usize, sources: Vec<ReceivedSource>) {
         let dropped = offered.saturating_sub(sources.len());
-        // A share over the limit is refused whole, sealed or held: the same rule either way.
-        let sealer = self
-            .sealer
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        if let Some(sealer) =
-            sealer.filter(|_| !sources.is_empty() && sources.len() <= MAX_IMPORT_FILES)
-        {
-            // Sealing streams whole files to disk: not under a lock this module's other calls need.
-            if let Some(tally) = sealer.seal(&sources) {
-                let mut notice = self.notice();
-                notice.dropped += dropped + tally.not_pdf;
-                notice.sealed += tally.kept;
-                notice.not_kept += tally.not_kept;
-                return;
-            }
+        if sources.is_empty() || sources.len() > MAX_IMPORT_FILES {
+            let mut notice = self.notice();
+            notice.dropped += dropped;
+            notice.refused_shares += usize::from(!sources.is_empty());
+            return;
         }
-        let refused = !sources.is_empty() && self.add_share(sources).is_err();
+        let mut receipts = self.receipts.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(sealer) = receipts.sealer.clone() else {
+            let pending: usize = receipts.before_setup.iter().map(Vec::len).sum();
+            let mut notice = self.notice();
+            notice.dropped += dropped;
+            if pending + sources.len() <= MAX_IMPORT_FILES {
+                receipts.before_setup.push(sources);
+            } else {
+                notice.refused_shares += 1;
+            }
+            return;
+        };
+        drop(receipts);
+        self.deliver_share(sealer.as_ref(), dropped, sources);
+    }
+
+    fn deliver_share(&self, sealer: &dyn Sealer, dropped: usize, sources: Vec<ReceivedSource>) {
+        if let Some(tally) = sealer.seal(&sources) {
+            let mut notice = self.notice();
+            notice.dropped += dropped + tally.not_pdf;
+            notice.sealed += tally.kept;
+            notice.not_kept += tally.not_kept;
+            return;
+        }
+        let refused = self.add_share(sources).is_err();
         let mut notice = self.notice();
         notice.dropped += dropped;
         notice.refused_shares += usize::from(refused);
@@ -354,7 +371,14 @@ impl ReceivedFiles {
     /// Installs the sealer for files received while the vault is locked. Called once at start-up,
     /// once the app can open a source.
     pub(crate) fn set_sealer(&self, sealer: Arc<dyn Sealer>) {
-        *self.sealer.lock().unwrap_or_else(PoisonError::into_inner) = Some(sealer);
+        // A concurrent callback must not deliver ahead of the initial argv or an earlier share.
+        // Only startup holds this receipt gate during I/O; waiting files and notices have their
+        // own locks, and the app publishes its StoreHandle after this handoff.
+        let mut receipts = self.receipts.lock().unwrap_or_else(PoisonError::into_inner);
+        for share in receipts.before_setup.drain(..) {
+            self.deliver_share(sealer.as_ref(), 0, share);
+        }
+        receipts.sealer = Some(sealer);
     }
 
     /// Forgets the files waiting to be imported (not those an import has taken, which it finishes
@@ -688,6 +712,7 @@ mod tests {
             OsString::from("relative.pdf"),
             later.into_os_string(),
         ]);
+        files.set_sealer(scripted(None));
         assert_eq!(
             files
                 .list()
@@ -715,6 +740,7 @@ mod tests {
                 .into_os_string()
         });
         files.receive_command_line(std::iter::once(OsString::from("myCarlos")).chain(paths));
+        files.set_sealer(scripted(None));
         let initial = files.list();
         let taken = files
             .take(&initial.iter().map(|file| file.id).collect::<Vec<_>>())
@@ -899,6 +925,9 @@ mod tests {
         files.receive(1, Vec::new());
         files.receive(2, sources(1));
         files.receive(MAX_IMPORT_FILES, sources(MAX_IMPORT_FILES));
+        let sealer = scripted(None);
+        files.set_sealer(sealer.clone());
+        assert_eq!(*sealer.seen.lock().unwrap(), vec![1]);
         assert_eq!(
             files.take_notice(),
             ReceiveNotice {

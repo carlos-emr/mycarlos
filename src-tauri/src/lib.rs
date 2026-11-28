@@ -8717,8 +8717,7 @@ pub fn run() {
             // One worker for the app, ticking whichever vault the screen is on.
             #[cfg(desktop)]
             slots.start_document_collection()?;
-            // Commands ask the handle for "the" vault.
-            app.manage(StoreHandle::from_source(slots));
+            let store = StoreHandle::from_source(slots);
             // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
             // the vault registry and not inside Main's `vault-home`, and read only when needed,
             // not here. The old file is copied over once and left where it was.
@@ -8733,7 +8732,7 @@ pub fn run() {
             // A file shared while the vault is locked is sealed into the inbox beside it (#49),
             // once an unlock has made that inbox a key; until then it is held in memory as before.
             {
-                let screen_app = app.handle().clone();
+                let screen = store.clone();
                 let open_app = app.handle().clone();
                 app.state::<Arc<ReceivedFiles>>().set_sealer(Arc::new(
                     inbox_receipt::LockedSealer::new(
@@ -8742,17 +8741,14 @@ pub fn run() {
                         // vault is known locked AND is the only vault the device holds (with
                         // several, whose share it is cannot be told; #357), and the inbox is that
                         // vault's own, named by its header.
-                        Box::new(move || {
-                            screen_app
-                                .try_state::<StoreHandle>()
-                                .map_or(inbox_receipt::LockScreen::NotSingle, |store| {
-                                    inbox_receipt::lock_screen_of(&store)
-                                })
-                        }),
+                        Box::new(move || inbox_receipt::lock_screen_of(&screen)),
                         Box::new(move |source| open_sealing_source(&open_app, source)),
                     ),
                 ));
             }
+            // Finish the initial receipts while the vault is still locked, before a command
+            // can unlock it or change which vault owns an incoming share.
+            app.manage(store);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -10749,10 +10745,11 @@ mod tests {
     fn a_switch_stops_the_work_of_a_lock_and_forgets_the_files_the_system_offered() {
         let picks = PendingPicks::default();
         let received = ReceivedFiles::default();
-        received.receive(
-            1,
-            vec![ReceivedSource::Path("/home/jamie/FAKE-offered.pdf".into())],
-        );
+        received
+            .add_share(vec![ReceivedSource::Path(
+                "/home/jamie/FAKE-offered.pdf".into(),
+            )])
+            .unwrap();
         assert_eq!(received.len(), 1);
         let record_id = Uuid::new_v4();
         let pick_id = picks.store_export(
@@ -12544,7 +12541,7 @@ mod tests {
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
-            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            ("StoreHandle", "app.manage(store)"),
             (
                 "Arc<AttemptThrottle>",
                 "app.manage(Arc::new(AttemptThrottle::new(",

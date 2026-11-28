@@ -213,6 +213,70 @@ mod tests {
     }
 
     #[test]
+    fn cold_argv_and_an_early_callback_are_sealed_before_the_sources_disappear() {
+        use crate::received::ReceivedFiles;
+        use std::ffi::OsString;
+
+        let device = tempfile::tempdir().unwrap();
+        let sources = tempfile::tempdir().unwrap();
+        let keys = device_with_inbox(device.path(), 1);
+        let incoming = ReceivedFiles::default();
+        let names = ["FAKE initial.pdf", "FAKE forwarded.pdf"];
+        for name in names {
+            let file = sources.path().join(name);
+            std::fs::write(&file, format!("%PDF-1.4 {name}")).unwrap();
+            incoming.receive_command_line([OsString::from("myCarlos"), file.into_os_string()]);
+        }
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let order = Arc::clone(&opened);
+        let sealer = LockedSealer::new(
+            device.path().to_owned(),
+            Box::new(|| LockScreen::OnlyVault(vault(1))),
+            Box::new(move |source| {
+                let ReceivedSource::Path(path) = source else {
+                    return None;
+                };
+                let file = crate::vault::open_regular_read(path).ok()?;
+                let len = file.metadata().ok()?.len();
+                order.lock().unwrap().push(received_name(source));
+                Some((Box::new(file), Some(len)))
+            }),
+        );
+        let now = (sealer.now)();
+        incoming.set_sealer(Arc::new(sealer));
+        assert_eq!(*opened.lock().unwrap(), names);
+        assert_eq!(incoming.take_notice().sealed, 2);
+        assert!(incoming.list().is_empty());
+        drop(incoming);
+        sources.close().unwrap();
+
+        let folder = InboxFolder::new(device.path(), vault(1));
+        let recovered = folder
+            .reconcile_at_unlock(&keys, now + 60, &|_| false)
+            .unwrap();
+        assert_eq!(recovered.pending.len(), 2);
+        let mut recovered_names = Vec::new();
+        for item in recovered.pending {
+            let path = folder
+                .dir()
+                .join(crate::sealed_inbox::item_file_name(&item.item_id));
+            let mut reader = crate::sealed_inbox::open_item(
+                &keys,
+                &item.item_id,
+                std::fs::File::open(path).unwrap(),
+            )
+            .unwrap();
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).unwrap();
+            assert_eq!(bytes, format!("%PDF-1.4 {}", item.name).as_bytes());
+            assert_eq!(item.source, Source::Opened);
+            recovered_names.push(item.name);
+        }
+        recovered_names.sort();
+        assert_eq!(recovered_names, ["FAKE forwarded.pdf", "FAKE initial.pdf"]);
+    }
+
+    #[test]
     fn a_locked_app_with_an_inbox_seals_every_pdf_and_counts_the_rest() {
         let temp = tempfile::tempdir().unwrap();
         let keys = device_with_inbox(temp.path(), 1);
@@ -285,8 +349,8 @@ mod tests {
         let (several, opened) =
             sealer_on(temp.path(), LockScreen::NotSingle, vec![("a.pdf", pdf())]);
         let received = crate::received::ReceivedFiles::default();
-        received.set_sealer(Arc::new(several));
         received.receive(1, vec![path("a.pdf")]);
+        received.set_sealer(Arc::new(several));
         // The file was not even read, and neither inbox holds an item or any other file but its key.
         assert!(opened.lock().unwrap().is_empty());
         for (n, keys) in [(1, &keys_one), (2, &keys_two)] {
