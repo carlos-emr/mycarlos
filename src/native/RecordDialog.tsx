@@ -272,6 +272,7 @@ export function RecordDialog({
           tries.push(NO_CHOICE);
           let opened: MediaStream | null = null;
           for (const [index, chosen] of tries.entries()) {
+            if (attempt !== attemptRef.current) return;
             try {
               opened = await open(chosen);
               break;
