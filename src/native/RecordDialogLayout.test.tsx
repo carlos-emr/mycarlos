@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import axe from "axe-core";
 import { page } from "vitest/browser";
@@ -230,9 +231,12 @@ describe("the Record video dialog's layout", () => {
     // What the aside holds: both lists, the microphone test, the quality and the note.
     expect(aside.querySelector("#record-device-camera")).not.toBeNull();
     expect(aside.querySelector("#record-device-microphone")).not.toBeNull();
-    expect(aside.querySelector("button[aria-pressed]")).toHaveTextContent(
-      "Test microphone",
-    );
+    expect(
+      within(aside).getByRole("button", {
+        name: "Test microphone",
+        exact: true,
+      }),
+    ).toBeVisible();
     expect(aside.querySelector(".record-quality")).not.toBeNull();
     expect(aside).toHaveTextContent(
       "The video is saved encrypted. myCarlos remembers these choices on this device.",
