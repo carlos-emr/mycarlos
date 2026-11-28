@@ -123,14 +123,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 
 /// Pin each callback to the vault and session selected at receipt. Each vault can have one
 /// queued check while the worker is busy. No provider data enters the webview.
-pub(crate) fn listen<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    stores: crate::vault_source::StoreHandle,
-) -> std::io::Result<()> {
+pub(crate) fn listen<R: Runtime>(app: &tauri::AppHandle<R>) -> std::io::Result<()> {
     use crate::document_notifications::NoticeToken;
+    use crate::vault_source::StoreHandle;
     use std::sync::{Arc, Mutex};
     use tauri::ipc::{Channel, InvokeResponseBody};
     let plugin = app.state::<AndroidPush<R>>().0.clone();
+    let stores = app.state::<StoreHandle>().inner().clone();
     std::thread::Builder::new()
         .name("android-notice-inbox".into())
         .spawn(move || {
@@ -143,10 +142,11 @@ pub(crate) fn listen<R: Runtime>(
                 if let InvokeResponseBody::Json(json) = body {
                     if let Ok(value) = serde_json::from_str::<String>(&json) {
                         if let Ok(token) = NoticeToken::parse(&value) {
+                            let store = Arc::clone(stores.arc());
                             if incoming
                                 .lock()
                                 .unwrap_or_else(|p| p.into_inner())
-                                .push(Arc::clone(stores.arc()), token)
+                                .push(store, token)
                             {
                                 let _ = wake.try_send(());
                             }

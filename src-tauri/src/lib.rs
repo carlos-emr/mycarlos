@@ -8568,10 +8568,9 @@ pub fn run() {
             #[cfg(desktop)]
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
-            let store = StoreHandle::from_source(slots);
+            app.manage(StoreHandle::from_source(slots));
             #[cfg(all(target_os = "android", feature = "android-push"))]
-            android_push::listen(app.handle(), store.clone())?;
-            app.manage(store);
+            android_push::listen(app.handle())?;
             // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
             // the vault registry and not inside Main's `vault-home`, and read only when needed,
             // not here. The old file is copied over once and left where it was.
@@ -12616,7 +12615,7 @@ mod tests {
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
-            ("StoreHandle", "app.manage(store)"),
+            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
             (
                 "Arc<AttemptThrottle>",
                 "app.manage(Arc::new(AttemptThrottle::new(",
