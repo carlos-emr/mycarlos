@@ -19,6 +19,8 @@ try {
   const page = await (await device.webView({ pkg: app })).page();
   page.setDefaultTimeout(30_000);
   const button = (name) => page.getByRole("button", { name, exact: true });
+  const vaultStatus = () =>
+    page.evaluate(() => window.__TAURI_INTERNALS__.invoke("vault_status"));
   const native = (selector) => ({ pkg: documentsUi, ...selector });
   const downloads = async () => {
     await device.tap(native({ desc: "Show roots" }));
@@ -26,12 +28,7 @@ try {
   };
 
   // Only a first-run app is eligible. Do not unlock or clear an existing vault.
-  assert.equal(
-    await page.evaluate(() =>
-      window.__TAURI_INTERNALS__.invoke("vault_status"),
-    ),
-    "absent",
-  );
+  assert.equal(await vaultStatus(), "absent");
   await expect(
     page.getByRole("heading", { name: "Make myCarlos comfortable for you" }),
   ).toBeVisible();
@@ -51,9 +48,21 @@ try {
   await button("Create vault").click();
   await button("Lock vault and finish later").click();
   await button("Discard key and lock").click();
+  const lockHeading = page.getByRole("heading", { name: "Unlock your vault" });
+  await expect(lockHeading).toBeVisible({ timeout: 30_000 });
+  assert.equal(await vaultStatus(), "locked");
   await page.getByLabel("Passphrase", { exact: true }).fill(passphrase);
   await button("Unlock").click();
-  await button("Set up later").click();
+  // Unlock reports how the interrupted setup ended before offering another key.
+  await expect(
+    page.getByText(
+      /Recovery key setup ended .*that key does not open the vault/,
+    ),
+  ).toBeVisible({ timeout: 30_000 });
+  assert.equal(await vaultStatus(), "unlocked");
+  console.log(
+    "PASS Fresh vault locked after recovery setup and unlocked again",
+  );
 
   // Use names unique to this run. DocumentsUI supplies the Downloads document URI.
   const run = randomUUID().slice(0, 8);
@@ -130,15 +139,8 @@ try {
         "PENDING Home restored the system picker; return to the app after background settlement still needs device evidence",
       );
     } else {
-      await expect(
-        page.getByRole("heading", { name: "Unlock your vault" }),
-      ).toBeVisible({ timeout: 30_000 });
-      assert.equal(
-        await page.evaluate(() =>
-          window.__TAURI_INTERNALS__.invoke("vault_status"),
-        ),
-        "locked",
-      );
+      await expect(lockHeading).toBeVisible({ timeout: 30_000 });
+      assert.equal(await vaultStatus(), "locked");
       await expect(row).toHaveCount(0);
       console.log("PASS Home with the picker open returned to a locked vault");
     }

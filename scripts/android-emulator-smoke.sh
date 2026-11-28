@@ -69,4 +69,4 @@ echo "SMOKE OK: $package installed, open, no crash; screenshot $out/first-screen
 
 # Only Playwright's two UI Automator driver APKs; the emulator and SDK already exist.
 ./node_modules/.bin/playwright install android
-node scripts/android-picker-journey.mjs | tee "$out/picker-journey.txt"
+node scripts/android-picker-journey.mjs 2>&1 | tee "$out/picker-journey.txt"
