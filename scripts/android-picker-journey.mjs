@@ -6,6 +6,7 @@ import {
   appPackage as app,
   emulatorSerial,
 } from "./android-emulator-preflight.mjs";
+import { tapDownloadsRoot } from "./android-picker-interaction.mjs";
 
 const documentsUi = /.*\.documentsui/;
 const serial = emulatorSerial();
@@ -24,7 +25,7 @@ try {
   const native = (selector) => ({ pkg: documentsUi, ...selector });
   const downloads = async () => {
     await device.tap(native({ desc: "Show roots" }));
-    await device.tap(native({ text: "Downloads" }));
+    await tapDownloadsRoot(device, native({ text: "Downloads" }));
   };
 
   // Only a first-run app is eligible. Do not unlock or clear an existing vault.
