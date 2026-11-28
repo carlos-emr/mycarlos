@@ -886,7 +886,10 @@ The workflow `mycarlos-android-emulator.yml` builds the Android debug app for an
 emulator, starts an Android 34 emulator on a hosted Linux runner and runs
 `scripts/android-emulator-smoke.sh`. It runs by hand (Actions > myCarlos Android emulator smoke
 test > Run workflow) and on pull requests that change the workflow, that script or the Android
-security script; ordinary pull requests do not run it.
+security script. For changes confined to the picker or preflight JavaScript, run the emulator
+workflow manually. Local runs require a disposable account and emulator, explicitly selected
+with `MYCARLOS_DISPOSABLE_ANDROID_EMULATOR=1`. The launcher refuses a preinstalled myCarlos
+package, including retained package data.
 
 What it checks:
 
@@ -894,6 +897,11 @@ What it checks:
   (read with `aapt2`) that is really inside the APK.
 - The app installs on the emulator, opens, comes to the front and is still running ten seconds
   later, with nothing in the crash log and no fatal exception or "not responding" in the log.
+- The picker journey requires a fresh emulator and the installed debug APK. It creates a
+  synthetic vault with a one-minute lock, waits 65 seconds in the Android picker, imports a
+  FAKE PDF from Downloads, and compares the saved copy's SHA-256 with the fixture. It then
+  presses Home with the picker open. A return to myCarlos must show a locked vault. If the
+  launcher restores DocumentsUI, the artifact records the outstanding Home check as pending.
 - A screenshot of the first screen, the log and the check output are kept as the
   `myCarlos-Android-Emulator-Smoke` artifact for 14 days.
 
@@ -901,8 +909,8 @@ What it does not check yet:
 
 - The status-bar inset, the keyboard and how the icon looks. The screenshot lets a person look
   at them; nothing asserts them.
-- Anything inside the page. WebView debugging is not enabled in the app, so Playwright cannot
-  attach to it on Android yet; that is a follow-up.
+- Opening the exported file in a separate Android PDF viewer and using a slow cloud provider
+  for a large transfer, including cancellation. These need separate device evidence.
 - A phone (arm64). The emulator is x86_64.
 
 A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a

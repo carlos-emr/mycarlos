@@ -19,7 +19,7 @@
     "test:coverage:frontend": "vitest run --config vitest.coverage.config.ts",
     "test:coverage-floor": "node --test scripts/coverage-floor.test.mjs",
     "test:dev-data": "node --test scripts/generate-fake-dev-data.test.mjs",
-    "test:android-security": "node --test scripts/configure-android-security.test.mjs scripts/android-trust-gradle.test.mjs",
+    "test:android-security": "node --test scripts/configure-android-security.test.mjs scripts/android-trust-gradle.test.mjs scripts/android-emulator-preflight.test.mjs scripts/android-picker-interaction.test.mjs",
     "check:ios-privacy": "node scripts/check-ios-privacy.mjs",
     "ios:privacy": "node scripts/configure-ios-privacy.mjs",
     "test:ios-privacy": "node --test scripts/check-ios-privacy.test.mjs",
