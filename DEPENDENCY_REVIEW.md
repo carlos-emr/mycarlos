@@ -546,6 +546,13 @@ compiles them, and `ring` 0.17.14 with them. The Windows notice APIs
 `windows` dependency's own feature list. Android still does not call the
 platform verifier (see SECURITY_OPERATIONS.md).
 
+The optional Android push build pins Gradle dependency
+`com.google.firebase:firebase-messaging:26.0.1`. Its manifest disables Firebase
+Messaging auto-init and Analytics collection. The normal APK excludes the SDK.
+The synthetic push test APK also removes the Firebase initialization provider.
+In a live deployment Google would receive an installation's registration token,
+delivery timing, the fixed generic notice, and an opaque reconciliation token.
+
 ## Added for screen-reader tests (28 October 2026)
 
 `@guidepup/virtual-screen-reader` **0.33.0** (MIT), a dev dependency only, pinned

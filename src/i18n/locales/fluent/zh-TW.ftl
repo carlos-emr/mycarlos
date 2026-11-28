@@ -2727,3 +2727,5 @@ interface-AddVideo-tooLarge = 此影片大於 myCarlos 在此裝置上可新增�
 interface-AddVideo-damaged = 此影片已損毀或被截斷，無法新增。請從來源處重新複製後再試。
 
 interface-AddVideo-adding = 正在新增影片…
+
+notification-android-newDocument = myCarlos 中有一份新文件。

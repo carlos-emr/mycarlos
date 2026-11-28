@@ -3036,3 +3036,5 @@ interface-AddVideo-tooLarge = Este vídeo é maior do que o myCarlos pode adicio
 interface-AddVideo-damaged = Este vídeo está danificado ou cortado, então não pode ser adicionado. Copie-o de novo de onde ele veio e tente outra vez.
 
 interface-AddVideo-adding = Adicionando o vídeo…
+
+notification-android-newDocument = Há um novo documento no myCarlos.

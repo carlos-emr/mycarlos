@@ -3130,3 +3130,5 @@ interface-AddVideo-tooLarge = Ten film jest większy, niż myCarlos może dodać
 interface-AddVideo-damaged = Ten film jest uszkodzony lub ucięty, więc nie można go dodać. Proszę skopiować go ponownie z miejsca, z którego pochodzi, i spróbować jeszcze raz.
 
 interface-AddVideo-adding = Dodawanie filmu…
+
+notification-android-newDocument = W myCarlos jest nowy dokument.

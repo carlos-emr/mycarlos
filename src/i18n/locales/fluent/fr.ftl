@@ -3036,3 +3036,5 @@ interface-AddVideo-tooLarge = Cette vidéo est plus volumineuse que ce que myCar
 interface-AddVideo-damaged = Cette vidéo est endommagée ou tronquée : elle ne peut pas être ajoutée. Copiez-la de nouveau depuis son origine et réessayez.
 
 interface-AddVideo-adding = Ajout de la vidéo…
+
+notification-android-newDocument = Un nouveau document est disponible dans myCarlos.

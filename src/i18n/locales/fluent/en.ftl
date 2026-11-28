@@ -3001,3 +3001,5 @@ interface-AddVideo-tooLarge = This video is larger than myCarlos can add on this
 interface-AddVideo-damaged = This video is damaged or cut short, so it cannot be added. Copy it again from where it came from and try again.
 
 interface-AddVideo-adding = Adding the video…
+
+notification-android-newDocument = A new document is available in myCarlos.

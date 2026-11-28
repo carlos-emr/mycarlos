@@ -22,6 +22,15 @@ macro_rules! redact_debug {
     };
 }
 
+#[cfg(all(target_os = "android", feature = "android-push"))]
+pub mod android_push;
+#[cfg(feature = "android-push")]
+pub mod android_push_owner;
+#[cfg(test)]
+#[path = "../android_push_profile.rs"]
+mod android_push_profile;
+#[cfg(all(feature = "android-push", any(target_os = "android", test)))]
+mod android_push_queue;
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
 #[cfg(test)]
@@ -8453,6 +8462,8 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_trust::init());
+    #[cfg(all(target_os = "android", feature = "android-push"))]
+    let builder = builder.plugin(android_push::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -8558,6 +8569,8 @@ pub fn run() {
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
             app.manage(StoreHandle::from_source(slots));
+            #[cfg(all(target_os = "android", feature = "android-push"))]
+            android_push::listen(app.handle())?;
             // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
             // the vault registry and not inside Main's `vault-home`, and read only when needed,
             // not here. The old file is copied over once and left where it was.

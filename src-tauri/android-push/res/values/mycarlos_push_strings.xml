@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The same words as the Fluent message notification-android-newDocument (a test keeps them equal). -->
+    <string name="mycarlos_push_new_document">A new document is available in myCarlos.</string>
+</resources>

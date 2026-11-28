@@ -1023,6 +1023,7 @@ pub enum MessageId {
     NoticesStepLaterBackground,
     NoticesStepNotNow,
     NoticesStepTitle,
+    NotificationAndroidNewDocument,
     NotificationsAllow,
     NotificationsAutoAllow,
     NotificationsAutoConsent,
@@ -2453,6 +2454,7 @@ impl MessageId {
         Self::NoticesStepLaterBackground,
         Self::NoticesStepNotNow,
         Self::NoticesStepTitle,
+        Self::NotificationAndroidNewDocument,
         Self::NotificationsAllow,
         Self::NotificationsAutoAllow,
         Self::NotificationsAutoConsent,
@@ -4271,6 +4273,7 @@ impl MessageId {
             Self::NoticesStepLaterBackground => "noticesStep-laterBackground",
             Self::NoticesStepNotNow => "noticesStep-notNow",
             Self::NoticesStepTitle => "noticesStep-title",
+            Self::NotificationAndroidNewDocument => "notification-android-newDocument",
             Self::NotificationsAllow => "notifications-allow",
             Self::NotificationsAutoAllow => "notifications-autoAllow",
             Self::NotificationsAutoConsent => "notifications-autoConsent",
@@ -6652,6 +6655,7 @@ impl MessageId {
             "interface.AddVideo.tooLarge" => Some(Self::InterfaceAddVideoTooLarge),
             "interface.AddVideo.damaged" => Some(Self::InterfaceAddVideoDamaged),
             "interface.AddVideo.adding" => Some(Self::InterfaceAddVideoAdding),
+            "notification.android.newDocument" => Some(Self::NotificationAndroidNewDocument),
             _ => None,
         }
     }
