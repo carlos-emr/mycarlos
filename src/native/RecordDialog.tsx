@@ -181,7 +181,7 @@ export function RecordDialog({
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const micTestRef = useRef<MicrophoneTest | null>(null);
-  // Ends the microphone test wherever it is: its clip and address are dropped (microphoneTest.ts).
+  // Ends the microphone test wherever it is: its clip and playback resources are dropped (microphoneTest.ts).
   // Called on Stop, on a device switch, when a real recording starts, when the preview goes away
   // and when the dialog closes, so a test never overlaps a recording or outlives the dialog.
   const stopMicTest = () => {

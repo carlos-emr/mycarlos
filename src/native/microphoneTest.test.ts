@@ -5,8 +5,6 @@ import {
   startMicrophoneTest,
 } from "./microphoneTest";
 
-// FAKE media: a recorder that records nothing but says what it was given, a player that plays
-// nothing, and an address maker that can be asked what it made and what was revoked.
 class FakeRecorder extends EventTarget {
   static made: FakeRecorder[] = [];
   static isTypeSupported(type: string): boolean {
@@ -40,37 +38,26 @@ class FakeRecorder extends EventTarget {
 class FakeStream {
   constructor(readonly tracks: unknown[]) {}
 }
-class FakePlayer {
-  static made: FakePlayer[] = [];
-  onended: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  played = 0;
-  paused = 0;
-  loaded = 0;
-  removed: string[] = [];
-  // Not the element's own defaults (1 and false): the test proves the code sets them.
-  volume = 0.3;
-  muted = true;
-  static refuse = false;
-  constructor(readonly src: string) {
-    FakePlayer.made.push(this);
-  }
-  play() {
-    this.played += 1;
-    return FakePlayer.refuse
-      ? Promise.reject(new Error("FAKE: not allowed to play"))
-      : Promise.resolve();
-  }
-  pause() {
-    this.paused += 1;
-  }
-  load() {
-    this.loaded += 1;
-  }
-  removeAttribute(name: string) {
-    this.removed.push(name);
+const decoded = {} as AudioBuffer;
+const playback = {
+  buffer: null as AudioBuffer | null,
+  onended: null as (() => void) | null,
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+};
+class FakeContext {
+  destination = {};
+  resume = vi.fn(async () => {});
+  close = vi.fn(async () => {});
+  decodeAudioData = vi.fn(async (_bytes: ArrayBuffer) => decoded);
+  createBufferSource = vi.fn(() => playback);
+  constructor() {
+    context = this;
   }
 }
+let context: FakeContext;
 
 const track = (
   readyState: "live" | "ended" = "live",
@@ -91,8 +78,6 @@ function streamOf(audio: ReturnType<typeof track>[]) {
   } as unknown as MediaStream;
 }
 
-let created: string[];
-let revoked: string[];
 let events: { phases: string[]; done: boolean[] };
 function begin(audio = [track()]) {
   const stream = streamOf(audio);
@@ -106,22 +91,13 @@ function begin(audio = [track()]) {
 beforeEach(() => {
   vi.useFakeTimers();
   FakeRecorder.made = [];
-  FakePlayer.made = [];
-  FakePlayer.refuse = false;
-  created = [];
-  revoked = [];
+  vi.clearAllMocks();
+  playback.buffer = null;
+  playback.onended = null;
   events = { phases: [], done: [] };
   vi.stubGlobal("MediaRecorder", FakeRecorder);
   vi.stubGlobal("MediaStream", FakeStream);
-  vi.stubGlobal("Audio", FakePlayer);
-  vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
-    const address = `blob:fake/${created.length + 1}`;
-    created.push(address);
-    return address;
-  });
-  vi.spyOn(URL, "revokeObjectURL").mockImplementation((address) => {
-    revoked.push(address);
-  });
+  vi.stubGlobal("AudioContext", FakeContext);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -148,46 +124,28 @@ describe("the microphone test", () => {
     expect(recorder.state).toBe("recording");
     vi.advanceTimersByTime(1);
     expect(recorder.state).toBe("inactive");
-    // Playing back: one address, one player, one play.
+    await vi.waitFor(() => expect(playback.start).toHaveBeenCalledTimes(1));
     expect(events.phases).toEqual(["recording", "playing"]);
-    expect(created).toEqual(["blob:fake/1"]);
-    expect(FakePlayer.made).toHaveLength(1);
-    expect(FakePlayer.made[0].src).toBe("blob:fake/1");
-    expect(FakePlayer.made[0].played).toBe(1);
-    expect(revoked).toEqual([]);
-    // When it ends the address is revoked and the player let go; the test says it went well.
-    FakePlayer.made[0].onended!();
-    expect(revoked).toEqual(["blob:fake/1"]);
-    expect(FakePlayer.made[0].removed).toEqual(["src"]);
-    expect(FakePlayer.made[0].loaded).toBe(1);
+    expect(context.resume).toHaveBeenCalledTimes(1);
+    const [[bytes]] = context.decodeAudioData.mock.calls;
+    expect(new TextDecoder().decode(bytes)).toBe("firstsecond");
+    expect(playback.buffer).toBe(decoded);
+    expect(playback.connect).toHaveBeenCalledWith(context.destination);
+    playback.onended!();
+    expect(playback.buffer).toBeNull();
+    expect(playback.disconnect).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
     expect(events.done).toEqual([true]);
     // The preview's tracks are the preview's: the test never stops one.
     for (const each of audio) expect(each.stop).not.toHaveBeenCalled();
     // Told twice, nothing more happens.
     test!.stop();
     expect(events.done).toEqual([true]);
-    expect(revoked).toEqual(["blob:fake/1"]);
-  });
-
-  it("records at a high quality and plays the clip back as it is, at full volume", () => {
-    const { test, recorder } = begin();
-    // The recorder is asked for Opus at 128 kbps or more (Opus runs at 48 kHz), never the
-    // recorder's default or the real recording's 96 kbps AAC.
-    expect(recorder.options?.mimeType).toMatch(/^audio\/.*opus/);
-    expect(recorder.options?.audioBitsPerSecond).toBeGreaterThanOrEqual(
-      128_000,
-    );
-    expect(MICROPHONE_TEST_BITS_PER_SECOND).toBeGreaterThanOrEqual(128_000);
-    // The capture rate the track reports is handed on (48 kHz here).
+    expect(context.close).toHaveBeenCalledOnce();
     expect(test!.captureRate).toBe(48_000);
-    recorder.give("heard");
-    vi.advanceTimersByTime(MICROPHONE_TEST_MS);
-    // Played through a plain audio element, at full volume and not muted: nothing else is in the
-    // path (the level meter is not, and is off by then).
-    const player = FakePlayer.made[0];
-    expect(player.volume).toBe(1);
-    expect(player.muted).toBe(false);
-    test!.stop();
+    expect(recorder.options?.audioBitsPerSecond).toBe(
+      MICROPHONE_TEST_BITS_PER_SECOND,
+    );
   });
 
   it("says nothing of a rate the track does not report, and reports a low one as it is", () => {
@@ -204,57 +162,99 @@ describe("the microphone test", () => {
     // A piece the recorder hands over after the stop is dropped, and nothing is played.
     recorder.give("late");
     vi.advanceTimersByTime(MICROPHONE_TEST_MS * 2);
-    expect(created).toEqual([]);
-    expect(FakePlayer.made).toEqual([]);
+    expect(context.createBufferSource).not.toHaveBeenCalled();
     expect(events.phases).toEqual(["recording"]);
   });
 
-  it("stops on request while playing: the player is let go and the address revoked at once", () => {
+  it("stops and disconnects playback when cancelled, ignoring a late end", async () => {
     const { test, recorder } = begin();
     recorder.give("heard");
-    vi.advanceTimersByTime(MICROPHONE_TEST_MS);
-    const player = FakePlayer.made[0];
+    recorder.stop();
+    await vi.waitFor(() => expect(playback.start).toHaveBeenCalledOnce());
+    const lateEnd = playback.onended!;
     test!.stop();
-    expect(player.paused).toBeGreaterThan(0);
-    expect(player.removed).toEqual(["src"]);
-    expect(revoked).toEqual(["blob:fake/1"]);
+    expect(playback.stop).toHaveBeenCalledOnce();
+    expect(playback.disconnect).toHaveBeenCalledOnce();
+    expect(playback.buffer).toBeNull();
+    expect(context.close).toHaveBeenCalledOnce();
+    lateEnd();
     expect(events.done).toEqual([true]);
-    // A player that fires after the stop changes nothing.
-    player.onended?.();
-    expect(events.done).toEqual([true]);
-    expect(revoked).toEqual(["blob:fake/1"]);
   });
 
-  it("is a failure, with nothing kept, when the player will not play", async () => {
-    FakePlayer.refuse = true;
+  it("cannot play a late decode after cancellation", async () => {
+    const { test, recorder } = begin();
+    let release!: (value: AudioBuffer) => void;
+    context.decodeAudioData.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    recorder.give("heard");
+    recorder.stop();
+    await vi.waitFor(() => expect(release).toBeDefined());
+    test!.stop();
+    release(decoded);
+    await Promise.resolve();
+    expect(events.phases).toEqual(["recording"]);
+    expect(context.createBufferSource).not.toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(events.done).toEqual([true]);
+  });
+
+  it("closes the output and reports a failure when decoding fails", async () => {
+    const { recorder } = begin();
+    context.decodeAudioData.mockRejectedValue(
+      new Error("FAKE unsupported clip"),
+    );
+    recorder.give("heard");
+    recorder.stop();
+    await vi.waitFor(() => expect(events.done).toEqual([false]));
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(playback.start).not.toHaveBeenCalled();
+  });
+
+  it("releases the decoded samples if the output cannot start", async () => {
+    playback.start.mockImplementationOnce(() => {
+      throw new Error("FAKE output refused");
+    });
     const { recorder } = begin();
     recorder.give("heard");
-    vi.advanceTimersByTime(MICROPHONE_TEST_MS);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(events.done).toEqual([false]);
-    expect(revoked).toEqual(["blob:fake/1"]);
-    expect(FakePlayer.made[0].removed).toEqual(["src"]);
+    recorder.stop();
+    await vi.waitFor(() => expect(events.done).toEqual([false]));
+    expect(playback.buffer).toBeNull();
+    expect(playback.disconnect).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(events.phases).toEqual(["recording"]);
   });
 
-  it("is a failure when the player fails or the recorder fails or hears nothing", () => {
+  it("stops the recorder when the device refuses to resume audio", async () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class extends FakeContext {
+        resume = vi.fn(async () => {
+          throw new Error("FAKE resume refused");
+        });
+      },
+    );
+    const { recorder } = begin();
+    await vi.waitFor(() => expect(events.done).toEqual([false]));
+    expect(recorder.state).toBe("inactive");
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(context.createBufferSource).not.toHaveBeenCalled();
+  });
+
+  it("reports a recorder error or an empty clip and closes the output", () => {
     const first = begin();
-    first.recorder.give("heard");
-    vi.advanceTimersByTime(MICROPHONE_TEST_MS);
-    FakePlayer.made[0].onerror!();
-    expect(events.done).toEqual([false]);
-    expect(revoked).toEqual(["blob:fake/1"]);
-
+    first.recorder.dispatchEvent(new Event("error"));
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(first.recorder.state).toBe("inactive");
     const second = begin();
-    second.recorder.dispatchEvent(new Event("error"));
-    expect(events.done).toEqual([false, false]);
-    expect(second.recorder.state).toBe("inactive");
-
-    // Nothing was picked up: no clip, no address, no player.
-    const third = begin();
     vi.advanceTimersByTime(MICROPHONE_TEST_MS);
-    expect(events.done).toEqual([false, false, false]);
-    expect(created).toEqual(["blob:fake/1"]);
-    expect(third.recorder.state).toBe("inactive");
+    expect(second.recorder.state).toBe("inactive");
+    expect(events.done).toEqual([false, false]);
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(playback.start).not.toHaveBeenCalled();
   });
 
   it("starts nothing when the device cannot record or has no live microphone", () => {
@@ -280,7 +280,7 @@ describe("the microphone test", () => {
     expect(events.phases).toEqual([]);
   });
 
-  it("lets the device choose the type when it names none, and keeps it all in memory", () => {
+  it("lets the device choose the type when it names none, and keeps it all in memory", async () => {
     vi.stubGlobal(
       "MediaRecorder",
       class extends FakeRecorder {
@@ -299,7 +299,8 @@ describe("the microphone test", () => {
     expect(recorder.options).toEqual({ audioBitsPerSecond: 192_000 });
     recorder.give("heard");
     vi.advanceTimersByTime(MICROPHONE_TEST_MS);
-    FakePlayer.made[0].onended!();
+    await vi.waitFor(() => expect(playback.start).toHaveBeenCalledOnce());
+    playback.onended!();
     // Not stored, not sent, not logged.
     expect(store).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();

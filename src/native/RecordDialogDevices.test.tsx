@@ -877,34 +877,27 @@ describe("choosing the camera and the microphone", () => {
   });
 
   describe("hearing the microphone back", () => {
-    // FAKE player and addresses: nothing is played, and every address is accounted for.
-    class FakePlayer {
-      static made: FakePlayer[] = [];
-      onended: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-      constructor(readonly src: string) {
-        FakePlayer.made.push(this);
-      }
-      play = vi.fn(async () => undefined);
-      pause = vi.fn();
-      load = vi.fn();
-      removeAttribute = vi.fn();
-    }
-    let created: string[];
-    let revoked: string[];
+    // Leave the fake devices' Web Audio graph intact. Supply decoded samples for the
+    // fake recorder and let each test decide exactly when playback ends.
+    const sources: AudioBufferSourceNode[] = [];
     beforeEach(() => {
       FakeRecorder.made = [];
-      FakePlayer.made = [];
-      created = [];
-      revoked = [];
-      vi.stubGlobal("Audio", FakePlayer);
-      vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
-        created.push(`blob:fake/${created.length + 1}`);
-        return created.at(-1)!;
-      });
-      vi.spyOn(URL, "revokeObjectURL").mockImplementation((address) => {
-        revoked.push(address);
-      });
+      sources.length = 0;
+      const makeSource = AudioContext.prototype.createBufferSource;
+      vi.spyOn(AudioContext.prototype, "resume").mockResolvedValue();
+      vi.spyOn(AudioContext.prototype, "decodeAudioData").mockResolvedValue(
+        new AudioBuffer({ length: 16, sampleRate: 48_000 }),
+      );
+      vi.spyOn(AudioContext.prototype, "createBufferSource").mockImplementation(
+        function (this: AudioContext) {
+          const source = makeSource.call(this);
+          vi.spyOn(source, "start").mockImplementation(() => {});
+          vi.spyOn(source, "stop").mockImplementation(() => {});
+          vi.spyOn(source, "disconnect");
+          sources.push(source);
+          return source;
+        },
+      );
     });
     /** The recorder the test made: the only one with no picture in its stream. */
     const clipRecorder = () =>
@@ -949,15 +942,16 @@ describe("choosing the camera and the microphone", () => {
       recorder.give("what the microphone picked up");
       recorder.stop();
       expect(await screen.findByText("Playing back…")).toBeVisible();
-      expect(created).toEqual(["blob:fake/1"]);
-      expect(FakePlayer.made).toHaveLength(1);
-      expect(FakePlayer.made[0].play).toHaveBeenCalledTimes(1);
-      expect(revoked).toEqual([]);
-      // When it ends the state clears, the address is revoked, and the button is back.
-      act(() => FakePlayer.made[0].onended!());
+      expect(sources).toHaveLength(1);
+      expect(sources[0].start).toHaveBeenCalledTimes(1);
+      expect(sources[0].buffer).not.toBeNull();
+      // When it ends the state clears, the buffer is released, and the button is back.
+      act(() => {
+        sources[0].dispatchEvent(new Event("ended"));
+      });
       await screen.findByRole("button", { name: "Test microphone" });
       expect(screen.queryByText("Playing back…")).toBeNull();
-      expect(revoked).toEqual(["blob:fake/1"]);
+      expect(sources[0].buffer).toBeNull();
       // Nothing went to the vault: no recording was begun, and nothing was appended.
       expect(bridge.videoStart).not.toHaveBeenCalled();
       expect(bridge.videoAppend).not.toHaveBeenCalled();
@@ -1010,7 +1004,7 @@ describe("choosing the camera and the microphone", () => {
       fireEvent.click(screen.getByRole("button", { name: "Stop testing" }));
       expect(recorder.state).toBe("inactive");
       expect(screen.queryByText("Recording…")).toBeNull();
-      expect(created).toEqual([]);
+      expect(sources).toHaveLength(0);
       // Switching the microphone mid-test ends it too.
       startTest();
       await screen.findByText("Recording…");
@@ -1020,8 +1014,7 @@ describe("choosing the camera and the microphone", () => {
       expect(screen.queryByText("Recording…")).toBeNull();
     });
 
-    // The clip has an address only while it plays back, so what is dropped on a switch or on Start
-    // recording is shown only by doing them THEN.
+    // Switch or start a recording after playback has acquired its buffer.
     const playBack = async () => {
       startTest();
       await screen.findByText("Recording…");
@@ -1029,31 +1022,31 @@ describe("choosing the camera and the microphone", () => {
       recorder.give("heard");
       recorder.stop();
       await screen.findByText("Playing back…");
-      expect(created).toEqual(["blob:fake/1"]);
-      expect(revoked).toEqual([]);
+      expect(sources).toHaveLength(1);
+      expect(sources[0].buffer).not.toBeNull();
     };
 
-    it("drops the clip and its address when the microphone is switched during playback, and shows no old failure", async () => {
+    it("drops the playback buffer when the microphone is switched during playback, and shows no old failure", async () => {
       open();
       await ready();
       await playBack();
       fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
-      await waitFor(() => expect(revoked).toEqual(["blob:fake/1"]));
-      expect(FakePlayer.made[0].removeAttribute).toHaveBeenCalledWith("src");
+      await waitFor(() => expect(sources[0].buffer).toBeNull());
+      expect(sources[0].disconnect).toHaveBeenCalledOnce();
       expect(screen.queryByText("Playing back…")).toBeNull();
       expect(
         screen.queryByText("The microphone test did not work on this device."),
       ).toBeNull();
     });
 
-    it("drops the clip and its address when a real recording starts during playback", async () => {
+    it("drops the playback buffer when a real recording starts during playback", async () => {
       open();
       await ready();
       await playBack();
       fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
       await screen.findByRole("button", { name: "Pause recording" });
-      expect(revoked).toEqual(["blob:fake/1"]);
-      expect(FakePlayer.made[0].removeAttribute).toHaveBeenCalledWith("src");
+      expect(sources[0].buffer).toBeNull();
+      expect(sources[0].disconnect).toHaveBeenCalledOnce();
       expect(screen.queryByText("Playing back…")).toBeNull();
     });
 
@@ -1095,7 +1088,7 @@ describe("choosing the camera and the microphone", () => {
       expect(screen.queryByText(/headphones/i)).toBeNull();
     });
 
-    it("drops the clip and its address when the dialog closes during playback", async () => {
+    it("drops the playback buffer when the dialog closes during playback", async () => {
       const onClose = vi.fn();
       render(
         <RecordDialog
@@ -1116,11 +1109,11 @@ describe("choosing the camera and the microphone", () => {
       recorder.give("heard");
       recorder.stop();
       await screen.findByText("Playing back…");
-      expect(revoked).toEqual([]);
+      expect(sources[0].buffer).not.toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Close" }));
       expect(onClose).toHaveBeenCalled();
-      expect(revoked).toEqual(["blob:fake/1"]);
-      expect(FakePlayer.made[0].removeAttribute).toHaveBeenCalledWith("src");
+      expect(sources[0].buffer).toBeNull();
+      expect(sources[0].disconnect).toHaveBeenCalledOnce();
     });
 
     it("says so, with nothing kept, when nothing could be recorded", async () => {
@@ -1135,7 +1128,7 @@ describe("choosing the camera and the microphone", () => {
           "The microphone test did not work on this device.",
         ),
       ).toBeVisible();
-      expect(created).toEqual([]);
+      expect(sources).toHaveLength(0);
       expect(screen.queryByText("Recording…")).toBeNull();
       // Trying again clears the note.
       startTest();

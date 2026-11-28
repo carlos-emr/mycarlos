@@ -2,9 +2,9 @@
  * has open (so it is the one chosen in the list, with the permission already given), played back
  * once, so the patient hears what the microphone picks up.
  *
- * MEMORY ONLY. The clip is pieces in an array and, while it plays, a `blob:` address. Nothing is
+ * MEMORY ONLY. The clip stays in memory from capture through playback. Nothing is
  * written to the vault or the disk, nothing is sent, nothing goes to a log or the history, and
- * everything is dropped (the pieces emptied, the player unloaded, the address revoked) when the
+ * everything is dropped (the pieces emptied, the playback disconnected, the audio context closed) when the
  * playback ends, when the patient stops it, on an error, and when the dialog closes or a real
  * recording begins (the caller stops the test then). It never stops a track of the stream: the
  * preview and a later recording keep them. */
@@ -63,6 +63,7 @@ export function startMicrophoneTest(
 
   const pieces: Blob[] = [];
   let recorder: MediaRecorder;
+  let context: AudioContext;
   try {
     const mimeType = soundOnlyType();
     // A stream of the sound tracks only: the clip has no picture, and stopping the recorder does
@@ -71,29 +72,29 @@ export function startMicrophoneTest(
       ...(mimeType ? { mimeType } : {}),
       audioBitsPerSecond: MICROPHONE_TEST_BITS_PER_SECOND,
     });
+    context = new AudioContext();
   } catch {
     return null;
   }
   let finished = false;
   let timer: number | undefined;
-  let player: HTMLAudioElement | null = null;
-  let address: string | null = null;
-
+  let source: AudioBufferSourceNode | undefined;
   const drop = () => {
     window.clearTimeout(timer);
     pieces.length = 0;
-    if (player) {
-      player.onended = null;
-      player.onerror = null;
-      player.pause();
-      player.removeAttribute("src");
-      player.load();
-      player = null;
+    if (source) {
+      source.onended = null;
+      // Starting or connecting the source can fail before it becomes stoppable.
+      try {
+        source.stop();
+      } catch {
+        // An unstarted source has nothing to stop.
+      }
+      source.disconnect();
+      source.buffer = null;
+      source = undefined;
     }
-    if (address) {
-      URL.revokeObjectURL(address);
-      address = null;
-    }
+    void context.close().catch(() => {});
   };
   const finish = (ok: boolean) => {
     if (finished) return;
@@ -115,39 +116,41 @@ export function startMicrophoneTest(
     if (!finished && data && data.size > 0) pieces.push(data);
   });
   recorder.addEventListener("error", () => finish(false));
-  recorder.addEventListener("stop", () => {
+  // Request playback while the microphone-test click still has user activation.
+  let ready: Promise<void>;
+  recorder.addEventListener("stop", async () => {
     window.clearTimeout(timer);
     if (finished) return;
     if (pieces.length === 0) {
       finish(false);
       return;
     }
-    address = URL.createObjectURL(
-      new Blob(pieces, { type: recorder.mimeType || "audio/webm" }),
-    );
-    // The pieces are not needed once the clip is one address.
-    pieces.length = 0;
-    // Played as it was recorded, through a plain audio element: full volume, not muted, nothing
-    // between the clip and the speaker (the level meter taps the live microphone only while the
-    // clip is being taken, and is off by now). A mono clip is played from both sides by the
-    // browser's own up-mixing.
-    player = new Audio(address);
-    player.volume = 1;
-    player.muted = false;
-    player.onended = () => finish(true);
-    player.onerror = () => finish(false);
-    on.phase("playing");
-    // A refusal to play (a web view that wants a touch first) ends the test as a failure. This
-    // play() comes about three seconds after the click: desktop Chromium and WebView2 allow it
-    // (sticky user activation), but Android's WebView and iOS's WKWebView may refuse, and the
-    // test then says it did not work on that device. Check it on the Android build; the usual
-    // remedy is to start the player inside the click on a silent source and give it the clip later.
-    void player.play().catch(() => finish(false));
+    try {
+      await ready;
+      if (finished) return;
+      const clip = new Blob(pieces);
+      pieces.length = 0;
+      const bytes = await clip.arrayBuffer();
+      if (finished) return;
+      const decoded = await context.decodeAudioData(bytes);
+      if (finished) return;
+      // Play once at the device's normal gain, directly to its output.
+      source = context.createBufferSource();
+      source.buffer = decoded;
+      source.connect(context.destination);
+      source.onended = () => finish(true);
+      source.start();
+      on.phase("playing");
+    } catch {
+      finish(false);
+    }
   });
 
   try {
+    ready = context.resume().catch(() => finish(false));
     recorder.start();
   } catch {
+    finished = true;
     drop();
     return null;
   }

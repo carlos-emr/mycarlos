@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoAxeViolations, expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
@@ -5,12 +6,12 @@ import { fakeCalls, fakeVaultWith } from "./support/vaultFake";
 
 // The microphone test in the video recorder: "Test microphone" takes about three seconds from the
 // microphone the preview has open, plays it back once with "Recording…" and "Playing back…" said,
-// and drops the clip (its address is revoked) when the playback ends, on Stop and when the dialog
+// and drops the clip (its samples are released) when the playback ends, on Stop and when the dialog
 // closes; nothing goes to the vault.
 //
 // Chromium's fake microphone and camera stand in for real ones (as in camera-photo.spec.ts: the
 // full Chromium build, not the headless shell, which has no media devices), so the REAL
-// getUserMedia, MediaRecorder, Audio element and blob addresses run here. The native side is faked
+// getUserMedia, MediaRecorder, Web Audio decoder and output run here. The native side is faked
 // (support/vaultFake.ts) and this run never starts a real recording, only the test; the only
 // stand-in is that the recorder reports MP4 as supported so that the dialog offers "Record a
 // video" in a Chromium build without H.264. On the installed Windows app (a real microphone, the
@@ -35,21 +36,21 @@ const en = (
 test.beforeEach(async ({ page, context }) => {
   await context.grantPermissions(["camera", "microphone"]);
   await page.addInitScript(() => {
-    // Every address the page makes for a blob, and every one it revokes.
-    const made: string[] = [];
-    const revoked: string[] = [];
-    const create = URL.createObjectURL.bind(URL);
-    const revoke = URL.revokeObjectURL.bind(URL);
+    const sources: AudioBufferSourceNode[] = [];
+    const createSource = AudioContext.prototype.createBufferSource;
+    AudioContext.prototype.createBufferSource = function () {
+      const node = createSource.call(this);
+      sources.push(node);
+      return node;
+    };
+    Reflect.set(window, "__playbackSources", sources);
+    const createUrl = URL.createObjectURL.bind(URL);
+    let addresses = 0;
     URL.createObjectURL = (object: Blob | MediaSource) => {
-      const address = create(object);
-      made.push(address);
-      return address;
+      addresses++;
+      Reflect.set(window, "__addressCount", addresses);
+      return createUrl(object);
     };
-    URL.revokeObjectURL = (address: string) => {
-      revoked.push(address);
-      revoke(address);
-    };
-    Reflect.set(window, "__addresses", { made, revoked });
     // The dialog offers video only where the recorder can write MP4; this Chromium may not.
     const supported = MediaRecorder.isTypeSupported.bind(MediaRecorder);
     MediaRecorder.isTypeSupported = (type: string) =>
@@ -94,14 +95,20 @@ test.beforeEach(async ({ page, context }) => {
   });
 });
 
-const addresses = (page: Page) =>
-  page.evaluate(
-    () =>
-      Reflect.get(window, "__addresses") as {
-        made: string[];
-        revoked: string[];
-      },
-  );
+const playback = (page: Page) =>
+  page.evaluate(() => {
+    const sources = Reflect.get(
+      window,
+      "__playbackSources",
+    ) as AudioBufferSourceNode[];
+    return {
+      addresses: Number(Reflect.get(window, "__addressCount") ?? 0),
+      sources: sources.map((node) => ({
+        samples: node.buffer?.length ?? 0,
+        state: node.context.state,
+      })),
+    };
+  });
 
 async function openPreview(page: Page) {
   await fakeVaultWith(page, { start: "unlocked" });
@@ -130,7 +137,19 @@ async function openPreview(page: Page) {
 
 test("the test records from the microphone, plays it back once, and drops the clip", async ({
   page,
-}) => {
+}, testInfo) => {
+  const policy = testInfo.project.name === "desktop" ? "csp" : "devCsp";
+  const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+  await page.route("/", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: {
+        ...response.headers(),
+        "content-security-policy": config.app.security[policy],
+      },
+    });
+  });
   const dialog = await openPreview(page);
   // The note to use headphones is there before anything starts.
   await expect(
@@ -155,18 +174,21 @@ test("the test records from the microphone, plays it back once, and drops the cl
     }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "while the microphone test records");
-  // About three seconds later it plays the clip back, from one address.
+  // About three seconds later it plays the clip back, from its decoded samples.
   await expect(
     dialog.getByText(en("interface.RecordDialog.microphoneTestPlaying")),
   ).toBeVisible({ timeout: 10_000 });
-  expect((await addresses(page)).made).toHaveLength(1);
+  expect((await playback(page)).sources).toEqual([
+    { samples: expect.any(Number), state: "running" },
+  ]);
+  expect((await playback(page)).sources[0].samples).toBeGreaterThan(0);
   await expect(
     dialog.getByRole("button", {
       name: en("interface.RecordDialog.stopTestingMicrophone"),
     }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "while the microphone test plays back");
-  // It ends by itself: the button is back, and the one address was revoked.
+  // It ends by itself: the button is back, and the output is closed.
   await expect(
     dialog.getByRole("button", {
       name: en("interface.RecordDialog.testMicrophone"),
@@ -175,8 +197,9 @@ test("the test records from the microphone, plays it back once, and drops the cl
   await expect(
     dialog.getByText(en("interface.RecordDialog.microphoneTestPlaying")),
   ).toHaveCount(0);
-  const done = await addresses(page);
-  expect(done.revoked).toEqual(done.made);
+  await expect
+    .poll(() => playback(page))
+    .toEqual({ addresses: 0, sources: [{ samples: 0, state: "closed" }] });
   // The quality of what the patient hears (Ben: it must be their real voice, not a crappy one):
   // the microphone is asked for 48 kHz, and the clip's recorder is a sound-only Opus recorder
   // asked for 128 kbps or more, on the very microphone track the preview (and so the real
@@ -238,18 +261,22 @@ test("Stop ends the test at once, and closing the dialog while it plays drops th
     dialog.getByText(en("interface.RecordDialog.microphoneTestRecording")),
   ).toHaveCount(0);
   await page.waitForTimeout(3500);
-  expect((await addresses(page)).made).toHaveLength(0);
+  expect(await playback(page)).toEqual({ addresses: 0, sources: [] });
 
-  // Close during the playback: the address is revoked with the dialog.
+  // Close during the playback: the output closes with the dialog.
   await test().click();
   await expect(
     dialog.getByText(en("interface.RecordDialog.microphoneTestPlaying")),
   ).toBeVisible({ timeout: 10_000 });
-  expect((await addresses(page)).made).toHaveLength(1);
+  expect((await playback(page)).sources).toEqual([
+    { samples: expect.any(Number), state: "running" },
+  ]);
+  expect((await playback(page)).sources[0].samples).toBeGreaterThan(0);
   await dialog.getByRole("button", { name: en("common.cancel") }).click();
   await expect(dialog).toHaveCount(0);
-  const after = await addresses(page);
-  expect(after.revoked).toEqual(after.made);
+  await expect
+    .poll(() => playback(page))
+    .toEqual({ addresses: 0, sources: [{ samples: 0, state: "closed" }] });
   expect(await fakeCalls(page, "vault_video_start")).toHaveLength(0);
   await expectOnlyFakedCommands(page);
 });
