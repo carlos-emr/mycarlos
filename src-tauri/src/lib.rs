@@ -6709,9 +6709,9 @@ async fn vault_read_native_pdf(
     request: NativePdfRequest,
     activity: tauri::ipc::Channel<()>,
 ) -> CommandResult<()> {
+    let store = store.pin();
     #[cfg(target_os = "ios")]
     {
-        let store = store.pin();
         if request.close_label.is_empty()
             || request.close_label.len() > 128
             || request.close_label.chars().any(char::is_control)
