@@ -1649,6 +1649,11 @@ interface-history-to = 目標
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。您可以在此查看這些紀錄；myCarlos 絕不會變更或移除它們。
 
+reader-iphone-failed = myCarlos 無法顯示此文件。請儲存副本，以便在其他 App 中閱讀。
+
+reader-iphone-opening = 正在開啟文件…
+
+reader-iphone-tooLarge = 此 PDF 超過 20 MB。請儲存副本，以便在其他 App 中閱讀。
 portal-checkAgain = 若要再次檢查，請選擇「{ $button }」。
 
 portal-unlockCheckConsent = 每次解鎖後，如果診所已核准該裝置，或核准請求仍未結束，myCarlos 就會聯絡已連結的診所入口網站，檢查核准狀態更新和新文件。

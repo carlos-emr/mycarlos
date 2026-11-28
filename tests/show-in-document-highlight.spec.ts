@@ -3,11 +3,14 @@ import { expectOnlyFakedCommands } from "./support/a11y";
 import { FAKE_MODEL, fakeAiWith } from "./support/aiFake";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   FAKE_PAGE_COUNT,
   fakeCalls,
+  fakeSettle,
   fakeVaultWith,
   myRecords,
   openDetails,
+  scriptFake,
   type FakeVaultSetup,
 } from "./support/vaultFake";
 
@@ -552,18 +555,17 @@ test("outlines the boxes in the system's highlight colour with forced colours", 
   await shot(page, "show-in-document-forced-colours");
 });
 
-test("phone: the reader has no Summary, so no quote to show; the page reads as before", async ({
+test("phone: the iPhone opens the native PDF reader without a Summary or quote boxes", async ({
   page,
 }) => {
   await fakeVaultWith(page, {
     start: "unlocked",
-    drawnPages: PAGES,
-    // iOS, not Android: an Android phone reads a PDF in the native reader (#358), which draws
-    // no page picture for this page-side check; the check is the phone's reader without a Summary.
     platform: "ios",
   });
+  await fakeAiWith(page, { model: { state: "installed", model: FAKE_MODEL } });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
+  await scriptFake(page, "vault_read_native_pdf", { pending: true });
   const details = await openDetails(page, LETTER);
   await details
     .getByRole("button", {
@@ -572,12 +574,24 @@ test("phone: the reader has no Summary, so no quote to show; the page reads as b
     })
     .click();
   const reader = page.getByRole("dialog", { name: LETTER, exact: true });
-  await expect(picture(reader, 1)).toBeVisible();
+  await expect(reader.getByRole("status")).toHaveText(
+    en("reader.iphone.opening"),
+  );
+  await expect
+    .poll(async () =>
+      (await fakeCalls(page, "vault_read_native_pdf")).map(
+        (call) => call.request,
+      ),
+    )
+    .toEqual([{ recordId: FAKE_IDS.letter, closeLabel: en("photo.close") }]);
   await expect(
     reader.getByRole("button", { name: en("ai.summary.button"), exact: true }),
   ).toHaveCount(0);
   await expect(boxes(reader)).toHaveCount(0);
   await shot(page, "show-in-document-phone");
+  expect(await fakeCalls(page, "vault_view_page")).toEqual([]);
   expect(await fakeCalls(page, "vault_page_boxes")).toEqual([]);
+  await fakeSettle(page, "vault_read_native_pdf", { resolve: null });
+  await expect(reader).toHaveCount(0);
   await expectOnlyFakedCommands(page);
 });

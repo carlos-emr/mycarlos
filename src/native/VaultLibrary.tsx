@@ -65,6 +65,7 @@ import { FileUnderDialog, fileUnderPlan } from "./FileUnder";
 import { RecordDetails } from "./RecordDetails";
 import { AndroidDocumentReader } from "./AndroidDocumentReader";
 import { DocumentReader } from "./DocumentReader";
+import { IphoneDocumentReader } from "./IphoneDocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
 import type { ModelStatus } from "../ai/types";
 import { AnonymizePreview } from "./AnonymizePreview";
@@ -165,6 +166,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   computer = true,
+  iphonePdfReader = false,
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
@@ -220,6 +222,8 @@ export function VaultLibrary({
   /** On a computer, not a phone: shared files come by being opened with
    * myCarlos there, not from another app's Share. */
   computer?: boolean;
+  /** iOS alone can present the native, bridge-free WebKit PDF reader. */
+  iphonePdfReader?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
   /** A dialog of the app's own is over the library (the warning before the
@@ -3446,6 +3450,20 @@ export function VaultLibrary({
                 }
               />
             )}
+          {readerRecord && iphonePdfReader && !readerShowsAid && (
+            <IphoneDocumentReader
+              record={readerRecord}
+              read={(id, closeLabel) =>
+                bridge.readNativePdf(id, closeLabel).catch((error: unknown) => {
+                  if (mountedRef.current && isLockedError(error))
+                    void lockAndConceal();
+                  throw error;
+                })
+              }
+              cancel={() => bridge.cancelView()}
+              onClose={() => setReaderRecordId(null)}
+            />
+          )}
           {anonymizeRecord && !aiNotice && (
             <AnonymizePreview
               record={anonymizeRecord}
@@ -3503,65 +3521,74 @@ export function VaultLibrary({
                 onClose={() => setReaderRecordId(null)}
               />
             )}
-          {readerRecord && (!androidPdfReader || readerShowsAid) && (
-            <DocumentReader
-              record={readerRecord}
-              startWithAid={readerShowsAid}
-              onOpenOriginal={
-                androidPdfReader ? () => setReaderShowsAid(false) : undefined
-              }
-              viewPage={(page, width, password) =>
-                bridge
-                  .viewPage(readerRecord.id, page, width, password)
-                  .catch((error: unknown) => {
-                    if (mountedRef.current && isLockedError(error))
-                      void lockAndConceal();
-                    throw error;
-                  })
-              }
-              cancelView={() => void bridge.cancelView().catch(() => undefined)}
-              pageBoxes={
-                computer && bridge.pageBoxes
-                  ? (page, span, password) =>
-                      bridge.pageBoxes!(readerRecord.id, page, span, password)
-                  : undefined
-              }
-              onClose={() => setReaderRecordId(null)}
-              ai={
-                computer
-                  ? {
-                      model: localModel,
-                      // Part B's whole-document text (#171). A locked PDF
-                      // is refused there, which the panel says as a failure;
-                      // passing the reader's document password is the model
-                      // step's work.
-                      loadText: () =>
-                        bridge.documentText(readerRecord.id, readerReadId),
-                      cancelText: () =>
-                        void bridge
-                          .cancelDocumentText(readerReadId)
-                          .catch(() => undefined),
-                      kept: {
-                        recordId: readerRecord.id,
-                        list: () => bridge.aiResults(readerRecord.id),
-                        read: (resultId) =>
-                          bridge.readAiResult(readerRecord.id, resultId),
-                        save: (keptId, sources) =>
-                          bridge.saveAiResult(readerRecord.id, keptId, sources),
-                      },
-                      // The model is added on the AI helper's own page.
-                      onOpenPreferences: () => {
-                        setReaderRecordId(null);
-                        setSection("ai");
-                      },
-                      // The reader's Summary offers the notice (#355).
-                      onOpenAiNotice: () => openAiNotice({ before: null }),
-                      beforeFirstUse: beforeFirstAiUse,
-                    }
-                  : undefined
-              }
-            />
-          )}
+          {readerRecord &&
+            ((!androidPdfReader && !iphonePdfReader) || readerShowsAid) && (
+              <DocumentReader
+                record={readerRecord}
+                startWithAid={readerShowsAid}
+                onOpenOriginal={
+                  androidPdfReader || iphonePdfReader
+                    ? () => setReaderShowsAid(false)
+                    : undefined
+                }
+                viewPage={(page, width, password) =>
+                  bridge
+                    .viewPage(readerRecord.id, page, width, password)
+                    .catch((error: unknown) => {
+                      if (mountedRef.current && isLockedError(error))
+                        void lockAndConceal();
+                      throw error;
+                    })
+                }
+                cancelView={() =>
+                  void bridge.cancelView().catch(() => undefined)
+                }
+                pageBoxes={
+                  computer && bridge.pageBoxes
+                    ? (page, span, password) =>
+                        bridge.pageBoxes!(readerRecord.id, page, span, password)
+                    : undefined
+                }
+                onClose={() => setReaderRecordId(null)}
+                ai={
+                  computer
+                    ? {
+                        model: localModel,
+                        // Part B's whole-document text (#171). A locked PDF
+                        // is refused there, which the panel says as a failure;
+                        // passing the reader's document password is the model
+                        // step's work.
+                        loadText: () =>
+                          bridge.documentText(readerRecord.id, readerReadId),
+                        cancelText: () =>
+                          void bridge
+                            .cancelDocumentText(readerReadId)
+                            .catch(() => undefined),
+                        kept: {
+                          recordId: readerRecord.id,
+                          list: () => bridge.aiResults(readerRecord.id),
+                          read: (resultId) =>
+                            bridge.readAiResult(readerRecord.id, resultId),
+                          save: (keptId, sources) =>
+                            bridge.saveAiResult(
+                              readerRecord.id,
+                              keptId,
+                              sources,
+                            ),
+                        },
+                        // The model is added on the AI helper's own page.
+                        onOpenPreferences: () => {
+                          setReaderRecordId(null);
+                          setSection("ai");
+                        },
+                        // The reader's Summary offers the notice (#355).
+                        onOpenAiNotice: () => openAiNotice({ before: null }),
+                        beforeFirstUse: beforeFirstAiUse,
+                      }
+                    : undefined
+                }
+              />
+            )}
           {/* After the reader, so that it opens over it. */}
           {aiNotice && (
             <AiHelperNotice

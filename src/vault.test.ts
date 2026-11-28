@@ -54,6 +54,85 @@ describe("native idle deadline bridge", () => {
     invoke.mockReset();
   });
 
+  it("passes native-reader activity without document bytes and stops forwarding on close", async () => {
+    let resolve!: () => void;
+    invoke.mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const listener = vi.fn();
+    window.addEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    try {
+      const opened = createVaultBridge().readNativePdf("FAKE record", "Close");
+      const [command, args] = invoke.mock.calls[0];
+      expect(command).toBe("vault_read_native_pdf");
+      expect(Object.keys(args.request).sort()).toEqual([
+        "closeLabel",
+        "recordId",
+      ]);
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+      resolve();
+      await opened;
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    }
+  });
+
+  it("waits for an earlier reader cancellation before opening the native PDF", async () => {
+    let finish!: () => void;
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    const bridge = createVaultBridge();
+    const cancelled = bridge.cancelView();
+    const opened = bridge.readNativePdf("FAKE record", "Close");
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish();
+    await Promise.all([cancelled, opened]);
+    expect(invoke).toHaveBeenLastCalledWith(
+      "vault_read_native_pdf",
+      expect.objectContaining({
+        request: { recordId: "FAKE record", closeLabel: "Close" },
+      }),
+    );
+  });
+
+  it.each(["close", "lock"] as const)(
+    "discards a queued native open after %s",
+    async (reason) => {
+      let finish!: () => void;
+      invoke.mockImplementation((command) =>
+        command === "vault_view_cancel"
+          ? new Promise<void>((resolve) => {
+              finish = resolve;
+            })
+          : Promise.resolve(undefined),
+      );
+      const bridge = createVaultBridge();
+      const cancelled = bridge.cancelView();
+      const opened = bridge.readNativePdf("FAKE record", "Close");
+      const refused = expect(opened).rejects.toMatchObject({
+        code: "cancelled",
+      });
+      const closed = reason === "lock" ? bridge.lock() : bridge.cancelView();
+      finish();
+      await Promise.all([cancelled, refused, closed]);
+      expect(
+        invoke.mock.calls.some(
+          ([command]) => command === "vault_read_native_pdf",
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("sends the commands and arguments the native side registers", async () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue(undefined);

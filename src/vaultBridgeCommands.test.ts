@@ -727,6 +727,7 @@ describe("each bridge method invokes its native command with its arguments", () 
     "viewPage",
     "cancelView",
     "readAndroidPdf",
+    "readNativePdf",
     "aiSummarize",
     "onAiAnswerStarted",
     "onVaultLocked",

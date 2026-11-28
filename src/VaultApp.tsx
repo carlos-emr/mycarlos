@@ -26,8 +26,8 @@ import {
   isLockedError,
   isMissingVaultError,
   isRecoveryModeError,
-  NATIVE_READER_ACTIVITY_EVENT,
   isRestoreUnfinished,
+  NATIVE_READER_ACTIVITY_EVENT,
   vaultErrorMessage,
   vaultErrorNote,
   type ReceivedFile,
@@ -2210,6 +2210,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         computer={DESKTOP_PLATFORMS.has(platform)}
+        iphonePdfReader={platform === "ios"}
         androidPdfReader={platform === "android"}
         sizesIn1024s={platform === "windows"}
         cameraPlatform={CAMERA_PLATFORMS.has(platform) ? platform : null}

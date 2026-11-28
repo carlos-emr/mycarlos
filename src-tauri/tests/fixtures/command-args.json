@@ -716,6 +716,19 @@
       },
       "raw": false
     },
+    "vault_read_native_pdf": {
+      "arguments": {
+        "activity": {
+          "optional": false,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "NativePdfRequest"
+        }
+      },
+      "raw": false
+    },
     "vault_record_known_details": {
       "arguments": {
         "request": {
@@ -1519,6 +1532,21 @@
           "struct": null
         },
         "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "NativePdfRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "closeLabel": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
           "optional": false,
           "struct": null
         }

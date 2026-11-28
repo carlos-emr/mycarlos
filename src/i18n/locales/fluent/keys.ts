@@ -1138,6 +1138,9 @@ export const MESSAGE_KEYS = [
   "reader.android.failed",
   "reader.android.next",
   "reader.android.opening",
+  "reader.iphone.opening",
+  "reader.iphone.failed",
+  "reader.iphone.tooLarge",
   "reader.android.page",
   "reader.android.pageStatus",
   "reader.android.pageFailed",
@@ -2793,6 +2796,9 @@ const FLUENT_IDS_BY_KEY = {
   "reader.android.failed": "reader-android-failed",
   "reader.android.next": "reader-android-next",
   "reader.android.opening": "reader-android-opening",
+  "reader.iphone.opening": "reader-iphone-opening",
+  "reader.iphone.failed": "reader-iphone-failed",
+  "reader.iphone.tooLarge": "reader-iphone-tooLarge",
   "reader.android.page": "reader-android-page",
   "reader.android.pageStatus": "reader-android-pageStatus",
   "reader.android.pageFailed": "reader-android-pageFailed",
@@ -4405,6 +4411,9 @@ export interface MessageArgsByKey {
   "reader.android.failed": undefined;
   "reader.android.next": undefined;
   "reader.android.opening": undefined;
+  "reader.iphone.opening": undefined;
+  "reader.iphone.failed": undefined;
+  "reader.iphone.tooLarge": undefined;
   "reader.android.page": { page: FluentArgument; total: FluentArgument };
   "reader.android.pageStatus": { page: FluentArgument; total: FluentArgument };
   "reader.android.pageFailed": { page: FluentArgument; total: FluentArgument };

@@ -37,6 +37,9 @@ def metadata(**changes):
         "tauri-plugin-android-trust": package(
             "tauri-plugin-android-trust", ROOT / "src-tauri/android-trust/Cargo.toml", None
         ),
+        "tauri-plugin-ios-pdf": package(
+            "tauri-plugin-ios-pdf", ROOT / "src-tauri/ios-pdf/Cargo.toml", None
+        ),
     }
     packages.update(changes)
     return {

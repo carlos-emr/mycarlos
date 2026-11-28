@@ -95,6 +95,7 @@
     "allow-vault-page-boxes",
     "allow-vault-view-cancel",
     "allow-vault-read-android-pdf",
+    "allow-vault-read-native-pdf",
     "allow-vault-document-text",
     "allow-vault-document-text-cancel",
     "allow-vault-record-known-details",

@@ -206,7 +206,7 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
-    /// Genuine input in a native reader (the Android PDF reader) obeys the renderer's owed-lock
+    /// Genuine input in a native PDF reader obeys the renderer's owed-lock
     /// rule: once the user-facing delay elapsed, it cannot revive either deadline. Check and touch
     /// share the mutex. The normal backstop keeps its margin.
     #[cfg(any(target_os = "android", target_os = "ios", test))]

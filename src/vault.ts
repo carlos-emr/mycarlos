@@ -963,6 +963,9 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** iOS only: native-memory PDF preview, with no document bytes in this bridge.
+   * Resolves when the native reader is dismissed. cancelView also stops it. */
+  readNativePdf(recordId: string, closeLabel: string): Promise<void>;
   /** Android only (#358): the document is shown by the native PdfRenderer reader, from a sealed
    * in-memory file, with no document bytes in this bridge. `labels` are the words it shows and
    * speaks; "{page}" and "{total}" in `page` and `pageStatus` are filled in natively. Resolves
@@ -1781,6 +1784,22 @@ export function createVaultBridge(): VaultBridge {
       invoke<string>("vault_ai_result_read", {
         request: { recordId, resultId },
       }),
+    readNativePdf: async (recordId, closeLabel) => {
+      const generation = viewGeneration;
+      if (pendingViewCancellation) {
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_native_pdf", {
+        request: { recordId, closeLabel },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     hideProfile: (profileId) =>
       invoke<void>("vault_hide_profile", { request: { profileId } }),
     restoreProfile: (profileId) =>
