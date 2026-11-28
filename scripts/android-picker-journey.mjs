@@ -156,9 +156,38 @@ try {
         original,
         "Home must return to the existing app activity and task",
       );
-      await expect(lockHeading).toBeVisible({ timeout: 30_000 });
-      assert.equal(await vaultStatus(), "locked");
-      await expect(row).toHaveCount(0);
+      try {
+        await expect(lockHeading).toBeVisible({ timeout: 30_000 });
+        assert.equal(await vaultStatus(), "locked");
+        await expect(row).toHaveCount(0);
+      } finally {
+        // This vault and the record are synthetic. Record states, not file names.
+        const observe = (result) => result.catch(() => "unavailable");
+        const [vault, visibility, lock, recordVisible, pickerCancelled] =
+          await Promise.all([
+            observe(vaultStatus()),
+            observe(page.evaluate(() => document.visibilityState)),
+            observe(lockHeading.isVisible()),
+            observe(row.isVisible()),
+            observe(
+              page
+                .getByText("No files selected. Nothing changed.", {
+                  exact: true,
+                })
+                .isVisible(),
+            ),
+          ]);
+        console.log(
+          "HOME observation:",
+          JSON.stringify({
+            vault,
+            visibility,
+            lock,
+            recordVisible,
+            pickerCancelled,
+          }),
+        );
+      }
       console.log("PASS Home with the picker open returned to a locked vault");
     }
   } finally {
