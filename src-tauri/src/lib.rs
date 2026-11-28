@@ -8748,7 +8748,7 @@ pub fn run() {
             }
             // Finish the initial receipts while the vault is still locked, before a command
             // can unlock it or change which vault owns an incoming share.
-            app.manage(store);
+            app.manage::<StoreHandle>(store);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -12541,7 +12541,7 @@ mod tests {
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
-            ("StoreHandle", "app.manage(store)"),
+            ("StoreHandle", "app.manage::<StoreHandle>(store)"),
             (
                 "Arc<AttemptThrottle>",
                 "app.manage(Arc::new(AttemptThrottle::new(",
