@@ -134,6 +134,7 @@ const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES
 /// Format 16 (removing a clinic link, #160) adds the `portalLinkRemoved` history event. No
 /// manifest field changed; an older build refuses the vault because it cannot read the event.
 /// The number is taken at merge, after the profile handover's 14 and hiding a person's 15.
+#[cfg(test)]
 const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 16;
 /// Format 17 (provisional, #574) lets a whole folder be hidden: `hidden` on a folder, with the
 /// folder, every folder below it and every document filed in any of them out of reach as one
