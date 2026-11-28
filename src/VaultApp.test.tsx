@@ -1877,6 +1877,52 @@ describe("durable vault UI", () => {
     return made;
   }
 
+  it("asks about a waiting file by its name after an unlock, though the list asked for while locked had no name (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
+    // Native code tells a locked page how many files wait and no name; after the unlock it names them.
+    let unlocked = false;
+    const named = vi.mocked(bridge.listReceived).getMockImplementation()!;
+    vi.mocked(bridge.listReceived).mockImplementation(async () => {
+      const listed = await named();
+      return {
+        ...listed,
+        files: listed.files.map((file) =>
+          unlocked ? file : { ...file, name: "" },
+        ),
+      };
+    });
+    const unlock = vi.mocked(bridge.unlock).getMockImplementation()!;
+    vi.mocked(bridge.unlock).mockImplementation(async (...args) => {
+      unlocked = true;
+      return unlock(...args);
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    // The lock screen asked for the list and got the count only: no question is opened from it.
+    await waitFor(() => expect(bridge.listReceived).toHaveBeenCalled());
+    // A file arrives while the lock screen is up: the list is asked for again, after the page
+    // knows it is locked, and is again a count with no name.
+    const asked = vi.mocked(bridge.listReceived).mock.calls.length;
+    await act(async () =>
+      window.dispatchEvent(new Event("mycarlos-received-changed")),
+    );
+    await waitFor(() =>
+      expect(vi.mocked(bridge.listReceived).mock.calls.length).toBeGreaterThan(
+        asked,
+      ),
+    );
+    await unlockWith(user);
+    // The question names the file the unlock's own list gave, never a blank.
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+  });
+
   it("asks before adding a file Open with named, stores nothing until Import, and adds exactly that file (#133)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = openedWithVault(["FAKE_Opened.pdf"]);
@@ -1950,6 +1996,179 @@ describe("durable vault UI", () => {
       }),
     ).toBeVisible();
     expect(bridge.acceptReceived).toHaveBeenCalledTimes(1);
+  });
+
+  /** Files kept, sealed, from while the vault was locked (#49): asked about like opened ones, with
+   * Not now (kept for the next unlock) and Delete (the kept files are deleted) in place of Cancel. */
+  function sealedWithVault(names: string[], sealed: string[] = names) {
+    const made = openedWithVault(names);
+    const list = vi.mocked(made.bridge.listReceived).getMockImplementation()!;
+    let removed: string[] = [];
+    vi.mocked(made.bridge.listReceived).mockImplementation(async () => {
+      const listed = await list();
+      return {
+        ...listed,
+        files: listed.files
+          .filter((file) => !removed.includes(file.id))
+          .map((file) => ({ ...file, sealed: sealed.includes(file.name) })),
+      };
+    });
+    made.bridge.removeReceived = vi.fn(async (ids: string[]) => {
+      removed = [...removed, ...ids];
+      return ids.length;
+    });
+    return made;
+  }
+
+  it("asks about sealed files with Not now, Delete and Import, and Not now only forgets them for now (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sealedWithVault(["FAKE_Sealed.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Sealed.pdf into Shared with me?"),
+    });
+    expect(
+      within(dialog).getByText(
+        humanText(
+          /kept here, encrypted\. Nothing is added until you choose Import\. Not now keeps them for up to 7 days\. Delete removes them from this device for good: this cannot be undone\./,
+        ),
+      ),
+    ).toBeVisible();
+    const choices = within(dialog)
+      .getAllByRole("button")
+      .map((button) => humanValue(button.textContent ?? ""));
+    expect(choices).toEqual(
+      ["Not now", "Delete the kept file", "Import"].map(humanValue),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Not now") }),
+    );
+    await waitFor(() =>
+      expect(bridge.discardReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(bridge.removeReceived).not.toHaveBeenCalled();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("Delete deletes the kept files, adds nothing, and the question does not come back (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sealedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Delete the 2 kept files"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeReceived).toHaveBeenCalledWith([
+        "shared-1",
+        "shared-2",
+      ]),
+    );
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("Delete in a mixed question deletes only the kept files; the other file stays waiting and is asked about again (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sealedWithVault(
+      ["FAKE_Kept.pdf", "FAKE_Opened.pdf"],
+      ["FAKE_Kept.pdf"],
+    );
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    // The button says what it covers: the one kept file, not both.
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Delete the kept file"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+    // The other file is still waiting, and its own question comes back.
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("a Delete that fails claims nothing: the list is read again and the files still waiting are asked about again (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sealedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
+    // Native deleted the first file, then failed on the second (a Storage error, not a count).
+    const deleted = bridge.removeReceived!;
+    bridge.removeReceived = vi.fn(async (ids: string[]) => {
+      await deleted([ids[0]]);
+      throw new Error("native: could not delete");
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    const listedBefore = vi.mocked(bridge.listReceived).mock.calls.length;
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Delete the 2 kept files"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeReceived).toHaveBeenCalledWith([
+        "shared-1",
+        "shared-2",
+      ]),
+    );
+    // The list was read again (not trusted to have been deleted) ...
+    await waitFor(() =>
+      expect(vi.mocked(bridge.listReceived).mock.calls.length).toBeGreaterThan(
+        listedBefore,
+      ),
+    );
+    // ... and the file that is still waiting is asked about again, on its own: the one native
+    // already forgot is gone from the question.
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_Two.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+    // Nothing was claimed removed, nothing was imported, and nothing was said in the page.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+  });
+
+  it("offers Cancel, not Delete, for files that are not sealed (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+    });
+    expect(
+      within(dialog).queryByRole("button", { name: humanText(/^Delete the/) }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    ).toBeVisible();
   });
 
   it("Cancel forgets the opened files and stores nothing, and the question does not come back (#133)", async () => {

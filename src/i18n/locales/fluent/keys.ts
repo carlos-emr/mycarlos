@@ -257,6 +257,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
+  "interface.receive.sealed",
+  "interface.receive.notKept",
   "interface.recordPresentation.imaging",
   "interface.recordPresentation.prescription",
   "interface.recordPresentation.testResult",
@@ -1402,6 +1404,11 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "interface.received.notNow",
+  "interface.received.confirmBodySealed",
+  "interface.receive.inboxRemoved",
+  "interface.receive.inboxKeyChanged",
+  "interface.received.removeKept",
   "native.backupExclusionFailed",
   "interface.AddVideo.add",
   "interface.AddVideo.hint",
@@ -1787,6 +1794,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
+  "interface.receive.sealed": "interface-receive-sealed",
+  "interface.receive.notKept": "interface-receive-notKept",
   "interface.recordPresentation.imaging":
     "interface-recordPresentation-imaging",
   "interface.recordPresentation.prescription":
@@ -3110,6 +3119,12 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "interface.received.notNow": "interface-received-notNow",
+  "interface.received.confirmBodySealed":
+    "interface-received-confirmBodySealed",
+  "interface.receive.inboxRemoved": "interface-receive-inboxRemoved",
+  "interface.receive.inboxKeyChanged": "interface-receive-inboxKeyChanged",
+  "interface.received.removeKept": "interface-received-removeKept",
   "native.backupExclusionFailed": "native-backupExclusionFailed",
   "interface.AddVideo.add": "interface-AddVideo-add",
   "interface.AddVideo.hint": "interface-AddVideo-hint",
@@ -3432,6 +3447,8 @@ export interface MessageArgsByKey {
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
+  "interface.receive.sealed": { count: FluentArgument };
+  "interface.receive.notKept": { count: FluentArgument };
   "interface.recordPresentation.imaging": undefined;
   "interface.recordPresentation.prescription": undefined;
   "interface.recordPresentation.testResult": undefined;
@@ -4675,6 +4692,11 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "interface.received.notNow": undefined;
+  "interface.received.confirmBodySealed": undefined;
+  "interface.receive.inboxRemoved": { count: FluentArgument };
+  "interface.receive.inboxKeyChanged": undefined;
+  "interface.received.removeKept": { count: FluentArgument };
   "native.backupExclusionFailed": undefined;
   "interface.AddVideo.add": undefined;
   "interface.AddVideo.hint": undefined;

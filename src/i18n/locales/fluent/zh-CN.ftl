@@ -508,7 +508,11 @@ interface-reader-zoom = { $percent }%
 
 interface-receive-dropped = 有 { $count } 个分享项目未接收：myCarlos 只接受 PDF 文件。
 
+interface-receive-notKept = 有 { $count } 个分享文件无法保存。请重新分享。
+
 interface-receive-refused = 有 { $count } 个分享项目未接收：等待中的分享文件一次最多只能有 100 个。请解锁，让等候中的文件进入「与我分享」，然后重新分享。
+
+interface-receive-sealed = 有 { $count } 个分享文件已加密保存，最长 7 天。请解锁 myCarlos 以添加。
 
 interface-recordPresentation-imaging = 影像检查
 
@@ -2679,6 +2683,17 @@ notifications-testWait = 请等待几秒钟后再试。
 
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
+
+interface-received-notNow = 暂不
+
+
+interface-received-confirmBodySealed = 这些文件是在 myCarlos 锁定时分享的，已加密保存在此处。在您选择「导入」之前不会添加任何内容。选择「暂不」会将它们保留最多 7 天；选择「删除」会将它们从此设备永久删除，且无法撤销。
+
+interface-receive-inboxRemoved = 有 { $count } 个为您保存的分享文件已被移除：已超过 7 天或无法读取。
+
+interface-receive-inboxKeyChanged = myCarlos 锁定时用来保存分享文件的密钥被其他程序更改，现已恢复。此后分享的文件未被保存。请重新分享。
+
+interface-received-removeKept = 删除这 { $count } 个已保存的文件
 
 native-backupExclusionFailed = 这部手机无法让保险库不被设备备份。请重试。
 

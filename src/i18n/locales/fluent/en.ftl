@@ -363,10 +363,22 @@ interface-receive-dropped =
     *[other] { $count } shared items were not received: myCarlos accepts PDF files only.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] One shared file could not be kept. Share it again.
+    *[other] { $count } shared files could not be kept. Share them again.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] A share was not received: no more than 100 shared files can wait at once. Unlock, so the waiting files go into Shared with me, then share again.
     *[other] { $count } shares were not received: no more than 100 shared files can wait at once. Unlock, so the waiting files go into Shared with me, then share again.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] One shared file is kept, encrypted, for up to 7 days. Unlock myCarlos to add it.
+    *[other] { $count } shared files are kept, encrypted, for up to 7 days. Unlock myCarlos to add them.
     }
 
 interface-RecordDetails-closeDocumentDetails = Close document details
@@ -2953,6 +2965,25 @@ notifications-testWait = Wait a few seconds, then try again.
 
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
+
+interface-received-notNow = Not now
+
+
+interface-received-confirmBodySealed = These files were shared while myCarlos was locked and are kept here, encrypted. Nothing is added until you choose Import. Not now keeps them for up to 7 days. Delete removes them from this device for good: this cannot be undone.
+
+interface-receive-inboxRemoved =
+    { $count ->
+    [one] One shared file kept for you was removed: it was more than 7 days old or could not be read.
+    *[other] { $count } shared files kept for you were removed: they were more than 7 days old or could not be read.
+    }
+
+interface-receive-inboxKeyChanged = The key that keeps shared files while myCarlos is locked was changed by something else, and has been put right. Files shared since then were not kept. Share them again.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Delete the kept file
+    *[other] Delete the { $count } kept files
+    }
 
 native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.
 

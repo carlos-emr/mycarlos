@@ -377,11 +377,25 @@ interface-receive-dropped =
     [many] { $count } éléments partagés n’ont pas été reçus : myCarlos n’accepte que les fichiers PDF.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] Un fichier partagé n’a pas pu être conservé. Partagez-le de nouveau.
+    *[other] { $count } fichiers partagés n’ont pas pu être conservés. Partagez-les de nouveau.
+    [many] { $count } fichiers partagés n’ont pas pu être conservés. Partagez-les de nouveau.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] Un partage n’a pas été reçu : pas plus de 100 fichiers partagés peuvent être en attente à la fois. Déverrouillez le coffre-fort pour que les fichiers en attente arrivent dans Partagés avec moi, puis partagez-les de nouveau.
     *[other] { $count } partages n’ont pas été reçus : pas plus de 100 fichiers partagés peuvent être en attente à la fois. Déverrouillez le coffre-fort pour que les fichiers en attente arrivent dans Partagés avec moi, puis partagez-les de nouveau.
     [many] { $count } partages n’ont pas été reçus : pas plus de 100 fichiers partagés peuvent être en attente à la fois. Déverrouillez le coffre-fort pour que les fichiers en attente arrivent dans Partagés avec moi, puis partagez-les de nouveau.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] Un fichier partagé est conservé, chiffré, pendant 7 jours au plus. Déverrouillez myCarlos pour l’ajouter.
+    *[other] { $count } fichiers partagés sont conservés, chiffrés, pendant 7 jours au plus. Déverrouillez myCarlos pour les ajouter.
+    [many] { $count } fichiers partagés sont conservés, chiffrés, pendant 7 jours au plus. Déverrouillez myCarlos pour les ajouter.
     }
 
 interface-RecordDetails-closeDocumentDetails = Fermer les détails du document
@@ -2988,6 +3002,27 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
+
+interface-received-notNow = Pas maintenant
+
+
+interface-received-confirmBodySealed = Ces fichiers ont été partagés pendant que myCarlos était verrouillé et sont conservés ici, chiffrés. Rien n’est ajouté tant que vous n’avez pas choisi Importer. Pas maintenant les conserve jusqu’à 7 jours. Supprimer les efface définitivement de cet appareil : cette action est irréversible.
+
+interface-receive-inboxRemoved =
+    { $count ->
+    [one] Un fichier partagé conservé pour vous a été supprimé : il avait plus de 7 jours ou n’a pas pu être lu.
+    [many] { $count } fichiers partagés conservés pour vous ont été supprimés : ils avaient plus de 7 jours ou n’ont pas pu être lus.
+    *[other] { $count } fichiers partagés conservés pour vous ont été supprimés : ils avaient plus de 7 jours ou n’ont pas pu être lus.
+    }
+
+interface-receive-inboxKeyChanged = La clé qui conserve les fichiers partagés pendant que myCarlos est verrouillé a été modifiée par autre chose, et a été rétablie. Les fichiers partagés depuis ne sont pas conservés. Partagez-les de nouveau.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Supprimer le fichier conservé
+    [many] Supprimer les { $count } fichiers conservés
+    *[other] Supprimer les { $count } fichiers conservés
+    }
 
 native-backupExclusionFailed = Ce téléphone n’a pas pu garder le coffre-fort hors des sauvegardes de l’appareil. Veuillez réessayer.
 

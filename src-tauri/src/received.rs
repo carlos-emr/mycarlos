@@ -8,11 +8,12 @@
 use std::ffi::OsString;
 use std::io::{self, Cursor, Read};
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tauri::Url;
 use uuid::Uuid;
 
+use crate::sealed_inbox::ItemId;
 use crate::vault::{sanitize_basename, MANUAL_IMPORT_LABEL, MAX_IMPORT_FILES};
 
 /// How far into a file "%PDF-" may start. PDF readers accept a short preamble before the header.
@@ -25,6 +26,9 @@ pub(crate) enum ReceivedSource {
     Path(PathBuf),
     /// An Android content URI, read through the file-system plugin.
     ContentUri(Url),
+    /// A file sealed into the inbox while the vault was locked (#49), offered at unlock: opened
+    /// later with the vault's inbox keys, so nothing readable is ever on disk.
+    Inbox(ItemId),
 }
 
 /// Which platform's rules apply to an opened URL. Passed in, so both can be tested anywhere.
@@ -118,6 +122,8 @@ pub(crate) fn received_name(source: &ReceivedSource) -> String {
                     .decode_utf8_lossy()
                     .into_owned()
             }),
+        // Named by the sealed meta when it is offered, never from here.
+        ReceivedSource::Inbox(_) => None,
     };
     match raw {
         // A provider's last segment is often an opaque id ("msf:31"), not a file name. The
@@ -213,6 +219,18 @@ pub(crate) struct ReceiveNotice {
     pub(crate) dropped: usize,
     /// Shares refused whole, because the files waiting would pass the import limit.
     pub(crate) refused_shares: usize,
+    /// Files sealed into the inbox while the vault was locked (#49): kept for a few days, and
+    /// offered for adding at the next unlock.
+    pub(crate) sealed: usize,
+    /// Files the inbox could not keep (it is full, the disk is, or the file could not be read):
+    /// the patient shares them again.
+    pub(crate) not_kept: usize,
+    /// Sealed files this unlock removed because they were past their age or did not open (#49):
+    /// a count only, never a name.
+    pub(crate) inbox_removed: usize,
+    /// The inbox key file was not the one this vault derives (something else changed it): said
+    /// once, and the right file was written. Files shared since it changed were not kept.
+    pub(crate) inbox_key_changed: bool,
 }
 
 /// What the page may see of a waiting file.
@@ -227,16 +245,63 @@ pub(crate) struct ReceivedSummary {
     /// The file was named by a program started with its path (Open with, Send to, a second launch)
     /// rather than shared by another app: the renderer asks the patient before it is added.
     pub(crate) needs_confirm: bool,
+    /// The file was sealed while the vault was locked (#49): the patient may Remove it, which
+    /// deletes it, where Not now keeps it for the next unlock.
+    pub(crate) sealed: bool,
+}
+
+/// What a page may be told of the waiting files while the vault is NOT known to be unlocked
+/// (locked, or busy being unlocked or moved): that they wait, and how many, and nothing that
+/// names one. A file's name can be a diagnosis or a person's name, and the in-memory fallback
+/// (a share made while no inbox could take it) holds it with its name, so keeping names off the
+/// lock screen is enforced here, in native code, and not left to the screen's own rule. Only
+/// `Some(true)` leaves the names in.
+pub(crate) fn without_names_unless_unlocked(
+    mut files: Vec<ReceivedSummary>,
+    unlocked: Option<bool>,
+) -> Vec<ReceivedSummary> {
+    if unlocked != Some(true) {
+        for file in &mut files {
+            file.name.clear();
+        }
+    }
+    files
 }
 redact_debug!(ReceivedSummary);
 
-/// Files received and not yet imported or discarded, in arrival order. Memory only: a file
-/// received while the vault is locked is lost if the app closes first (the sealed inbox is
-/// a later step of #49).
+/// OS receipts, including shares accepted before setup can determine which vault owns the inbox.
 #[derive(Default)]
 pub(crate) struct ReceivedFiles {
     waiting: Mutex<Waiting>,
     notice: Mutex<ReceiveNotice>,
+    receipts: Mutex<Receipts>,
+}
+
+#[derive(Default)]
+struct Receipts {
+    sealer: Option<Arc<dyn Sealer>>,
+    /// Keep each share together until setup can seal it or offer it from memory.
+    before_setup: Vec<Vec<ReceivedSource>>,
+}
+
+/// What a sealer did with a share: how each file ended.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SealTally {
+    /// Sealed into the inbox.
+    pub(crate) kept: usize,
+    /// Not a PDF: not kept, and counted with the items the app does not accept.
+    pub(crate) not_pdf: usize,
+    /// Could not be kept: a cap, a full disk, a file that could not be read.
+    pub(crate) not_kept: usize,
+}
+
+/// Seals files received while the vault is locked (#49). The sealer, not this module, knows
+/// whether the vault is locked and whether an inbox has a key; it reads each source itself.
+pub(crate) trait Sealer: Send + Sync {
+    /// Seals `sources` now, or returns `None` when receipts are not being sealed at this moment
+    /// (the vault is open, or there is no inbox key yet), so that they are held in memory as before.
+    /// A share is never half held and half sealed.
+    fn seal(&self, sources: &[ReceivedSource]) -> Option<SealTally>;
 }
 
 #[derive(Default)]
@@ -267,10 +332,53 @@ impl ReceivedFiles {
     /// were accepted. What was dropped or refused is kept for the page's next notice.
     pub(crate) fn receive(&self, offered: usize, sources: Vec<ReceivedSource>) {
         let dropped = offered.saturating_sub(sources.len());
-        let refused = !sources.is_empty() && self.add_share(sources).is_err();
+        if sources.is_empty() || sources.len() > MAX_IMPORT_FILES {
+            let mut notice = self.notice();
+            notice.dropped += dropped;
+            notice.refused_shares += usize::from(!sources.is_empty());
+            return;
+        }
+        let mut receipts = self.receipts.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(sealer) = receipts.sealer.clone() else {
+            let pending: usize = receipts.before_setup.iter().map(Vec::len).sum();
+            let mut notice = self.notice();
+            notice.dropped += dropped;
+            if pending + sources.len() <= MAX_IMPORT_FILES {
+                receipts.before_setup.push(sources);
+            } else {
+                notice.refused_shares += 1;
+            }
+            return;
+        };
+        drop(receipts);
+        self.deliver_share(sealer.as_ref(), dropped, sources);
+    }
+
+    fn deliver_share(&self, sealer: &dyn Sealer, dropped: usize, sources: Vec<ReceivedSource>) {
+        if let Some(tally) = sealer.seal(&sources) {
+            let mut notice = self.notice();
+            notice.dropped += dropped + tally.not_pdf;
+            notice.sealed += tally.kept;
+            notice.not_kept += tally.not_kept;
+            return;
+        }
+        let refused = self.add_share(sources).is_err();
         let mut notice = self.notice();
         notice.dropped += dropped;
         notice.refused_shares += usize::from(refused);
+    }
+
+    /// Installs the sealer for files received while the vault is locked. Called once at start-up,
+    /// once the app can open a source.
+    pub(crate) fn set_sealer(&self, sealer: Arc<dyn Sealer>) {
+        // A concurrent callback must not deliver ahead of the initial argv or an earlier share.
+        // Only startup holds this receipt gate during I/O; waiting files and notices have their
+        // own locks, and the app publishes its StoreHandle after this handoff.
+        let mut receipts = self.receipts.lock().unwrap_or_else(PoisonError::into_inner);
+        for share in receipts.before_setup.drain(..) {
+            self.deliver_share(sealer.as_ref(), 0, share);
+        }
+        receipts.sealer = Some(sealer);
     }
 
     /// Forgets the files waiting to be imported (not those an import has taken, which it finishes
@@ -317,9 +425,67 @@ impl ReceivedFiles {
                 id: *id,
                 name: file.name.clone(),
                 source_label: MANUAL_IMPORT_LABEL,
-                needs_confirm: matches!(file.source, ReceivedSource::Path(_)),
+                needs_confirm: matches!(
+                    file.source,
+                    ReceivedSource::Path(_) | ReceivedSource::Inbox(_)
+                ),
+                sealed: matches!(file.source, ReceivedSource::Inbox(_)),
             })
             .collect()
+    }
+
+    /// Offers the items an unlock found in the sealed inbox (#49), each with the name its sealed
+    /// meta holds, for the patient to confirm. An item already waiting is not added twice, and
+    /// nothing beyond the import limit is (what does not fit stays in the inbox for a later
+    /// unlock). Returns how many were added.
+    pub(crate) fn add_sealed(&self, items: Vec<(ItemId, String)>) -> usize {
+        let mut waiting = self.waiting();
+        let mut added = 0;
+        for (item, name) in items {
+            if waiting
+                .files
+                .iter()
+                .any(|(_, file)| file.source == ReceivedSource::Inbox(item))
+            {
+                continue;
+            }
+            if waiting.files.len() + waiting.taken + 1 > MAX_IMPORT_FILES {
+                break;
+            }
+            waiting.files.push((
+                Uuid::new_v4(),
+                ReceivedFile {
+                    source: ReceivedSource::Inbox(item),
+                    name,
+                },
+            ));
+            added += 1;
+        }
+        added
+    }
+
+    /// The SEALED files among those named, as (waiting id, item), WITHOUT forgetting any: the
+    /// caller deletes each item (the patient chose Remove, not Not now) and then forgets only the
+    /// ones it really deleted (`forget`), so a file that could not be deleted keeps waiting. A file
+    /// that is not sealed (an "Open with" file waiting in the same question) is not named: it
+    /// stays waiting.
+    pub(crate) fn sealed_named(&self, ids: &[Uuid]) -> Vec<(Uuid, ItemId)> {
+        self.waiting()
+            .files
+            .iter()
+            .filter(|(id, _)| ids.contains(id))
+            .filter_map(|(id, file)| match file.source {
+                ReceivedSource::Inbox(item) => Some((*id, item)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Adds what an unlock's reconciliation of the sealed inbox says to the notice the page reads.
+    pub(crate) fn note_inbox_unlock(&self, removed: usize, key_changed: bool) {
+        let mut notice = self.notice();
+        notice.inbox_removed += removed;
+        notice.inbox_key_changed |= key_changed;
     }
 
     /// Forgets exactly the waiting files named (the patient said Cancel): nothing was stored, and
@@ -390,6 +556,40 @@ mod tests {
 
     fn url(text: &str) -> Url {
         Url::parse(text).unwrap()
+    }
+
+    #[test]
+    fn a_page_is_told_only_how_many_files_wait_unless_the_vault_is_known_to_be_unlocked() {
+        // The in-memory fallback holds a share with its name (no inbox could take it).
+        let waiting = ReceivedFiles::default();
+        waiting
+            .add_share(vec![
+                ReceivedSource::Path("/FAKE/Diagnosis of FAKE Person.pdf".into()),
+                ReceivedSource::Path("/FAKE/second.pdf".into()),
+            ])
+            .unwrap();
+        let listed = waiting.list();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|file| !file.name.is_empty()));
+        // Unlocked: the names are the patient's to see.
+        let unlocked = without_names_unless_unlocked(listed.clone(), Some(true));
+        assert_eq!(unlocked, listed);
+        // Locked, or busy (not known): the same files, so the count is right, with no name.
+        for state in [Some(false), None] {
+            let hidden = without_names_unless_unlocked(listed.clone(), state);
+            assert_eq!(hidden.len(), 2, "{state:?}");
+            assert!(hidden.iter().all(|file| file.name.is_empty()), "{state:?}");
+            let serialized = serde_json::to_string(&hidden).unwrap();
+            assert!(
+                !serialized.contains("FAKE") && !serialized.contains(".pdf"),
+                "no part of a name is sent: {serialized}"
+            );
+            // Everything else a count needs is kept.
+            assert_eq!(
+                hidden.iter().map(|file| file.id).collect::<Vec<_>>(),
+                listed.iter().map(|file| file.id).collect::<Vec<_>>()
+            );
+        }
     }
 
     const ANDROID: OpenedPlatform<'static> = OpenedPlatform::Android {
@@ -512,6 +712,7 @@ mod tests {
             OsString::from("relative.pdf"),
             later.into_os_string(),
         ]);
+        files.set_sealer(scripted(None));
         assert_eq!(
             files
                 .list()
@@ -524,7 +725,8 @@ mod tests {
             files.take_notice(),
             ReceiveNotice {
                 dropped: 1,
-                refused_shares: 0
+                refused_shares: 0,
+                ..Default::default()
             }
         );
     }
@@ -538,6 +740,7 @@ mod tests {
                 .into_os_string()
         });
         files.receive_command_line(std::iter::once(OsString::from("myCarlos")).chain(paths));
+        files.set_sealer(scripted(None));
         let initial = files.list();
         let taken = files
             .take(&initial.iter().map(|file| file.id).collect::<Vec<_>>())
@@ -552,7 +755,8 @@ mod tests {
             files.take_notice(),
             ReceiveNotice {
                 dropped: 0,
-                refused_shares: 1
+                refused_shares: 1,
+                ..Default::default()
             }
         );
         files.receive_command_line([OsString::from("myCarlos"), later]);
@@ -721,11 +925,15 @@ mod tests {
         files.receive(1, Vec::new());
         files.receive(2, sources(1));
         files.receive(MAX_IMPORT_FILES, sources(MAX_IMPORT_FILES));
+        let sealer = scripted(None);
+        files.set_sealer(sealer.clone());
+        assert_eq!(*sealer.seen.lock().unwrap(), vec![1]);
         assert_eq!(
             files.take_notice(),
             ReceiveNotice {
                 dropped: 2,
-                refused_shares: 1
+                refused_shares: 1,
+                ..Default::default()
             }
         );
         assert_eq!(files.take_notice(), ReceiveNotice::default());
@@ -795,6 +1003,81 @@ mod tests {
         );
         // An id that is not waiting takes nothing at all.
         assert!(files.take(&[Uuid::new_v4()]).is_none());
+    }
+
+    /// A sealer that answers by script and records what it was given.
+    struct Scripted {
+        answer: Mutex<Option<SealTally>>,
+        seen: Mutex<Vec<usize>>,
+    }
+    impl Sealer for Scripted {
+        fn seal(&self, sources: &[ReceivedSource]) -> Option<SealTally> {
+            self.seen.lock().unwrap().push(sources.len());
+            *self.answer.lock().unwrap()
+        }
+    }
+    fn scripted(answer: Option<SealTally>) -> Arc<Scripted> {
+        Arc::new(Scripted {
+            answer: Mutex::new(answer),
+            seen: Mutex::new(Vec::new()),
+        })
+    }
+
+    #[test]
+    fn a_share_the_sealer_keeps_is_not_held_in_memory_and_is_counted_for_the_notice() {
+        let files = ReceivedFiles::default();
+        let sealer = scripted(Some(SealTally {
+            kept: 2,
+            not_pdf: 1,
+            not_kept: 3,
+        }));
+        files.set_sealer(sealer.clone());
+        files.receive(7, sources(6));
+        assert_eq!(*sealer.seen.lock().unwrap(), vec![6]);
+        assert_eq!(files.len(), 0, "nothing is waiting in memory");
+        assert_eq!(
+            files.take_notice(),
+            ReceiveNotice {
+                // One item was not a file (7 offered, 6 accepted), and one accepted file was not a PDF.
+                dropped: 2,
+                refused_shares: 0,
+                sealed: 2,
+                not_kept: 3,
+                ..ReceiveNotice::default()
+            }
+        );
+    }
+
+    #[test]
+    fn a_sealer_that_does_not_seal_leaves_the_share_to_be_held_as_before() {
+        let files = ReceivedFiles::default();
+        let sealer = scripted(None);
+        files.set_sealer(sealer.clone());
+        files.receive(2, sources(2));
+        assert_eq!(*sealer.seen.lock().unwrap(), vec![2], "it was asked");
+        assert_eq!(files.len(), 2, "and the files are waiting in memory");
+        assert_eq!(files.take_notice(), ReceiveNotice::default());
+    }
+
+    #[test]
+    fn a_share_over_the_limit_is_refused_whole_and_never_offered_to_the_sealer() {
+        let files = ReceivedFiles::default();
+        let sealer = scripted(Some(SealTally::default()));
+        files.set_sealer(sealer.clone());
+        files.receive(MAX_IMPORT_FILES + 1, sources(MAX_IMPORT_FILES + 1));
+        assert!(sealer.seen.lock().unwrap().is_empty());
+        assert_eq!(files.len(), 0);
+        assert_eq!(files.take_notice().refused_shares, 1);
+    }
+
+    #[test]
+    fn nothing_is_asked_of_the_sealer_when_nothing_usable_was_shared() {
+        let files = ReceivedFiles::default();
+        let sealer = scripted(Some(SealTally::default()));
+        files.set_sealer(sealer.clone());
+        files.receive(3, Vec::new());
+        assert!(sealer.seen.lock().unwrap().is_empty());
+        assert_eq!(files.take_notice().dropped, 3);
     }
 }
 

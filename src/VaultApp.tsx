@@ -231,7 +231,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 // The question in front of the patient is never changed under their cursor: a
                 // file that arrives while it is open waits, and is asked about after the answer
                 // (the answer asks again).
-                if (!confirmOpen.current) {
+                // Only in an unlocked session: native code tells a locked page how many files wait
+                // and no name, so a question opened from that list would be asked, after the next
+                // unlock, with blank names; the unlock lists again and asks then.
+                if (!confirmOpen.current && statusRef.current === "unlocked") {
                   confirmOpen.current = true;
                   setConfirmReceived(ask);
                 }
@@ -2141,6 +2144,42 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 })
           }
           confirmLabel={t("interface.received.import")}
+          // Files kept from while the vault was locked (#49): Not now keeps them for the next
+          // unlock, and Remove deletes them. Other files have only Cancel.
+          cancelLabel={
+            confirmReceived.some((file) => file.sealed)
+              ? t("interface.received.notNow")
+              : undefined
+          }
+          removeLabel={
+            confirmReceived.some((file) => file.sealed) && bridge.removeReceived
+              ? t("interface.received.removeKept", {
+                  count: confirmReceived.filter((file) => file.sealed).length,
+                })
+              : undefined
+          }
+          onRemove={() => {
+            // Delete acts on the kept (sealed) files only: another file in the same question
+            // (an "Open with" file) stays waiting and is asked about again.
+            const ids = confirmReceived
+              .filter((file) => file.sealed)
+              .map((file) => file.id);
+            confirmOpen.current = false;
+            setConfirmReceived(null);
+            void bridge
+              .removeReceived?.(ids)
+              .then(() =>
+                setReceived((waiting) =>
+                  waiting.filter((file) => !ids.includes(file.id)),
+                ),
+              )
+              .then(() => refreshReceivedRef.current())
+              // A delete that was refused (locked) or failed (storage) claims nothing: the list is
+              // read again, which drops what native already forgot, and asks again about what
+              // still waits (a failed file keeps waiting). No new text: the question coming back is
+              // the answer; the listing never rejects.
+              .catch(() => refreshReceivedRef.current());
+          }}
           details={
             confirmReceived.length > 1 ? (
               <ul>
@@ -2180,7 +2219,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               .catch(() => undefined);
           }}
         >
-          <p>{t("interface.received.confirmBody")}</p>
+          <p>
+            {t(
+              confirmReceived.some((file) => file.sealed)
+                ? "interface.received.confirmBodySealed"
+                : "interface.received.confirmBody",
+            )}
+          </p>
         </ConfirmDialog>
       )}
       <VaultLibrary

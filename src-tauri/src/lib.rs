@@ -87,6 +87,8 @@ mod model_limits;
 mod model_runtime;
 mod video_scheme;
 // The recording core (#359) and, in the next step, the playback address use it.
+mod inbox_folder;
+mod inbox_receipt;
 #[allow(dead_code)]
 mod mp4_stream;
 mod notice_key;
@@ -105,6 +107,7 @@ mod portal_pickup;
 mod process_flags;
 mod reading_aid;
 mod received;
+mod sealed_inbox;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;
@@ -162,7 +165,6 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use idle::{IdleDeadline, Opening};
 use received::{ReceivedFiles, ReceivedSource};
 use serde::{Deserialize, Serialize};
-#[cfg(desktop)]
 use std::io;
 use std::{
     collections::HashMap,
@@ -6202,6 +6204,27 @@ fn open_received_source(
     })
 }
 
+/// A received source opened to be sealed into the inbox, with its length when the system gave one.
+/// The length is only a hint for refusing early: the size limit is enforced on what is read.
+fn open_sealing_source(
+    app: &tauri::AppHandle,
+    source: &ReceivedSource,
+) -> Option<(Box<dyn std::io::Read + Send>, Option<u64>)> {
+    let declared = match source {
+        ReceivedSource::Path(path) => std::fs::symlink_metadata(path).ok().map(|m| m.len()),
+        ReceivedSource::ContentUri(_) => None,
+        // Already sealed: never sealed again.
+        ReceivedSource::Inbox(_) => return None,
+    };
+    let file = received::ReceivedFile {
+        source: source.clone(),
+        name: String::new(),
+    };
+    open_received_reader(app, &file)
+        .ok()
+        .map(|reader| (reader, declared))
+}
+
 fn open_received_reader(
     app: &tauri::AppHandle,
     file: &received::ReceivedFile,
@@ -6209,6 +6232,8 @@ fn open_received_reader(
     let path = match &file.source {
         ReceivedSource::Path(path) => tauri_plugin_fs::FilePath::Path(path.clone()),
         ReceivedSource::ContentUri(url) => tauri_plugin_fs::FilePath::Url(url.clone()),
+        // A sealed item is opened with the vault's keys, by `open_sealed_source`.
+        ReceivedSource::Inbox(_) => return Err(VaultError::Invalid),
     };
     open_source_reader(app, path)
 }
@@ -6280,8 +6305,9 @@ fn open_supported_file(
 }
 
 /// A picked file that cannot be opened is a problem with that file, not with
-/// the vault, so only an unexplained failure is reported as a storage error.
-#[cfg(desktop)]
+/// the vault, so only an unexplained failure is reported as a storage error. On every platform:
+/// a picked file on a computer, and a sealed inbox item (`open_sealed_source`, which phones compile
+/// too) both open through it, so it carries no `cfg(desktop)` of its own.
 fn import_source_error(error: io::Error) -> VaultError {
     match error.kind() {
         // Moved, renamed or deleted after it was picked.
@@ -6353,11 +6379,129 @@ fn sort_received_open(
 /// window comes back to the front. Names stay off the lock screen: the renderer shows a count
 /// there.
 #[tauri::command]
-fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
-    ReceivedState {
-        files: received.list(),
-        notice: received.take_notice(),
+async fn received_list(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    received: State<'_, Arc<ReceivedFiles>>,
+) -> CommandResult<ReceivedState> {
+    let store = store.pin();
+    // Once per unlock, the sealed inbox is reconciled and what it holds is offered with the rest
+    // (#49 stage 3): the renderer asks right after an unlock, so this is where an unlock's work
+    // for the inbox is done. A later ask in the same session does nothing more.
+    let files = Arc::clone(received.inner());
+    {
+        let store = Arc::clone(store.arc());
+        let files = Arc::clone(&files);
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            reconcile_sealed_inbox(&app, &store, &files)
+        })
+        .await;
     }
+    // Native code, not the screen, keeps names off the lock screen: while the vault is locked (or
+    // busy being unlocked or moved) a page is told how many files wait and nothing that names one.
+    // The arguments are evaluated in order: the list first, the lock state AFTER it, so a lock
+    // between the two hides the names and never shows them.
+    Ok(ReceivedState {
+        files: received::without_names_unless_unlocked(files.list(), store.arc().is_unlocked_now()),
+        notice: files.take_notice(),
+    })
+}
+
+/// The unlock's reconciliation of the sealed inbox (#49 stage 3), done once per unlocked session:
+/// the key file is checked and written, bad and expired items are removed, and the items that
+/// opened are offered in the received-files list for the patient to confirm (Shared with me).
+/// Nothing is imported here. A failure leaves the inbox as it was and lets the next ask try again.
+fn reconcile_sealed_inbox(
+    app: &tauri::AppHandle,
+    store: &Arc<VaultStore>,
+    received: &ReceivedFiles,
+) {
+    let Ok(Some(unlock)) = store.begin_inbox_check() else {
+        return;
+    };
+    let Ok(base) = app.path().app_local_data_dir() else {
+        store.reopen_inbox_check();
+        return;
+    };
+    let folder = inbox_folder::InboxFolder::new(&base, unlock.vault_id);
+    match folder.reconcile_at_unlock(&unlock.keys, now_ms() / 1000, &|id| {
+        unlock.record_ids.contains(&id)
+    }) {
+        Ok(report) => {
+            received.note_inbox_unlock(report.expired + report.malformed, report.tamper);
+            received.add_sealed(
+                report
+                    .pending
+                    .iter()
+                    .map(|item| (item.item_id, vault::sanitize_basename(&item.name)))
+                    .collect(),
+            );
+        }
+        Err(_) => store.reopen_inbox_check(),
+    }
+}
+
+/// A sealed item's plaintext as an import source: opened with the vault's inbox keys, every chunk
+/// checked as it is read, so nothing readable is ever written to disk. An item that fails a check
+/// (at the start or part-way) is noted in `bad`, and the import then deletes it: it is the item's
+/// own fault, not the vault's. The record gets the id derived from the item, so that an import
+/// repeated after a crash is recognised.
+struct SealedReader {
+    inner: sealed_inbox::OpenedItem<std::fs::File>,
+    item: sealed_inbox::ItemId,
+    bad: Arc<Mutex<std::collections::HashSet<sealed_inbox::ItemId>>>,
+}
+
+impl std::io::Read for SealedReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf);
+        if read
+            .as_ref()
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::InvalidData)
+        {
+            self.bad
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(self.item);
+        }
+        read
+    }
+}
+
+fn open_sealed_source(
+    base: &std::path::Path,
+    vault_id: Uuid,
+    keys: &sealed_inbox::InboxKeys,
+    item: sealed_inbox::ItemId,
+    name: String,
+    bad: &Arc<Mutex<std::collections::HashSet<sealed_inbox::ItemId>>>,
+) -> Result<ImportSource, VaultError> {
+    let folder = inbox_folder::InboxFolder::new(base, vault_id);
+    let file = vault::open_regular_read(&folder.item_path(&item)).map_err(import_source_error)?;
+    let mark_bad = || {
+        bad.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(item);
+    };
+    let opened = sealed_inbox::open_item(keys, &item, file).map_err(|error| match error {
+        sealed_inbox::InboxError::Io(_) => VaultError::Storage,
+        _ => {
+            mark_bad();
+            VaultError::Invalid
+        }
+    })?;
+    // The same check and cleaning as a file received while unlocked (`open_received_source`): a
+    // PDF streams in as it is, a JPEG or PNG is cleaned first, anything else is refused.
+    let (kind, reader) = open_supported_file(Box::new(SealedReader {
+        inner: opened,
+        item,
+        bad: Arc::clone(bad),
+    }))
+    .inspect_err(|_| mark_bad())?;
+    Ok(ImportSource {
+        display_name: picture_import_name(name, kind),
+        reader,
+    })
 }
 
 /// A received file's reader that notes it when a read fails (a sector going bad on a share or a
@@ -6388,10 +6532,35 @@ impl std::io::Read for NotedRead {
 /// inside the import, noted by `NotedRead`) is named and forgotten, and the others are still
 /// added. Anything that is not the file's (the vault locked, in recovery mode, out of space) fails
 /// the batch and every file keeps waiting. `open` opens one file as an import source.
+#[cfg(test)]
 fn accept_received_batch(
     store: &VaultStore,
     files: Vec<(Uuid, received::ReceivedFile)>,
+    open: impl FnMut(received::ReceivedFile) -> Result<ImportSource, VaultError>,
+) -> Result<ReceivedAcceptOutcome, VaultError> {
+    accept_received_batch_with(store, files, open, |_| None, |_, _| ())
+}
+
+/// How a file of a received batch ended, for `accept_received_batch_with`'s `settled`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Settled {
+    /// The manifest commit that added it, or found it already there, has happened: the file's
+    /// work is done (a sealed item may be deleted now, and never before).
+    Committed,
+    /// Named and forgotten: not a PDF, could not be opened or read. Nothing was stored.
+    Failed,
+}
+
+/// `accept_received_batch`, with two hooks for the sealed inbox (#49): `preset_id` gives the id a
+/// file's record is created with (the id derived from a sealed item, so a repeat after a crash is
+/// recognised), and `settled` is told how each file ended, once, after the commit for the files
+/// that were added or already there.
+fn accept_received_batch_with(
+    store: &VaultStore,
+    files: Vec<(Uuid, received::ReceivedFile)>,
     mut open: impl FnMut(received::ReceivedFile) -> Result<ImportSource, VaultError>,
+    preset_id: impl Fn(&received::ReceivedFile) -> Option<Uuid>,
+    mut settled: impl FnMut(&received::ReceivedFile, Settled),
 ) -> Result<ReceivedAcceptOutcome, VaultError> {
     let shared = store.shared_profile()?;
     let mut not_pdf = Vec::new();
@@ -6405,6 +6574,7 @@ fn accept_received_batch(
             let _opening = Opening::new(store.idle());
             for (id, file) in remaining {
                 let name = file.name.clone();
+                let file_for_note = file.clone();
                 match sort_received_open(open(file.clone()))? {
                     ReceivedOpen::Source(source) => {
                         let failed = Arc::new(AtomicBool::new(false));
@@ -6418,19 +6588,36 @@ fn accept_received_batch(
                         notes.push(failed);
                         kept.push((id, file));
                     }
-                    ReceivedOpen::NotPdf => not_pdf.push(name),
-                    ReceivedOpen::Unreadable => unreadable.push(name),
+                    ReceivedOpen::NotPdf => {
+                        settled(&file_for_note, Settled::Failed);
+                        not_pdf.push(name)
+                    }
+                    ReceivedOpen::Unreadable => {
+                        settled(&file_for_note, Settled::Failed);
+                        unreadable.push(name)
+                    }
                 }
             }
         }
-        match store.import_from(shared, Vec::new(), sources, now_ms(), "shared") {
+        let record_ids: Vec<Option<Uuid>> = kept.iter().map(|(_, file)| preset_id(file)).collect();
+        match store.import_from_with_ids(
+            shared,
+            Vec::new(),
+            sources,
+            record_ids,
+            now_ms(),
+            "shared",
+        ) {
             Ok(outcome) => {
+                for (_, file) in &kept {
+                    settled(file, Settled::Committed);
+                }
                 return Ok(ReceivedAcceptOutcome {
                     imported: outcome.imported,
                     skipped_duplicates: outcome.skipped_duplicates,
                     not_pdf,
                     unreadable,
-                })
+                });
             }
             // A source that failed to read is that file's fault: name it, forget it, and add the
             // rest (the import added nothing, so they are opened again).
@@ -6439,13 +6626,62 @@ fn accept_received_batch(
                 .position(|failed| failed.load(Ordering::SeqCst))
             {
                 Some(at) => {
-                    unreadable.push(kept.remove(at).1.name);
+                    let failed = kept.remove(at).1;
+                    settled(&failed, Settled::Failed);
+                    unreadable.push(failed.name);
                     remaining = kept;
                 }
                 None => return Err(error),
             },
         }
     }
+}
+
+/// Adds the confirmed received files to Shared with me: files from other apps through `open`, and
+/// the files sealed in the inbox (#49) through the vault's inbox keys (opened as a stream, so
+/// nothing readable touches the disk). A sealed item's record is created with the id derived from
+/// the item, and the item is deleted only after the manifest commit that added it (or found it
+/// already there), or when it failed its own checks; a failure that is the vault's (locked, no
+/// space) deletes nothing, and every item keeps waiting.
+fn accept_received_files(
+    store: &VaultStore,
+    base: Option<&std::path::Path>,
+    files: Vec<(Uuid, received::ReceivedFile)>,
+    mut open: impl FnMut(received::ReceivedFile) -> Result<ImportSource, VaultError>,
+) -> Result<ReceivedAcceptOutcome, VaultError> {
+    let keys = store.inbox_keys().ok();
+    let bad = Arc::new(Mutex::new(std::collections::HashSet::new()));
+    let delete = |item: sealed_inbox::ItemId| {
+        if let (Some(base), Some((vault_id, _))) = (base, &keys) {
+            let _ = inbox_folder::InboxFolder::new(base, *vault_id).remove_item_by_id(&item);
+        }
+    };
+    accept_received_batch_with(
+        store,
+        files,
+        |file| match (&file.source, base, &keys) {
+            (ReceivedSource::Inbox(item), Some(base), Some((vault_id, keys))) => {
+                open_sealed_source(base, *vault_id, keys, *item, file.name, &bad)
+            }
+            (ReceivedSource::Inbox(_), _, _) => Err(VaultError::Storage),
+            _ => open(file),
+        },
+        |file| match (&file.source, &keys) {
+            (ReceivedSource::Inbox(item), Some((_, keys))) => Some(keys.record_id(item)),
+            _ => None,
+        },
+        |file, settled| {
+            if let ReceivedSource::Inbox(item) = file.source {
+                let failed_its_checks = bad
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .contains(&item);
+                if settled == Settled::Committed || failed_its_checks {
+                    delete(item);
+                }
+            }
+        },
+    )
 }
 
 /// The files the patient confirmed adding (#133).
@@ -6470,6 +6706,61 @@ fn received_discard(
     request: ReceivedDiscardRequest,
 ) -> usize {
     received.forget(&request.ids)
+}
+
+/// What the patient chose to Remove (not Not now): the sealed files among those named are deleted
+/// from the inbox, and each one that really was deleted is forgotten. Returns how many were removed.
+///
+/// Refused as `Locked` before anything is touched when the vault is not open: the inbox folder is
+/// named by the vault's id, and a lock that came between the question and this answer must not turn
+/// into "removed" with nothing deleted (and the waiting files forgotten). A delete that fails is an
+/// error (`Storage`), not a count: the files it could not delete keep waiting, so the question comes
+/// again, and the others that were deleted are gone and not asked about again.
+#[tauri::command]
+fn received_remove(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedDiscardRequest,
+) -> CommandResult<usize> {
+    let store = store.pin();
+    let base = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(remove_sealed_files(
+        store.arc(),
+        &base,
+        &received,
+        &request.ids,
+    )?)
+}
+
+/// `received_remove` without the app handle: the vault must be open, each named sealed item is
+/// deleted (one that is already gone counts as removed), and only those are forgotten and counted.
+/// A failed delete leaves its file waiting and makes the answer `Storage`, after the rest were done.
+fn remove_sealed_files(
+    store: &VaultStore,
+    base: &std::path::Path,
+    received: &ReceivedFiles,
+    ids: &[Uuid],
+) -> Result<usize, VaultError> {
+    // The first thing, before anything is forgotten: a locked vault is refused.
+    let (vault_id, _) = store.inbox_keys()?;
+    let folder = inbox_folder::InboxFolder::new(base, vault_id);
+    let mut deleted = Vec::new();
+    let mut failed = false;
+    for (id, item) in received.sealed_named(ids) {
+        match folder.remove_item_by_id(&item) {
+            Ok(()) => deleted.push(id),
+            Err(_) => failed = true,
+        }
+    }
+    received.forget(&deleted);
+    if failed {
+        return Err(VaultError::Storage);
+    }
+    Ok(deleted.len())
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
@@ -6503,8 +6794,11 @@ async fn received_accept(
         .take(&ids)
         .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     let files = taken.clone();
+    let base = app.path().app_local_data_dir().ok();
     let result = run_blocking(store.arc(), move |store| {
-        accept_received_batch(store, files, |file| open_received_source(&app, file))
+        accept_received_files(store, base.as_deref(), files, |file| {
+            open_received_source(&app, file)
+        })
     })
     .await;
     match result {
@@ -7455,7 +7749,10 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
         .iter()
         .filter_map(|url| received::accept_opened_url(url, platform))
         .collect();
-    received.receive(urls.len(), sources);
+    // Sealing a share into the inbox streams whole files to disk: never on the event loop.
+    let offered = urls.len();
+    let received = received.inner().clone();
+    std::thread::spawn(move || received.receive(offered, sources));
 }
 
 /// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
@@ -8556,8 +8853,7 @@ pub fn run() {
             // One worker for the app, ticking whichever vault the screen is on.
             #[cfg(desktop)]
             slots.start_document_collection()?;
-            // Commands ask the handle for "the" vault.
-            app.manage(StoreHandle::from_source(slots));
+            let store = StoreHandle::from_source(slots);
             // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
             // the vault registry and not inside Main's `vault-home`, and read only when needed,
             // not here. The old file is copied over once and left where it was.
@@ -8569,6 +8865,26 @@ pub fn run() {
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
+            // A file shared while the vault is locked is sealed into the inbox beside it (#49),
+            // once an unlock has made that inbox a key; until then it is held in memory as before.
+            {
+                let screen = store.clone();
+                let open_app = app.handle().clone();
+                app.state::<Arc<ReceivedFiles>>().set_sealer(Arc::new(
+                    inbox_receipt::LockedSealer::new(
+                        app.path().app_local_data_dir()?,
+                        // Read together from one pinned handle: sealing happens only when the
+                        // vault is known locked AND is the only vault the device holds (with
+                        // several, whose share it is cannot be told; #357), and the inbox is that
+                        // vault's own, named by its header.
+                        Box::new(move || inbox_receipt::lock_screen_of(&screen)),
+                        Box::new(move |source| open_sealing_source(&open_app, source)),
+                    ),
+                ));
+            }
+            // Finish the initial receipts while the vault is still locked, before a command
+            // can unlock it or change which vault owns an incoming share.
+            app.manage::<StoreHandle>(store);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -8749,6 +9065,7 @@ pub fn run() {
             received_list,
             received_accept,
             received_discard,
+            received_remove,
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
@@ -10564,10 +10881,11 @@ mod tests {
     fn a_switch_stops_the_work_of_a_lock_and_forgets_the_files_the_system_offered() {
         let picks = PendingPicks::default();
         let received = ReceivedFiles::default();
-        received.receive(
-            1,
-            vec![ReceivedSource::Path("/home/jamie/FAKE-offered.pdf".into())],
-        );
+        received
+            .add_share(vec![ReceivedSource::Path(
+                "/home/jamie/FAKE-offered.pdf".into(),
+            )])
+            .unwrap();
         assert_eq!(received.len(), 1);
         let record_id = Uuid::new_v4();
         let pick_id = picks.store_export(
@@ -12602,7 +12920,7 @@ mod tests {
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
-            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            ("StoreHandle", "app.manage::<StoreHandle>(store)"),
             (
                 "Arc<AttemptThrottle>",
                 "app.manage(Arc::new(AttemptThrottle::new(",
@@ -13878,6 +14196,75 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn a_picture_shared_while_locked_is_sealed_and_comes_out_of_the_inbox_cleaned_and_named() {
+        // The sealed inbox (#420) adapted to pictures (#492): a JPEG or PNG shared while myCarlos
+        // is locked is sealed like a PDF, and imported through the same check and cleaning as one
+        // received while unlocked, so what is stored carries no place, time or camera.
+        let vault_id = Uuid::from_u128(0x11);
+        let keys = sealed_inbox::InboxKeys::derive(&[7_u8; 32], vault_id).unwrap();
+        // The same list as the import test above: the make, the comment (and the "%PDF-" in it),
+        // and the GPS tag. Not "Exif": the cleaned JPEG keeps an orientation-only Exif block.
+        let jpeg_secrets: &[&[u8]] = &[
+            b"FAKE Phone",
+            b"FAKE comment",
+            b"taken at home",
+            b"%PDF-",
+            b"\x88\x25",
+        ];
+        let png_secrets: &[&[u8]] = &[b"FAKE", b"Location", b"tEXt", b"zTXt", b"eXIf", b"tIME"];
+        for (name, expected_name, picture, secrets) in [
+            ("IMG_0042", "IMG_0042.jpg", phone_picture(), jpeg_secrets),
+            ("Screenshot", "Screenshot.png", dirty_png(), png_secrets),
+        ] {
+            let contains =
+                |bytes: &[u8], part: &[u8]| bytes.windows(part.len()).any(|window| window == part);
+            for secret in secrets {
+                assert!(contains(&picture, secret), "the fixture lacks {secret:?}");
+            }
+            let temp = tempfile::tempdir().unwrap();
+            let folder = inbox_folder::InboxFolder::new(temp.path(), vault_id);
+            let sealed = folder
+                .seal(
+                    keys.public(),
+                    Box::new(std::io::Cursor::new(picture.clone())),
+                    name,
+                    sealed_inbox::Source::Shared,
+                    Some(picture.len() as u64),
+                    1_800_000_000,
+                    &|| false,
+                )
+                .unwrap();
+            let bad = Arc::new(Mutex::new(std::collections::HashSet::new()));
+            let mut source = open_sealed_source(
+                temp.path(),
+                vault_id,
+                &keys,
+                sealed.item_id,
+                name.to_owned(),
+                &bad,
+            )
+            .unwrap();
+            let mut cleaned = Vec::new();
+            std::io::Read::read_to_end(&mut source.reader, &mut cleaned).unwrap();
+            assert_ne!(
+                cleaned, picture,
+                "{name}: the picture came out as it went in"
+            );
+            for secret in secrets {
+                assert!(
+                    !contains(&cleaned, secret),
+                    "{name}: {secret:?} is still there"
+                );
+            }
+            assert_eq!(source.display_name, expected_name);
+            assert!(
+                bad.lock().unwrap().is_empty(),
+                "{name}: a good item was marked bad"
+            );
+        }
+    }
+
+    #[test]
     fn a_png_that_is_damaged_animated_or_too_large_is_refused_before_anything_is_staged() {
         use crate::photo_png::tests::{chunk, file, header, plain};
         let refused =
@@ -14558,6 +14945,407 @@ mod photo_command_tests {
             };
             self.data.read(&mut buf[..wanted])
         }
+    }
+
+    // ----- the sealed inbox at unlock (#49 stage 3, part B) -----
+
+    /// An unlocked vault, the app's data folder beside it, and the vault's inbox keys.
+    fn sealed_world(
+        temp: &tempfile::TempDir,
+    ) -> (
+        VaultStore,
+        std::path::PathBuf,
+        Uuid,
+        sealed_inbox::InboxKeys,
+    ) {
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Patient", 1).unwrap();
+        let (vault_id, keys) = store.inbox_keys().unwrap();
+        (store, temp.path().join("data"), vault_id, keys)
+    }
+
+    fn sealed_pdf(
+        base: &std::path::Path,
+        vault_id: Uuid,
+        keys: &sealed_inbox::InboxKeys,
+        name: &str,
+    ) -> (sealed_inbox::ItemId, Vec<u8>) {
+        let data = format!("%PDF-1.4 FAKE {name} {}", "x".repeat(3000)).into_bytes();
+        let sealed = inbox_folder::InboxFolder::new(base, vault_id)
+            .seal(
+                keys.public(),
+                Box::new(std::io::Cursor::new(data.clone())),
+                name,
+                sealed_inbox::Source::Shared,
+                Some(data.len() as u64),
+                now_ms() / 1000,
+                &|| false,
+            )
+            .unwrap();
+        (sealed.item_id, data)
+    }
+
+    /// What an unlock does for the inbox, against the real store: the pending items, offered in the
+    /// received list as `reconcile_sealed_inbox` does.
+    fn unlock_reconcile(store: &VaultStore, base: &std::path::Path) -> inbox_folder::UnlockReport {
+        let unlock = store.begin_inbox_check().unwrap().unwrap();
+        inbox_folder::InboxFolder::new(base, unlock.vault_id)
+            .reconcile_at_unlock(&unlock.keys, now_ms() / 1000, &|id| {
+                unlock.record_ids.contains(&id)
+            })
+            .unwrap()
+    }
+
+    fn sealed_file(item: sealed_inbox::ItemId, name: &str) -> (Uuid, received::ReceivedFile) {
+        (
+            Uuid::new_v4(),
+            received::ReceivedFile {
+                source: received::ReceivedSource::Inbox(item),
+                name: name.to_owned(),
+            },
+        )
+    }
+
+    fn no_other_source(_: received::ReceivedFile) -> Result<ImportSource, VaultError> {
+        Err(VaultError::NotFound)
+    }
+
+    #[test]
+    fn a_sealed_item_is_added_to_shared_with_its_derived_id_and_deleted_only_after_the_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, data) = sealed_pdf(&base, vault_id, &keys, "FAKE letter.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        let report = unlock_reconcile(&store, &base);
+        assert_eq!(report.pending.len(), 1);
+        assert_eq!(report.pending[0].item_id, item);
+        assert!(folder.item_path(&item).exists(), "kept until the commit");
+        // The unlock changed nothing in the vault: no record, and no plaintext anywhere.
+        assert!(store.snapshot().unwrap().records.is_empty());
+        let outcome = accept_received_files(
+            &store,
+            Some(&base),
+            vec![sealed_file(item, "FAKE letter.pdf")],
+            no_other_source,
+        )
+        .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        // The record is the vault's id for the item, in Shared with me, and holds the file.
+        assert_eq!(outcome.imported[0], keys.record_id(&item));
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(
+            snapshot.records[0].profile_id,
+            store.shared_profile().unwrap()
+        );
+        assert_eq!(snapshot.records[0].display_name, "FAKE letter.pdf");
+        assert_eq!(exported(&store, snapshot.records[0].id), data);
+        // And only now is the item gone.
+        assert!(!folder.item_path(&item).exists());
+    }
+
+    #[test]
+    fn a_crash_between_the_commit_and_the_delete_imports_once_and_deletes_at_the_next_unlock() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE letter.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        let before_delete = std::fs::read(folder.item_path(&item)).unwrap();
+        unlock_reconcile(&store, &base);
+        accept_received_files(
+            &store,
+            Some(&base),
+            vec![sealed_file(item, "FAKE letter.pdf")],
+            no_other_source,
+        )
+        .unwrap();
+        // The crash: the commit happened and the delete was lost.
+        std::fs::write(folder.item_path(&item), &before_delete).unwrap();
+        // The same confirmed item imported again (the list still held it): found already there.
+        let again = accept_received_files(
+            &store,
+            Some(&base),
+            vec![sealed_file(item, "FAKE letter.pdf")],
+            no_other_source,
+        )
+        .unwrap();
+        assert!(again.imported.is_empty());
+        assert_eq!(again.skipped_duplicates.len(), 1);
+        assert_eq!(
+            store.snapshot().unwrap().records.len(),
+            1,
+            "once, not twice"
+        );
+        assert!(!folder.item_path(&item).exists(), "and now deleted");
+        // At the next unlock the lost delete is caught by the record id alone.
+        std::fs::write(folder.item_path(&item), &before_delete).unwrap();
+        store.reopen_inbox_check();
+        let report = unlock_reconcile(&store, &base);
+        assert_eq!((report.already_imported, report.pending.len()), (1, 0));
+        assert!(!folder.item_path(&item).exists());
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+
+    #[test]
+    fn not_now_keeps_the_sealed_items_and_remove_deletes_them() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE letter.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        let waiting = received::ReceivedFiles::default();
+        let offer = |waiting: &received::ReceivedFiles| {
+            let report = unlock_reconcile(&store, &base);
+            waiting.add_sealed(
+                report
+                    .pending
+                    .iter()
+                    .map(|p| (p.item_id, p.name.clone()))
+                    .collect(),
+            )
+        };
+        assert_eq!(offer(&waiting), 1);
+        let listed = waiting.list();
+        assert!(listed[0].needs_confirm && listed[0].sealed);
+        // Not now: forgotten from the list, still in the folder, offered again at the next unlock
+        // (and not twice at once).
+        assert_eq!(waiting.forget(&[listed[0].id]), 1);
+        assert!(folder.item_path(&item).exists());
+        store.reopen_inbox_check();
+        assert_eq!(offer(&waiting), 1);
+        store.reopen_inbox_check();
+        assert_eq!(offer(&waiting), 0, "already waiting");
+        // Remove: forgotten and deleted, and not offered again.
+        let id = waiting.list()[0].id;
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &[id]).unwrap(),
+            1
+        );
+        assert!(waiting.list().is_empty());
+        assert!(!folder.item_path(&item).exists());
+        store.reopen_inbox_check();
+        assert_eq!(offer(&waiting), 0);
+    }
+
+    #[test]
+    fn delete_acts_on_sealed_files_only_and_leaves_an_open_with_file_waiting() {
+        let waiting = received::ReceivedFiles::default();
+        let item = sealed_inbox::ItemId::random();
+        assert_eq!(
+            waiting.add_sealed(vec![(item, "FAKE kept.pdf".to_owned())]),
+            1
+        );
+        // An "Open with" file waits in the same question.
+        let opened = waiting
+            .add_share(vec![received::ReceivedSource::Path(
+                "/FAKE/opened.pdf".into(),
+            )])
+            .unwrap();
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        assert_eq!(ids.len(), 2);
+        // The patient chose Delete with both in the list: only the sealed one is named, and
+        // naming it forgets nothing (the caller forgets what it really deleted).
+        let sealed_id = waiting.list().iter().find(|file| file.sealed).unwrap().id;
+        assert_eq!(waiting.sealed_named(&ids), vec![(sealed_id, item)]);
+        assert_eq!(waiting.list().len(), 2);
+        assert_eq!(waiting.forget(&[sealed_id]), 1);
+        let left = waiting.list();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, opened[0]);
+        assert!(!left[0].sealed);
+    }
+
+    #[test]
+    fn remove_is_refused_while_locked_and_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE letter.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        let waiting = received::ReceivedFiles::default();
+        assert_eq!(
+            waiting.add_sealed(vec![(item, "FAKE letter.pdf".to_owned())]),
+            1
+        );
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        // The lock came between the question and the answer.
+        store.lock();
+        assert!(matches!(
+            remove_sealed_files(&store, &base, &waiting, &ids),
+            Err(VaultError::Locked)
+        ));
+        // Nothing was forgotten and nothing deleted: the file is there, and still waiting.
+        assert!(folder.item_path(&item).exists());
+        assert_eq!(waiting.list().len(), 1);
+        assert_eq!(waiting.sealed_named(&ids), vec![(ids[0], item)]);
+    }
+
+    #[test]
+    fn a_delete_that_fails_is_an_error_and_not_a_count_and_its_file_keeps_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (good, _) = sealed_pdf(&base, vault_id, &keys, "FAKE good.pdf");
+        let (stuck, _) = sealed_pdf(&base, vault_id, &keys, "FAKE stuck.pdf");
+        let (gone, _) = sealed_pdf(&base, vault_id, &keys, "FAKE gone.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        // Nothing here removes a file by hand (#71: only `remove_owned_file` does, and clippy
+        // refuses `std::fs::remove_*` even in a test): the conditions are made by moving files.
+        // `stuck` cannot be deleted: its file is moved aside and a folder with something in it
+        // stands where the file was, so that deleting the path fails.
+        let aside = temp.path().join("stuck-item-aside");
+        std::fs::rename(folder.item_path(&stuck), &aside).unwrap();
+        std::fs::create_dir(folder.item_path(&stuck)).unwrap();
+        std::fs::write(folder.item_path(&stuck).join("FAKE"), b"x").unwrap();
+        // `gone` was taken away already by something else: that is not a failure.
+        std::fs::rename(folder.item_path(&gone), temp.path().join("gone-item-aside")).unwrap();
+        let waiting = received::ReceivedFiles::default();
+        assert_eq!(
+            waiting.add_sealed(vec![
+                (good, "FAKE good.pdf".to_owned()),
+                (stuck, "FAKE stuck.pdf".to_owned()),
+                (gone, "FAKE gone.pdf".to_owned()),
+            ]),
+            3
+        );
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        // The delete that failed is reported, not hidden and not counted ...
+        assert!(matches!(
+            remove_sealed_files(&store, &base, &waiting, &ids),
+            Err(VaultError::Storage)
+        ));
+        // ... the others were done: the good one is deleted, the one already gone is forgotten ...
+        assert!(!folder.item_path(&good).exists());
+        // ... and only the one that could not be deleted is still waiting, to be asked about again.
+        let left = waiting.list();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].name, "FAKE stuck.pdf");
+        assert!(left[0].sealed && folder.item_path(&stuck).exists());
+        // Once it can be deleted (the folder moved out of the way, the file back in its place),
+        // it is, and counted.
+        std::fs::rename(folder.item_path(&stuck), temp.path().join("folder-aside")).unwrap();
+        std::fs::rename(&aside, folder.item_path(&stuck)).unwrap();
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &ids).unwrap(),
+            1
+        );
+        assert!(waiting.list().is_empty());
+    }
+
+    #[test]
+    fn remove_counts_only_the_sealed_files_it_deleted_and_leaves_an_open_with_file_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE kept.pdf");
+        let waiting = received::ReceivedFiles::default();
+        assert_eq!(
+            waiting.add_sealed(vec![(item, "FAKE kept.pdf".to_owned())]),
+            1
+        );
+        let opened = waiting
+            .add_share(vec![received::ReceivedSource::Path(
+                "/FAKE/opened.pdf".into(),
+            )])
+            .unwrap();
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &ids).unwrap(),
+            1
+        );
+        let left = waiting.list();
+        assert_eq!((left.len(), left[0].id), (1, opened[0]));
+        // Nothing named, nothing removed.
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &[]).unwrap(),
+            0
+        );
+        assert_eq!(waiting.list().len(), 1);
+    }
+
+    #[test]
+    fn an_item_that_fails_a_check_part_way_is_named_deleted_and_adds_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (bad, _) = sealed_pdf(&base, vault_id, &keys, "FAKE bad.pdf");
+        let (good, _) = sealed_pdf(&base, vault_id, &keys, "FAKE good.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        // A byte of the body is changed: the header and trailer still pass at unlock.
+        let mut bytes = std::fs::read(folder.item_path(&bad)).unwrap();
+        bytes[sealed_inbox::HEADER_LEN + 20] ^= 1;
+        std::fs::write(folder.item_path(&bad), bytes).unwrap();
+        let report = unlock_reconcile(&store, &base);
+        assert_eq!(report.pending.len(), 2, "caught by the import, not before");
+        let outcome = accept_received_files(
+            &store,
+            Some(&base),
+            vec![
+                sealed_file(bad, "FAKE bad.pdf"),
+                sealed_file(good, "FAKE good.pdf"),
+            ],
+            no_other_source,
+        )
+        .unwrap();
+        assert_eq!(outcome.unreadable, ["FAKE bad.pdf"]);
+        assert_eq!(outcome.imported.len(), 1);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert!(!folder.item_path(&bad).exists(), "named and deleted");
+        assert!(!folder.item_path(&good).exists());
+    }
+
+    #[test]
+    fn a_failure_of_the_vault_keeps_every_sealed_item() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE letter.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        unlock_reconcile(&store, &base);
+        store.lock();
+        let result = accept_received_files(
+            &store,
+            Some(&base),
+            vec![sealed_file(item, "FAKE letter.pdf")],
+            no_other_source,
+        );
+        assert!(matches!(result, Err(VaultError::Locked)));
+        assert!(folder.item_path(&item).exists(), "nothing deleted");
+    }
+
+    #[test]
+    fn a_record_id_brought_by_a_source_is_used_once_across_a_batch_and_the_vault() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let id = Uuid::new_v4();
+        let source = |name: &str| ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(std::io::Cursor::new(
+                format!("%PDF-1.4 FAKE {name} {}", "y".repeat(2000)).into_bytes(),
+            )),
+        };
+        // Twice in one batch (different content): the second is a duplicate by id.
+        let outcome = store
+            .import_from_with_ids(
+                profile,
+                Vec::new(),
+                vec![source("FAKE one.pdf"), source("FAKE two.pdf")],
+                vec![Some(id), Some(id)],
+                1,
+                "manual",
+            )
+            .unwrap();
+        assert_eq!(outcome.imported, [id]);
+        assert_eq!(outcome.skipped_duplicates, ["FAKE two.pdf"]);
+        // And again later: the id is a record of the vault, its source is never read.
+        let outcome = store
+            .import_from_with_ids(
+                profile,
+                Vec::new(),
+                vec![source("FAKE three.pdf")],
+                vec![Some(id)],
+                2,
+                "manual",
+            )
+            .unwrap();
+        assert!(outcome.imported.is_empty());
+        assert_eq!(outcome.skipped_duplicates, ["FAKE three.pdf"]);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
     }
 
     fn received_file(name: &str) -> (Uuid, received::ReceivedFile) {

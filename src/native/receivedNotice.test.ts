@@ -25,4 +25,59 @@ describe("what the patient is told about shared files", () => {
       ),
     );
   });
+  it("tells a patient that files shared while locked are kept encrypted, and that some could not be", () => {
+    expect(
+      humanValue(
+        receiveNoticeText({
+          dropped: 0,
+          refusedShares: 0,
+          sealed: 2,
+          notKept: 1,
+        }),
+      ),
+    ).toBe(
+      humanValue(
+        "2 shared files are kept, encrypted, for up to 7 days. Unlock myCarlos to add them. One shared file could not be kept. Share it again.",
+      ),
+    );
+    expect(
+      humanValue(
+        receiveNoticeText({ dropped: 0, refusedShares: 0, sealed: 1 }),
+      ),
+    ).toBe(
+      humanValue(
+        "One shared file is kept, encrypted, for up to 7 days. Unlock myCarlos to add it.",
+      ),
+    );
+  });
+
+  it("tells a patient what an unlock removed from the kept files and that the key was put right (#49)", () => {
+    expect(
+      humanValue(
+        receiveNoticeText({
+          dropped: 0,
+          refusedShares: 0,
+          inboxRemoved: 1,
+        }),
+      ),
+    ).toBe(
+      humanValue(
+        "One shared file kept for you was removed: it was more than 7 days old or could not be read.",
+      ),
+    );
+    expect(
+      humanValue(
+        receiveNoticeText({
+          dropped: 0,
+          refusedShares: 0,
+          inboxRemoved: 3,
+          inboxKeyChanged: true,
+        }),
+      ),
+    ).toBe(
+      humanValue(
+        "3 shared files kept for you were removed: they were more than 7 days old or could not be read. The key that keeps shared files while myCarlos is locked was changed by something else, and has been put right. Files shared since then were not kept. Share them again.",
+      ),
+    );
+  });
 });

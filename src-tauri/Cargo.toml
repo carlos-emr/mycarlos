@@ -71,6 +71,7 @@ unicode-normalization = "=0.1.25"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 x509-cert = "=0.2.5"
+# The `zeroize` feature wipes the sealed inbox's X25519 secret when it is dropped (sealed_inbox.rs).
 x25519-dalek = { version = "=2.0.1", default-features = false, features = ["alloc", "static_secrets", "zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }

@@ -233,6 +233,15 @@
       "arguments": {},
       "raw": false
     },
+    "received_remove": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ReceivedDiscardRequest"
+        }
+      },
+      "raw": false
+    },
     "runtime_info": {
       "arguments": {},
       "raw": false

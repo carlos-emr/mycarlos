@@ -377,11 +377,25 @@ interface-receive-dropped =
     [many] No se recibieron { $count } elementos compartidos: myCarlos solo acepta archivos PDF.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] No se pudo guardar un archivo compartido. Compártalo de nuevo.
+    *[other] No se pudieron guardar { $count } archivos compartidos. Compártalos de nuevo.
+    [many] No se pudieron guardar { $count } archivos compartidos. Compártalos de nuevo.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] No se recibió un envío de archivos: no puede haber más de 100 archivos compartidos en espera a la vez. Desbloquee la bóveda para que los archivos en espera pasen a Compartido conmigo y después vuelva a compartirlos.
     *[other] No se recibieron { $count } envíos de archivos: no puede haber más de 100 archivos compartidos en espera a la vez. Desbloquee la bóveda para que los archivos en espera pasen a Compartido conmigo y después vuelva a compartirlos.
     [many] No se recibieron { $count } envíos de archivos: no puede haber más de 100 archivos compartidos en espera a la vez. Desbloquee la bóveda para que los archivos en espera pasen a Compartido conmigo y después vuelva a compartirlos.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] Se guardó un archivo compartido, cifrado, durante un máximo de 7 días. Desbloquee myCarlos para añadirlo.
+    *[other] Se guardaron { $count } archivos compartidos, cifrados, durante un máximo de 7 días. Desbloquee myCarlos para añadirlos.
+    [many] Se guardaron { $count } archivos compartidos, cifrados, durante un máximo de 7 días. Desbloquee myCarlos para añadirlos.
     }
 
 interface-RecordDetails-closeDocumentDetails = Cerrar los detalles del documento
@@ -2988,6 +3002,27 @@ notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
+
+interface-received-notNow = Ahora no
+
+
+interface-received-confirmBodySealed = Estos archivos se compartieron mientras myCarlos estaba bloqueado y se guardan aquí, cifrados. No se añade nada hasta que elija Importar. Ahora no los conserva hasta 7 días. Eliminar los borra de este dispositivo para siempre: no se puede deshacer.
+
+interface-receive-inboxRemoved =
+    { $count ->
+    [one] Se eliminó un archivo compartido guardado para usted: tenía más de 7 días o no se pudo leer.
+    [many] Se eliminaron { $count } archivos compartidos guardados para usted: tenían más de 7 días o no se pudieron leer.
+    *[other] Se eliminaron { $count } archivos compartidos guardados para usted: tenían más de 7 días o no se pudieron leer.
+    }
+
+interface-receive-inboxKeyChanged = La clave que guarda los archivos compartidos mientras myCarlos está bloqueado fue cambiada por otra cosa y se ha corregido. Los archivos compartidos desde entonces no se guardaron. Compártalos de nuevo.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Eliminar el archivo guardado
+    [many] Eliminar los { $count } archivos guardados
+    *[other] Eliminar los { $count } archivos guardados
+    }
 
 native-backupExclusionFailed = Este teléfono no pudo mantener la bóveda fuera de las copias de seguridad del dispositivo. Inténtelo de nuevo.
 
