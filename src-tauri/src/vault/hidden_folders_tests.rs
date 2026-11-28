@@ -166,9 +166,11 @@ fn hiding_a_folder_takes_it_its_subtree_and_their_documents_out_of_every_list_an
 #[test]
 fn hiding_and_restoring_are_one_commit_and_one_history_entry_each_with_the_name_and_no_documents() {
     let v = vault();
+    // A successful commit advances both redundant manifest slots.
+    let one_commit = 2;
     let before = generation(&v.store);
     v.store.hide_folder(v.letters, 100).unwrap();
-    assert_eq!(generation(&v.store), before + 1);
+    assert_eq!(generation(&v.store), before + one_commit);
     let hide = events(&v.store, HistoryEvent::FolderHidden);
     assert_eq!(hide.len(), 1);
     assert_eq!(hide[0].folder_id, Some(v.letters));
@@ -177,11 +179,11 @@ fn hiding_and_restoring_are_one_commit_and_one_history_entry_each_with_the_name_
     assert!(hide[0].record_id.is_none());
 
     v.store.restore_folder(v.letters).unwrap();
-    assert_eq!(generation(&v.store), before + 2);
+    assert_eq!(generation(&v.store), before + 2 * one_commit);
     assert_eq!(events(&v.store, HistoryEvent::FolderRestored).len(), 1);
     // Restoring a folder that is visible changes nothing and writes nothing.
     v.store.restore_folder(v.letters).unwrap();
-    assert_eq!(generation(&v.store), before + 2);
+    assert_eq!(generation(&v.store), before + 2 * one_commit);
     assert_eq!(events(&v.store, HistoryEvent::FolderRestored).len(), 1);
 }
 
