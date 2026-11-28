@@ -116,6 +116,7 @@ frame-window-label = Prywatny sejf myCarlos
 
 interface-camera-denied = myCarlos nie może używać aparatu. { $help } Następnie proszę wybrać Spróbuj ponownie.
 
+interface-CameraDialog-cameraFellBack = Aparat użyty ostatnio nie jest podłączony, więc używany jest aparat domyślny systemu.
 interface-CameraDialog-cameraReady = Aparat gotowy.
 
 interface-CameraDialog-cameraView = Podgląd aparatu

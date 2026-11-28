@@ -114,6 +114,7 @@ frame-window-label = myCarlos private vault
 
 interface-camera-denied = myCarlos can't use the camera. { $help } Then choose Try again.
 
+interface-CameraDialog-cameraFellBack = The camera you used last is not connected, so the system's default camera is in use.
 interface-CameraDialog-cameraReady = Camera ready.
 
 interface-CameraDialog-cameraView = Camera view

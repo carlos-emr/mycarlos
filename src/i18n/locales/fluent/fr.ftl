@@ -115,6 +115,7 @@ frame-window-label = Coffre-fort privé myCarlos
 
 interface-camera-denied = myCarlos ne peut pas utiliser l’appareil photo. { $help } Choisissez ensuite Réessayer.
 
+interface-CameraDialog-cameraFellBack = L’appareil photo utilisé la dernière fois n’est pas branché ; celui par défaut du système est utilisé.
 interface-CameraDialog-cameraReady = Appareil photo prêt.
 
 interface-CameraDialog-cameraView = Vue de l’appareil photo

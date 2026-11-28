@@ -108,6 +108,7 @@ frame-state-settingUp = 正在设置
 
 frame-window-label = myCarlos 个人保险库
 
+interface-CameraDialog-cameraFellBack = 上次使用的相机未连接，因此正在使用系统默认相机。
 interface-CameraDialog-cameraReady = 相机已就绪。
 
 interface-CameraDialog-cameraView = 相机画面

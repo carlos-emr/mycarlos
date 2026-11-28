@@ -108,6 +108,7 @@ frame-state-settingUp = 正在設定
 
 frame-window-label = myCarlos 個人保險庫
 
+interface-CameraDialog-cameraFellBack = 上次使用的相機未連接，因此正在使用系統預設相機。
 interface-CameraDialog-cameraReady = 相機已就緒。
 
 interface-CameraDialog-cameraView = 相機畫面

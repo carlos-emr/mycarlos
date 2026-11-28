@@ -54,6 +54,7 @@
   "frame.state.opening",
   "frame.state.settingUp",
   "frame.window.label",
+  "interface.CameraDialog.cameraFellBack",
   "interface.CameraDialog.cameraReady",
   "interface.CameraDialog.cameraView",
   "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos",

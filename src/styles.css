@@ -3680,23 +3680,33 @@ p {
   cursor: not-allowed;
 }
 /* Recording a video, and playing one (#359). */
-.record-video-dialog .record-device-note {
+.record-video-dialog .record-device-note,
+.camera-dialog .record-device-note {
   margin: 0;
 }
-.record-video-dialog .record-device-note:empty {
+.record-video-dialog .record-device-note:empty,
+.camera-dialog .record-device-note:empty {
   min-height: 0;
 }
-.record-video-dialog .record-devices {
+.record-video-dialog .record-devices,
+.camera-dialog .record-devices {
   display: grid;
   gap: 8px;
 }
-.record-video-dialog .record-device {
+.record-video-dialog .record-device,
+.camera-dialog .record-device {
   display: grid;
+  /* A grid item is as wide as its longest option unless it may shrink: a long camera name must
+     not push the list out of a narrow dialog. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   margin: 0;
 }
-.record-video-dialog .record-device select {
+.record-video-dialog .record-device select,
+.camera-dialog .record-device select {
   min-height: 44px;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
 }
 .record-video-dialog .record-mic-test {

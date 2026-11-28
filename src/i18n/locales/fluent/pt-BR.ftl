@@ -115,6 +115,7 @@ frame-window-label = Cofre privado do myCarlos
 
 interface-camera-denied = O myCarlos não pode usar a câmera. { $help } Depois, escolha Tentar de novo.
 
+interface-CameraDialog-cameraFellBack = A câmera usada por último não está conectada, então a câmera padrão do sistema está em uso.
 interface-CameraDialog-cameraReady = Câmera pronta.
 
 interface-CameraDialog-cameraView = Visão da câmera
