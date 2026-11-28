@@ -286,13 +286,19 @@ mod tests {
     #[test]
     fn setup_excludes_the_data_folder_before_any_vault_opens() {
         let lib = include_str!("lib.rs");
+        let selected = lib
+            .find("let data_dir = data_home::local_data_dir(&*app)?;")
+            .expect("setup resolves the data folder");
         let call = lib
-            .find("backup_exclusion::configure(app.path().app_local_data_dir()?)")
-            .expect("setup excludes the app's local data folder");
+            .find("backup_exclusion::configure(data_dir.clone())")
+            .expect("setup excludes the selected data folder");
         let open = lib
             .find("vault_slots::VaultSlots::open(")
             .expect("setup opens the vaults");
-        assert!(call < open, "the exclusion comes before the vaults open");
+        assert!(
+            selected < call && call < open,
+            "exclude the selected folder before opening vaults"
+        );
     }
 
     #[cfg(unix)]

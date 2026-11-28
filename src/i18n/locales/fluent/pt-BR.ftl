@@ -2846,6 +2846,12 @@ native-error-49 = Esta sessão desbloqueada já tentou o máximo de frases secre
 
 native-error-50 = Pelo menos uma pessoa precisa ficar na biblioteca, então a última não pode ser ocultada. Adicione outra pessoa primeiro.
 
+native-error-51 = Essa pasta pertence ao myCarlos, então nada pode ser salvo nela. Escolha uma pasta fora da pasta do myCarlos, como Documentos ou a Área de Trabalho.
+
+native-error-52 = O arquivo foi gravado, mas depois não pôde ser verificado, então não foi mantido. Nada foi alterado. Tente novamente e, se continuar acontecendo, escolha outra pasta.
+
+native-error-53 = A frase secreta contém uma quebra de linha ou uma tabulação. Remova-a (ao colar, é comum que uma seja adicionada no final) e tente novamente.
+
 hiddenPeople-title = Pessoas ocultas
 
 hiddenPeople-body = As pessoas que você ocultou ficam fora da biblioteca, da busca e do assistente de IA. Nada é excluído: elas continuam neste cofre e nas suas cópias de segurança. Quem souber a sua frase secreta pode trazê-las de volta.

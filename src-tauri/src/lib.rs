@@ -33,6 +33,7 @@ use ui_text_ids::MessageId;
 mod backup_exclusion;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod data_home;
 mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
@@ -196,6 +197,11 @@ struct RuntimeInfo {
     architecture: String,
     app_version: String,
     message: String,
+    /// True only when a DEBUG build is using `MYCARLOS_TEST_DATA_DIR` (data_home.rs); absent
+    /// otherwise, so a release build never carries the field. A test reads it to prove the override
+    /// took effect before it creates a vault.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    test_data_home: bool,
 }
 
 struct PublicError {
@@ -548,6 +554,22 @@ impl From<VaultError> for PublicText {
             VaultError::PackagePassphraseTriesUsed => Self {
                 code: "package_passphrase_tries_used",
                 message_key: "native.error.49",
+            },
+            // A save dialog that opened in the folder that holds the vault: choose another folder
+            // (an export, a backup and a recovery kit all say it).
+            VaultError::SaveLocationInsideVault => Self {
+                code: "save_location_inside_vault",
+                message_key: "native.error.51",
+            },
+            // The file was written and could not be read back and checked: not a typing mistake.
+            VaultError::PackageNotVerified => Self {
+                code: "package_not_verified",
+                message_key: "native.error.52",
+            },
+            // A line break or tab inside a typed passphrase (a paste can add one the field hides).
+            VaultError::PassphraseControlCharacter => Self {
+                code: "passphrase_control_character",
+                message_key: "native.error.53",
             },
             // Security says it beside the person's Hide: someone has to stay in the library.
             VaultError::LastVisibleProfile => Self {
@@ -2100,6 +2122,7 @@ fn current_runtime_info() -> RuntimeInfo {
         architecture: std::env::consts::ARCH.to_owned(),
         app_version: env!("CARGO_PKG_VERSION").to_owned(),
         message: "Hello from the Tauri Rust boundary".to_owned(),
+        test_data_home: data_home::override_in_use(),
     }
 }
 
@@ -4459,6 +4482,18 @@ fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder
     dialog
 }
 
+/// `file_dialog` for every "Save as": opened in the person's Documents folder, never in the
+/// folder the system last used. That could be the folder that holds the vault, where a save is
+/// refused, and an export that was refused for where it was going looked like a typing mistake
+/// (#360 export error 19). Every save picker goes through here; a source-scan test pins it.
+fn save_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = file_dialog(app);
+    match app.path().document_dir() {
+        Ok(folder) => dialog.set_directory(folder),
+        Err(_) => dialog,
+    }
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -4576,7 +4611,7 @@ async fn vault_recovery_kit_save(
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&dialog)
+        save_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -4834,7 +4869,7 @@ async fn vault_backup_pick(
     let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app).set_file_name(name).blocking_save_file()
+        save_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -5120,7 +5155,7 @@ async fn vault_profile_export_pick(
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app).set_file_name(name).blocking_save_file()
+        save_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -7233,7 +7268,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app)
+        save_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -7481,7 +7516,7 @@ async fn vault_export_pick(
     );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app)
+        save_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -8541,7 +8576,8 @@ pub fn run() {
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
             // iOS: the whole data folder stays out of iCloud and computer backups (#422, guideline
             // 5.1.3(ii)). Ben decided the exclusion is kept, so a failure refuses vault work.
-            if let Err(error) = backup_exclusion::configure(app.path().app_local_data_dir()?) {
+            let data_dir = data_home::local_data_dir(&*app)?;
+            if let Err(error) = backup_exclusion::configure(data_dir.clone()) {
                 // Not fatal to start: creating, unlocking and recovering a vault refuse until it
                 // can be set (and try again each time), so no health data is ever written first.
                 #[cfg(debug_assertions)]
@@ -8550,7 +8586,7 @@ pub fn run() {
                 let _ = error;
             }
             let slots = Arc::new(vault_slots::VaultSlots::open(
-                app.path().app_local_data_dir()?,
+                data_dir.clone(),
                 app.config().identifier.clone(),
             ));
             // One worker for the app, ticking whichever vault the screen is on.
@@ -8561,19 +8597,18 @@ pub fn run() {
             // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
             // the vault registry and not inside Main's `vault-home`, and read only when needed,
             // not here. The old file is copied over once and left where it was.
-            let data_dir = app.path().app_local_data_dir()?;
             throttle::migrate_counts(&data_dir);
             app.manage(Arc::new(AttemptThrottle::new(Some(throttle::counts_path(
                 &data_dir,
             )))));
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
-            notice_key::install(&app.path().app_local_data_dir()?);
+            notice_key::install(&data_dir);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
             let models = Arc::new(local_model::Store::new(
-                app.path().app_local_data_dir()?.join("models"),
+                data_dir.join("models"),
                 local_model::CATALOG,
             ));
             models.clean_leftovers();
@@ -8634,10 +8669,7 @@ pub fn run() {
             {
                 let background = desktop_background::desktop::install(
                     app,
-                    app.path()
-                        .app_local_data_dir()?
-                        .join("vault-home")
-                        .join("background-v1.json"),
+                    data_dir.join("vault-home").join("background-v1.json"),
                     close_lock(app.handle()),
                 );
                 // Tray notices (#230) need this switch: the poller and the notice keys read it.
@@ -10022,8 +10054,26 @@ mod tests {
             .unwrap()
             .1;
         let root = setup.split_once("));").unwrap().0;
-        assert!(root.contains("app_local_data_dir()"), "{root}");
+        // Through data_home::local_data_dir, the one place that asks Tauri (and lets a debug build's
+        // test home replace it): the roaming folder is named nowhere.
+        assert!(startup.contains("let data_dir = data_home::local_data_dir(&*app)?;"));
+        assert!(root.trim_start().starts_with("data_dir.clone(),"), "{root}");
         assert!(!root.contains("app_data_dir()"), "{root}");
+        let helper = include_str!("data_home.rs");
+        assert!(
+            helper.contains(".app_local_data_dir()"),
+            "data_home must ask for the local folder"
+        );
+        assert!(
+            !helper.contains(".app_data_dir()"),
+            "data_home must not use the roaming folder"
+        );
+        // No other call site goes round the helper.
+        assert_eq!(
+            startup.matches("app_local_data_dir()").count(),
+            0,
+            "every data folder goes through data_home::local_data_dir"
+        );
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
         // and on macOS and Linux local and roaming data are one directory. A
         // home of that name would hold an old vault's files loose beside the new
@@ -10707,8 +10757,9 @@ mod tests {
     ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
     ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
     ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
-    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
-    ///     here on purpose, and a lost one is noticed).
+    ///   - `file_dialog(&` is called at exactly the six open-file sites there are today, and the five
+    ///     "Save as" sites go through `save_dialog(&` (a new one must be added here on purpose, and a
+    ///     lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
         fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
@@ -10769,9 +10820,31 @@ mod tests {
         assert_eq!(file_calls, 1, "only the helper builds a file dialog");
         assert_eq!(builders, 0, "a file dialog builder is made directly");
         assert_eq!(
-            sites, 11,
-            "the eleven file dialog sites go through file_dialog"
+            sites, 6,
+            "the six open (not save) file dialog sites go through file_dialog"
         );
+        // Every "Save as" goes through `save_dialog`, which starts it in the person's Documents
+        // folder: not one of them opens in the last-used folder, which may be the vault's own
+        // (#360 export error 19). The five save pickers there are today are counted on both sides,
+        // so a save that skips the helper, or a sixth that is added, is noticed.
+        let (mut saves, mut save_sites) = (0, 0);
+        for file in &files {
+            let code = code(&std::fs::read_to_string(file).unwrap());
+            saves += code.matches(".blocking_save_file()").count();
+            save_sites += code.matches("save_dialog(&").count();
+        }
+        assert_eq!(saves, 5, "the five save pickers");
+        assert_eq!(
+            save_sites, 5,
+            "every save picker is opened through save_dialog"
+        );
+        // The helper keeps its starting folder, and is built on the owned helper.
+        let source = include_str!("lib.rs");
+        let save_helper = source.split("fn save_dialog(").nth(1).unwrap();
+        let save_helper = &save_helper[..save_helper.find("\n}\n").unwrap()];
+        assert!(save_helper.contains("file_dialog(app)"));
+        assert!(save_helper.contains("document_dir()"));
+        assert!(save_helper.contains("set_directory("));
         // The helper keeps its owner.
         let source = include_str!("lib.rs");
         let helper = source.split("fn file_dialog(").nth(1).unwrap();
@@ -15281,6 +15354,35 @@ mod native_localization_tests {
     }
 
     #[test]
+    fn the_save_location_check_and_passphrase_refusals_have_their_own_codes_and_words() {
+        let generic = serde_json::to_value(PublicError::from(VaultError::Invalid)).unwrap();
+        for (error, code, key) in [
+            (
+                VaultError::SaveLocationInsideVault,
+                "save_location_inside_vault",
+                "native.error.51",
+            ),
+            (
+                VaultError::PackageNotVerified,
+                "package_not_verified",
+                "native.error.52",
+            ),
+            (
+                VaultError::PassphraseControlCharacter,
+                "passphrase_control_character",
+                "native.error.53",
+            ),
+        ] {
+            let value = serde_json::to_value(PublicError::from(error)).unwrap();
+            assert_eq!(value["code"], code);
+            assert_eq!(value["messageKey"], key);
+            // Never the generic "Something you typed wasn't accepted" text (error 19).
+            assert_ne!(value["message"], generic["message"], "{code}");
+            assert!(value["message"].as_str().is_some_and(|s| !s.is_empty()));
+        }
+    }
+
+    #[test]
     fn native_localization_preserves_ipc_fields_and_optional_omission_contract() {
         let base = serde_json::to_value(PublicError::from(VaultError::Storage)).unwrap();
         assert_eq!(base["code"], "storage");
@@ -15328,6 +15430,9 @@ mod native_localization_tests {
             VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::PackagePassphraseTriesUsed,
+            VaultError::SaveLocationInsideVault,
+            VaultError::PackageNotVerified,
+            VaultError::PassphraseControlCharacter,
             VaultError::LastVisibleProfile,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,

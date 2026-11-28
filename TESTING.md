@@ -880,6 +880,60 @@ en-GB). Camera browser checks fix the computer locale (en-US and en-GB), timezon
 status text uses Fluent isolation; the stored filename contains no formatter
 controls.
 
+## Playtests: every user path gets a journey
+
+**Ben's rules (27 Nov), quoted from his messages:**
+
+- "Make a PR with playtests for all the gaps and then all future PRs should add playtests to their
+  own gaps where useful"
+- "If you find things are broken [put] them in the same playtest PR" (his own typo, corrected in
+  brackets). A playtest that exposes a bug is fixed in that PR, as its own commit next to the test
+  that shows it, not in a separate fix PR.
+
+**What that means for a PR:** one that changes something a patient does adds or extends a playtest
+journey for that path, where a journey is useful. A journey is either a browser journey
+(`tests/*.spec.ts`, the fake vault: fast, runs on every PR) or, for what the fake cannot see (real
+files, real Windows dialogs, the real Rust, a real second vault), a native-windows journey
+(`tests/native-windows/`). Say in the PR which one you added. **Exceptions**, each with a stated
+reason in the PR: a documentation-only change, or a pure refactor with no change a patient can see.
+
+**Reviewers:** ask "where's the playtest?" before any LGTM, and accept the stated exception or ask
+for the journey.
+
+**A convention of this repository (not one of Ben's rules):** a journey that cannot run yet, because
+the feature it needs is not merged, is written and marked `test.fixme` with the PR it waits for, so
+the gap stays visible.
+
+**The native-windows journeys** (`tests/native-windows/playtests.spec.ts`) attach to the INSTALLED
+app and use these helpers, in `tests/native-windows/`: `appSession.ts` (`openInstalledApp`: start the
+app, attach, `session.call(command, args)`, `session.withDialog(command, args, title, action, value)`
+for a command that opens a real Windows dialog), `vault.ts` (`createFakeVault`, `createPerson`,
+`importSample`, `relock`, `eraseFakeVault`, `snapshot`), and `safety.ts`.
+
+**Safety (read before you run them):** the app has no data-home override, so these journeys make
+and erase a vault in the Windows account's own myCarlos folder. They refuse to start unless the
+account is disposable: a GitHub-HOSTED runner (`GITHUB_ACTIONS=true` and
+`RUNNER_ENVIRONMENT=github-hosted`; a self-hosted runner is not accepted), or
+`MYCARLOS_PLAYTEST_DISPOSABLE_ACCOUNT=1` on a throw-away account that holds no real vault. Never set
+that on an account with a real vault. They also refuse an unset or relative `LOCALAPPDATA`, refuse
+a relative `MYCARLOS_WINDOWS_WEBVIEW_PROFILE`, and refuse when a vault already exists. At the end
+they erase a vault only after proving it is their own (it opens with the FAKE passphrase and holds
+the FAKE first person), and only if they created it; cleanup deletes only directories the run made
+with `mkdtemp`. `tests/native-windows/safety.spec.ts` tests the guard and the proof and runs anywhere.
+
+**Run them** (Windows, an installed build, an empty disposable account):
+
+```
+$env:MYCARLOS_PLAYTEST_DISPOSABLE_ACCOUNT = '1'
+$env:MYCARLOS_WINDOWS_PLAYTESTS = '1'
+$env:MYCARLOS_WINDOWS_APP = 'C:\path\to\mycarlos-tauri-poc.exe'
+npm run test:windows-playtests
+```
+
+Add `MYCARLOS_WINDOWS_FAKE_MEDIA=1` for the fake camera and microphone check. The samples are the
+FAKE files in `dev-data/` (change with `MYCARLOS_PLAYTEST_SAMPLES`). The CI Windows job runs only the
+navigation spec until its workflow line is added (the diff is in the playtests PR).
+
 ## Automated Android emulator smoke test
 
 The workflow `mycarlos-android-emulator.yml` builds the Android debug app for an x86_64

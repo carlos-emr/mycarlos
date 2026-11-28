@@ -417,6 +417,18 @@ pub enum VaultError {
     NotFound,
     #[error("the requested change is not valid")]
     Invalid,
+    /// A save destination in the folder that holds the vault (or with no folder): the file would
+    /// not be one the patient can take away. The patient is told to choose another folder.
+    #[error("the file cannot be saved in the myCarlos folder")]
+    SaveLocationInsideVault,
+    /// A file that was written could not be read back and checked: nothing was kept as the
+    /// result. Not a typing mistake, so it is not `Invalid`.
+    #[error("the file could not be checked after it was written")]
+    PackageNotVerified,
+    /// A typed passphrase holds a control character (a line break or a tab a paste added, which
+    /// the field hides): said as that, not as a generic refusal.
+    #[error("the passphrase holds a line break or another control character")]
+    PassphraseControlCharacter,
     /// A document keeps at most 32 AI answers, hidden ones included, and
     /// none is ever deleted (D3): a new one is refused, said as such.
     #[error("the document keeps the most AI answers it can")]
@@ -3859,11 +3871,7 @@ impl VaultStore {
         // lock, a pending reset, a create stage, the export journal. No export
         // may land anywhere in it, whatever it is called, so the check needs no
         // list of names.
-        let home = fs::canonicalize(vault_home(&self.root)?)?;
-        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
-        if fs::canonicalize(destination_parent)?.starts_with(&home) {
-            return Err(VaultError::Invalid);
-        }
+        let destination_parent = refuse_destination_inside_home(&self.root, destination)?;
 
         // Refused before anything is journaled or staged.
         if self.session().is_none() {
@@ -3949,11 +3957,7 @@ impl VaultStore {
         destination: &Path,
         content: &[u8],
     ) -> Result<(), VaultError> {
-        let home = fs::canonicalize(vault_home(&self.root)?)?;
-        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
-        if fs::canonicalize(destination_parent)?.starts_with(&home) {
-            return Err(VaultError::Invalid);
-        }
+        let destination_parent = refuse_destination_inside_home(&self.root, destination)?;
         {
             let guard = self.session();
             let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -4677,11 +4681,7 @@ impl VaultStore {
         now_ms: u64,
         locale: crate::ui_text::UiLocale,
     ) -> Result<(), VaultError> {
-        let home = fs::canonicalize(vault_home(&self.root)?)?;
-        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
-        if fs::canonicalize(destination_parent)?.starts_with(&home) {
-            return Err(VaultError::Invalid);
-        }
+        refuse_destination_inside_home(&self.root, destination)?;
         let kit = self.recovery_kit_in(now_ms, locale)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -5239,11 +5239,7 @@ impl VaultStore {
         now_ms: u64,
         leave_videos_out: bool,
     ) -> Result<(), VaultError> {
-        let home = fs::canonicalize(vault_home(&self.root)?)?;
-        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
-        if fs::canonicalize(destination_parent)?.starts_with(&home) {
-            return Err(VaultError::Invalid);
-        }
+        let destination_parent = refuse_destination_inside_home(&self.root, destination)?;
         // The videos are found once: the size, the check and the write all use them.
         let plan = self.plan_backup(leave_videos_out)?;
         let size = self.backup_size_planned(&plan)?;
@@ -5792,8 +5788,13 @@ fn judge_new_passphrase(
     // Every rule applies to the form the KDF will see. The same visible text
     // must pass or fail alike whichever composition form a keyboard produced.
     let passphrase = normalize_passphrase(passphrase);
-    if passphrase.len() > MAX_PASSPHRASE_BYTES || passphrase.chars().any(char::is_control) {
+    if passphrase.len() > MAX_PASSPHRASE_BYTES {
         return Err(VaultError::Invalid);
+    }
+    // A line break or tab (a paste can add one the field does not show) is said as that, so the
+    // patient knows what to remove; it is no weakness of the passphrase and no generic refusal.
+    if passphrase.chars().any(char::is_control) {
+        return Err(VaultError::PassphraseControlCharacter);
     }
     let long_enough = passphrase.chars().count() >= MIN_PASSPHRASE_CHARS;
     // Names are normalized before they are split: a combining mark is not
@@ -9070,6 +9071,27 @@ fn vault_home(root: &Path) -> Result<&Path, VaultError> {
     root.parent().ok_or(VaultError::Storage)
 }
 
+/// Refuses a save destination that has no folder, or whose folder lies anywhere inside the vault
+/// home (the folder that holds the vault and its working files: whatever is saved there is not a
+/// file the patient can take away). Said as its own error, never as "something you typed" (a
+/// save dialog that opened in that folder made every export look like a typing mistake).
+///
+/// Returns the destination's folder (as given, not canonicalised) for the callers that go on to
+/// stage a file beside the destination or check its free space.
+fn refuse_destination_inside_home<'a>(
+    root: &Path,
+    destination: &'a Path,
+) -> Result<&'a Path, VaultError> {
+    let home = fs::canonicalize(vault_home(root)?)?;
+    let parent = destination
+        .parent()
+        .ok_or(VaultError::SaveLocationInsideVault)?;
+    if fs::canonicalize(parent)?.starts_with(&home) {
+        return Err(VaultError::SaveLocationInsideVault);
+    }
+    Ok(parent)
+}
+
 fn sibling_path(root: &Path, suffix: &str) -> Result<PathBuf, VaultError> {
     let mut name = root.file_name().ok_or(VaultError::Storage)?.to_os_string();
     name.push(suffix);
@@ -12079,19 +12101,19 @@ mod tests {
             .imported[0];
         assert!(matches!(
             store.export_atomic(record, &sibling_path(&root, ".lock").unwrap()),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         // Windows and macOS resolve a differently cased name to the same file.
         assert!(matches!(
             store.export_atomic(record, &root.with_file_name("VAULT.LOCK")),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         // A regular file under a pending-reset name would make every later
         // status, unlock, create and reset fail closed.
         for name in ["vault.reset-pending", "Vault.Reset-Pending"] {
             assert!(matches!(
                 store.export_atomic(record, &root.with_file_name(name)),
-                Err(VaultError::Invalid)
+                Err(VaultError::SaveLocationInsideVault)
             ));
             assert!(!root.with_file_name(name).exists());
         }
@@ -12354,7 +12376,7 @@ mod tests {
             assert!(
                 matches!(
                     store.export_atomic(record, &home.join(name)),
-                    Err(VaultError::Invalid)
+                    Err(VaultError::SaveLocationInsideVault)
                 ),
                 "{name}"
             );
@@ -14987,7 +15009,7 @@ mod tests {
         let inside = vault_home(&root).unwrap().join("kit.txt");
         assert!(matches!(
             store.save_recovery_kit(&inside, 1),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         assert!(!inside.exists());
 
@@ -18591,7 +18613,7 @@ mod tests {
         let header_before = fs::read(&header_path).unwrap();
         assert!(matches!(
             store.export_atomic(record, &header_path),
-            Err(VaultError::Invalid)
+            Err(VaultError::SaveLocationInsideVault)
         ));
         assert_eq!(fs::read(header_path).unwrap(), header_before);
 
@@ -20166,9 +20188,27 @@ mod tests {
             validate_new_passphrase("short phrase!!", &[]),
             Err(VaultError::Invalid)
         ));
+        // A line break, a tab or another control character (a paste can add one the field does
+        // not show) is said as that, not as the generic refusal.
+        for hidden in [
+            "fifteen chars\nmore",
+            "fifteen chars\tmore",
+            "fifteen chars more\r",
+            "fifteen chars\u{7f}more",
+            "fifteen chars\u{85}more",
+        ] {
+            assert!(
+                matches!(
+                    validate_new_passphrase(hidden, &[]),
+                    Err(VaultError::PassphraseControlCharacter)
+                ),
+                "{hidden:?}"
+            );
+        }
+        // A control character is the same fault in a typed package passphrase.
         assert!(matches!(
-            validate_new_passphrase("fifteen chars\nmore", &[]),
-            Err(VaultError::Invalid)
+            validate_new_passphrase("a perfectly strong passphrase 8841\n", &[]),
+            Err(VaultError::PassphraseControlCharacter)
         ));
         assert!(matches!(
             validate_new_passphrase(&"a".repeat(MAX_PASSPHRASE_BYTES + 1), &[]),
@@ -20216,12 +20256,15 @@ mod tests {
         }
         // Refused outright, as the vault refuses them: no answers at all.
         let too_long = "a".repeat(MAX_PASSPHRASE_BYTES + 1);
-        for passphrase in ["fifteen chars\nmore", too_long.as_str()] {
-            assert!(matches!(
-                judge_new_passphrase(passphrase, &name, false),
-                Err(VaultError::Invalid)
-            ));
-        }
+        assert!(matches!(
+            judge_new_passphrase(too_long.as_str(), &name, false),
+            Err(VaultError::Invalid)
+        ));
+        // A control character is refused as that, so the patient knows what to remove.
+        assert!(matches!(
+            judge_new_passphrase("fifteen chars\nmore", &name, false),
+            Err(VaultError::PassphraseControlCharacter)
+        ));
         // Three answers, named, and nothing else crosses to the renderer.
         let answers = serde_json::to_value(
             judge_new_passphrase("river azimuth cobalt sparrow 934", &name, false).unwrap(),
