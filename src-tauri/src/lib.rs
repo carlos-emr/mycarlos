@@ -12545,16 +12545,12 @@ mod tests {
             "vault_add_vault",
             "vault_find_other_vaults",
             "vault_name_found_vaults",
-            // Hiding a folder (#574 PR B): the Rust core and its commands; the screen that calls
-            // them (and the grant) is PR C.
-            "vault_hide_folder",
-            "vault_restore_folder",
         ];
         for &command in WITHHELD {
             let grant = format!("allow-{}", command.replace('_', "-"));
             assert!(
                 !permissions.contains(&grant.as_str()),
-                "{grant} is withheld until its screen exists (#357 PR 5, #574 PR C)"
+                "{grant} is withheld until its screen exists (#357 PR 5)"
             );
             assert!(library.contains(&format!("fn {command}(")));
             assert!(build_script.contains(&format!("\"{command}\"")));

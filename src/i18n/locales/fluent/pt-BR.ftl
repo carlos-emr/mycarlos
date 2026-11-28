@@ -2868,6 +2868,14 @@ hiddenPeople-restore = Restaurar
 
 hiddenPeople-restoreFor = Restaurar { $name }
 
+hiddenFolders-hide = Ocultar pasta
+hiddenFolders-confirm = Ocultar { $name }?
+hiddenFolders-confirmBody = A pasta e suas subpastas deixarão de aparecer na biblioteca. Os documentos que também estiverem em outra pasta visível continuarão lá. Quem tiver a frase secreta pode restaurar a pasta em Segurança.
+hiddenFolders-title = Pastas ocultas
+hiddenFolders-restoreFor = Restaurar { $name } em { $location }
+hiddenFolders-damagedToo = Isso inclui { $count } de pastas ocultas.
+hiddenFolders-handover = Pastas ocultas permanecem ocultas após a importação ({ $count } incluídas).
+
 hiddenPeople-handOver = Entregar…
 
 hiddenPeople-handOverFor = Entregar os registros de { $name }

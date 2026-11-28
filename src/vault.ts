@@ -227,6 +227,8 @@ export interface HiddenFolder {
   id: string;
   /** The person the folder belongs to. */
   profileId: string;
+  /** The parent is visible if this folder has one. */
+  parentId: string | null;
   name: string;
   hiddenAtMs: number;
   /** Every document filed in it or in any folder below it, those hidden one by one included. */
@@ -941,6 +943,8 @@ export interface VaultBridge {
   /** Brings a hidden person back; says which documents arrived for them while they were
    * hidden and wait in Shared with me. */
   restoreProfile?(profileId: string): Promise<ArrivedWhileHidden[]>;
+  hideFolder?(folderId: string): Promise<void>;
+  restoreFolder?(folderId: string): Promise<void>;
   hideRecord(recordId: string): Promise<void>;
   /** Puts a hidden document back. One hidden as damaged only once its file
    * is back. */
@@ -952,6 +956,7 @@ export interface VaultBridge {
   hideUnavailableRecords(
     confirmed: string[],
     hiddenPeopleDocuments?: number,
+    hiddenFolderDocuments?: number,
   ): Promise<string[]>;
   /** Whether a stored PDF may be locked with a password (#54): a scan of its
    * names only, so the details can offer Unlock. */
@@ -1811,13 +1816,25 @@ export function createVaultBridge(): VaultBridge {
       invoke<ArrivedWhileHidden[]>("vault_restore_profile", {
         request: { profileId },
       }),
+    hideFolder: (folderId) =>
+      invoke<void>("vault_hide_folder", { request: { folderId } }),
+    restoreFolder: (folderId) =>
+      invoke<void>("vault_restore_folder", { request: { folderId } }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>
       invoke<void>("vault_unhide_record", { request: { recordId } }),
-    hideUnavailableRecords: (confirmed, hiddenPeopleDocuments = 0) =>
+    hideUnavailableRecords: (
+      confirmed,
+      hiddenPeopleDocuments = 0,
+      hiddenFolderDocuments = 0,
+    ) =>
       invoke<string[]>("vault_hide_unavailable_records", {
-        request: { confirmed, hiddenPeopleDocuments },
+        request: {
+          confirmed,
+          hiddenPeopleDocuments,
+          ...(hiddenFolderDocuments > 0 ? { hiddenFolderDocuments } : {}),
+        },
       }),
     reset: (confirmation) =>
       invoke<boolean>("vault_reset", {

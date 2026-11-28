@@ -1045,6 +1045,7 @@ impl Manifest {
                 Some(HiddenFolder {
                     id: folder.id,
                     profile_id: folder.profile_id,
+                    parent_id: folder.parent_id,
                     name: folder.name.clone(),
                     hidden_at_ms: hidden.at_ms,
                     documents: self
@@ -1304,12 +1305,15 @@ redact_debug!(HiddenProfile);
 /// A hidden folder as Security's Hidden folders list shows it (#574): the topmost hidden folder of
 /// a person who is in reach, with how much it holds. Its documents and subfolders are in no other
 /// list.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HiddenFolder {
     pub id: Uuid,
     /// The person the folder belongs to, so that the list can say whose it is.
     pub profile_id: Uuid,
+    /// The parent of a topmost hidden folder is visible.
+    pub parent_id: Option<Uuid>,
     pub name: String,
     pub hidden_at_ms: u64,
     /// Every document filed in the folder or in any folder below it, those hidden one by one
@@ -1318,6 +1322,7 @@ pub struct HiddenFolder {
     /// The folders below it (not counting itself), those hidden on their own included.
     pub subfolders: usize,
 }
+redact_debug!(HiddenFolder);
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
 /// What the vault knows about a document's patient (#72 part B). Names and

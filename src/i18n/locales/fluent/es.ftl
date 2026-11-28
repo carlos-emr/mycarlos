@@ -2868,6 +2868,14 @@ hiddenPeople-restore = Restaurar
 
 hiddenPeople-restoreFor = Restaurar a { $name }
 
+hiddenFolders-hide = Ocultar carpeta
+hiddenFolders-confirm = ¿Ocultar { $name }?
+hiddenFolders-confirmBody = La carpeta y sus subcarpetas dejarán de verse en la biblioteca. Los documentos que estén en otra carpeta visible seguirán allí. Cualquier persona que tenga la frase de contraseña puede restaurar la carpeta en Seguridad.
+hiddenFolders-title = Carpetas ocultas
+hiddenFolders-restoreFor = Restaurar { $name } en { $location }
+hiddenFolders-damagedToo = Esto incluye { $count } de carpetas ocultas.
+hiddenFolders-handover = Las carpetas ocultas seguirán ocultas al importar ({ $count } incluidas).
+
 hiddenPeople-handOver = Entregar…
 
 hiddenPeople-handOverFor = Entregar los registros de { $name }

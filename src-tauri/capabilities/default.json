@@ -124,6 +124,8 @@
     "allow-vault-unhide-record",
     "allow-vault-hide-profile",
     "allow-vault-restore-profile",
+    "allow-vault-hide-folder",
+    "allow-vault-restore-folder",
     "allow-vault-hide-unavailable-records",
     "allow-vault-reset"
   ]

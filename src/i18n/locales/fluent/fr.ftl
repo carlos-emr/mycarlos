@@ -2868,6 +2868,14 @@ hiddenPeople-restore = Rétablir
 
 hiddenPeople-restoreFor = Rétablir { $name }
 
+hiddenFolders-hide = Masquer le dossier
+hiddenFolders-confirm = Masquer { $name } ?
+hiddenFolders-confirmBody = Le dossier et ses sous-dossiers disparaîtront de la bibliothèque. Les documents qui se trouvent aussi dans un autre dossier visible y resteront. Toute personne connaissant la phrase secrète peut restaurer le dossier dans Sécurité.
+hiddenFolders-title = Dossiers masqués
+hiddenFolders-restoreFor = Rétablir le dossier { $name } dans { $location }
+hiddenFolders-damagedToo = Ce total comprend { $count } provenant de dossiers masqués.
+hiddenFolders-handover = Les dossiers masqués restent masqués après l’importation ({ $count } inclus).
+
 hiddenPeople-handOver = Transmettre…
 
 hiddenPeople-handOverFor = Transmettre les dossiers de { $name }

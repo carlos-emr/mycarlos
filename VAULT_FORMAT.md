@@ -1388,6 +1388,8 @@ What the flag does, and does not do:
 
 Tests: the round trip (lists, counts, subfolders; a document hidden on its own stays hidden); one commit and one entry each way; the nested cases; the two-folder document; every lookup and move refused and allowed again after the restore; Security's history (including an entry that only names the folder, and a vault with a hidden folder and no hidden person); a backup and an older backup; the format gate (refused at 16, accepted at 17, damaged reason, Shared with me); an export that carries a hidden folder hidden and an import that restores it hidden; a hidden folder's lost file; and the delivery source scan.
 
+Open a folder to hide it. Security lists each topmost hidden folder with its owner, visible parent path, date and document count, and offers Restore. Before saving a handover, the preview says how many folders it carries as hidden.
+
 ## Video recordings in progress (#359, no format change)
 
 A recording is stored in the existing `MCVO1` object format, one 1 MiB frame at a time, so **header, object, manifest and backup formats do not change** and no format number is taken. It becomes a record only when it ends, in the same commit an import makes (history entry `imported`, how `camera`). Until then it lives in `recordings/`, beside `staging/` and not in it, because every unlock removes `staging/`.

@@ -558,6 +558,7 @@ function SummaryList({
     documents: number;
     hidden: number;
     folders: number;
+    hiddenFolders?: number;
     aiAnswers?: number;
     withClinicEvidence: number;
     leftOutDamaged?: number;
@@ -571,6 +572,11 @@ function SummaryList({
       <li>{t("handover.count.documents", { count: summary.documents })}</li>
       <li>{t("handover.count.hidden", { count: summary.hidden })}</li>
       <li>{t("handover.count.folders", { count: summary.folders })}</li>
+      {(summary.hiddenFolders ?? 0) > 0 && (
+        <li>
+          {t("hiddenFolders.handover", { count: summary.hiddenFolders ?? 0 })}
+        </li>
+      )}
       <li>{t("handover.count.answers", { count: summary.aiAnswers ?? 0 })}</li>
       <li>
         {t("handover.count.evidence", { count: summary.withClinicEvidence })}
