@@ -902,6 +902,10 @@ describe("choosing the camera and the microphone", () => {
         },
       );
     });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     /** The recorder the test made: the only one with no picture in its stream. */
     const clipRecorder = () =>
       FakeRecorder.made.find(
