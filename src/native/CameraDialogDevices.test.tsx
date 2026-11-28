@@ -364,6 +364,25 @@ describe("CameraDialog: choosing the camera", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1);
   });
 
+  it("does not request the default camera if the remembered one disappears after the dialog closes", async () => {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ camera: "cam-b", microphone: null }),
+    );
+    window.localStorage.setItem(EXPLAINED_KEY, "1");
+    let rejectCamera!: (error: DOMException) => void;
+    getUserMedia.mockImplementationOnce(
+      () => new Promise<MediaStream>((_, reject) => (rejectCamera = reject)),
+    );
+    const { unmount } = open();
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => {
+      rejectCamera(new DOMException("FAKE unplugged", "NotFoundError"));
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
   it("does not fall back when a remembered camera is refused permission", async () => {
     window.localStorage.setItem(
       KEY,

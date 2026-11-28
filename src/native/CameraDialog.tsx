@@ -150,6 +150,7 @@ export function CameraDialog({
         try {
           stream = await open(wanted);
         } catch (error) {
+          if (attempt !== attemptRef.current) return;
           if (!wanted || !deviceIsGone(error)) throw error;
           stream = await open(null);
           gone = true;
