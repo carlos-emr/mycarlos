@@ -54,7 +54,7 @@ fn vault() -> Vault {
     let imaging = store
         .create_folder(person, None, "FAKE Imaging", 4)
         .unwrap();
-    let mut file = |name: &str, folders: Vec<Uuid>| {
+    let file = |name: &str, folders: Vec<Uuid>| {
         store
             .import(
                 person,
@@ -656,7 +656,13 @@ fn a_hidden_folders_lost_file_does_not_trap_the_vault_read_only_and_is_counted_a
         (v.store.root.clone(), record.object_name.clone())
     };
     v.store.lock();
-    std::fs::remove_file(root.join("objects").join(object_name)).unwrap();
+    let object_outside_vault = root.with_file_name("lost-object");
+    fs::rename(
+        root.join("objects").join(object_name),
+        &object_outside_vault,
+    )
+    .unwrap();
+    assert!(object_outside_vault.is_file());
     let store = VaultStore::new(root);
     store.unlock(PASSWORD).unwrap();
 
