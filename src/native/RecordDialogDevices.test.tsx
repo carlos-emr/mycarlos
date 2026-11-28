@@ -238,6 +238,35 @@ describe("choosing the camera and the microphone", () => {
     expect(microphoneList()).toBeEnabled();
   });
 
+  it.each([1, 2])(
+    "does not retry capture when request %i for a missing device completes after close",
+    async (pendingRequest) => {
+      window.localStorage.setItem(
+        KEY,
+        JSON.stringify({ camera: "cam-b", microphone: "mic-b" }),
+      );
+      const missing = new DOMException(
+        "FAKE device unplugged",
+        "NotFoundError",
+      );
+      if (pendingRequest === 2) getUserMedia.mockRejectedValueOnce(missing);
+      let rejectRequest!: (error: DOMException) => void;
+      getUserMedia.mockImplementationOnce(
+        () => new Promise<MediaStream>((_, reject) => (rejectRequest = reject)),
+      );
+      const { unmount } = open();
+      fireEvent.click(screen.getByRole("button", { name: /Use the camera/ }));
+      await waitFor(() =>
+        expect(getUserMedia).toHaveBeenCalledTimes(pendingRequest),
+      );
+      unmount();
+      await act(async () => {
+        rejectRequest(missing);
+      });
+      expect(getUserMedia).toHaveBeenCalledTimes(pendingRequest);
+    },
+  );
+
   it("switches only the device chosen: the other one keeps running and the choice is remembered", async () => {
     open();
     await ready();
